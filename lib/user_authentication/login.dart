@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:library_management_app/user_authentication/signup.dart'; // Import the signup page
-import 'package:library_management_app/user_authentication/forgot_password.dart'; // Import the forgot password page
+import 'package:talehive/user_authentication/signup.dart'; // Import the signup page
+import 'package:talehive/user_authentication/forgot_password.dart'; // Import the forgot password page
 
 // Convert to StatefulWidget to manage password visibility state
 class Login extends StatefulWidget {

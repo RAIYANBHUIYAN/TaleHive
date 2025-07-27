@@ -1,7 +1,69 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'book_details.dart';
 
-class UserHomePage extends StatelessWidget {
+class UserHomePage extends StatefulWidget {
   const UserHomePage({Key? key}) : super(key: key);
+
+  @override
+  State<UserHomePage> createState() => _UserHomePageState();
+}
+
+class _UserHomePageState extends State<UserHomePage> {
+  List<Map<String, dynamic>> newArrivals = [];
+  List<Map<String, dynamic>> recommended = [];
+  List<Map<String, dynamic>> popularBooks = [];
+  List<Map<String, dynamic>> recentReadings = [];
+  bool isLoading = true;
+  String error = '';
+
+  @override
+  void initState() {
+    super.initState();
+    fetchAllBooks();
+  }
+
+  Future<void> fetchAllBooks() async {
+    setState(() {
+      isLoading = true;
+      error = '';
+    });
+    try {
+      final arrivals = await fetchBooks('new');
+      final recs = await fetchBooks('recommended');
+      final popular = await fetchBooks('popular');
+      final recent = await fetchBooks('recent');
+      setState(() {
+        newArrivals = arrivals;
+        recommended = recs;
+        popularBooks = popular;
+        recentReadings = recent;
+        isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        error = 'Error: $e';
+        isLoading = false;
+      });
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchBooks(String query) async {
+    final response = await http.get(Uri.parse('https://openlibrary.org/search.json?q=${Uri.encodeComponent(query)}'));
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      final List docs = data['docs'] ?? [];
+      return docs.map<Map<String, dynamic>>((doc) => {
+        'title': doc['title'] ?? '',
+        'author': (doc['author_name'] != null && doc['author_name'].isNotEmpty) ? doc['author_name'][0] : 'Unknown',
+        'cover': doc['cover_i'] != null ? 'https://covers.openlibrary.org/b/id/${doc['cover_i']}-L.jpg' : null,
+        'rating': 4.0,
+      }).toList();
+    } else {
+      throw Exception('Failed to load books');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -11,175 +73,95 @@ class UserHomePage extends StatelessWidget {
       "A room without books is like a body without a soul. - Cicero",
       "Books are a uniquely portable magic. - Stephen King",
     ];
-    final newArrivals = [
-      {
-        'title': 'Holy Bible',
-        'cover': 'https://covers.openlibrary.org/b/id/10523338-L.jpg',
-      },
-      {
-        'title': 'Harry Potter',
-        'cover': 'https://covers.openlibrary.org/b/id/10523339-L.jpg',
-      },
-      {
-        'title': 'Lean UX',
-        'cover': 'https://covers.openlibrary.org/b/id/10523340-L.jpg',
-      },
-    ];
-    final recommended = <Map<String, dynamic>>[
-      {
-        'title': "Don't Make Me Think",
-        'cover': 'https://covers.openlibrary.org/b/id/10523341-L.jpg',
-        'author': 'Steve Krug',
-        'rating': 4.5,
-      },
-      {
-        'title': 'The Design of Everyday Things',
-        'cover': 'https://covers.openlibrary.org/b/id/10523342-L.jpg',
-        'author': 'Don Norman',
-        'rating': 4.6,
-      },
-      {
-        'title': 'Sprint',
-        'cover': 'https://covers.openlibrary.org/b/id/10523343-L.jpg',
-        'author': 'Jake Knapp',
-        'rating': 4.4,
-      },
-      {
-        'title': 'Lean UX',
-        'cover': 'https://covers.openlibrary.org/b/id/10523344-L.jpg',
-        'author': 'Jeff Gothelf',
-        'rating': 4.3,
-      },
-      {
-        'title': 'React',
-        'cover': 'https://covers.openlibrary.org/b/id/10523345-L.jpg',
-        'author': 'Dan Abramov',
-        'rating': 4.7,
-      },
-    ];
-    final popularBooks = [
-      {
-        'title': 'Rich Dad Poor Dad',
-        'cover': 'https://covers.openlibrary.org/b/id/10523346-L.jpg',
-      },
-      {
-        'title': 'Harry Potter',
-        'cover': 'https://covers.openlibrary.org/b/id/10523339-L.jpg',
-      },
-      {
-        'title': 'React',
-        'cover': 'https://covers.openlibrary.org/b/id/10523345-L.jpg',
-      },
-      {
-        'title': 'Sprint',
-        'cover': 'https://covers.openlibrary.org/b/id/10523343-L.jpg',
-      },
-    ];
-    final recentReadings = [
-      {
-        'title': 'Little Fires Everywhere',
-        'cover': 'https://covers.openlibrary.org/b/id/10523347-L.jpg',
-        'author': 'Celeste Ng',
-        'rating': 4.5,
-      },
-      {
-        'title': 'The Silent Patient',
-        'cover': 'https://covers.openlibrary.org/b/id/10523348-L.jpg',
-        'author': 'Alex Michaelides',
-        'rating': 4.5,
-      },
-      {
-        'title': 'The Glass Hotel',
-        'cover': 'https://covers.openlibrary.org/b/id/10523349-L.jpg',
-        'author': 'Emily St. John Mandel',
-        'rating': 4.5,
-      },
-      {
-        'title': 'Such a Fun Age',
-        'cover': 'https://covers.openlibrary.org/b/id/10523350-L.jpg',
-        'author': 'Kiley Reid',
-        'rating': 4.3,
-      },
-      {
-        'title': 'Normal People',
-        'cover': 'https://covers.openlibrary.org/b/id/10523351-L.jpg',
-        'author': 'Sally Rooney',
-        'rating': 4.2,
-      },
-    ];
     final onlineUsers = ['Noushin Nurjahan', 'Other users (?)', 'User 3'];
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7FAFC),
       body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final isWide = constraints.maxWidth > 1100;
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Main Content
-                Expanded(
-                  flex: 4,
-                  child: ListView(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 16,
-                    ),
-                    children: [
-                      // Greeting Banner
-                      _GreetingBanner(userName: userName),
-                      const SizedBox(height: 18),
-                      // Quote/Highlight Section
-                      _QuoteCarousel(quotes: quotes),
-                      const SizedBox(height: 18),
-                      // New Releases & Arrivals
-                      _SectionTitle(title: 'New Releases'),
-                      _HorizontalBookList(
-                        books: newArrivals,
-                        label: 'New Arrivals',
-                      ),
-                      const SizedBox(height: 18),
-                      // Recommended For You
-                      _SectionTitle(title: 'Recommended for You'),
-                      _RecommendedList(books: recommended),
-                      const SizedBox(height: 18),
-                      // Popular Books
-                      _SectionTitle(title: 'Popular Books'),
-                      _HorizontalBookList(books: popularBooks),
-                      const SizedBox(height: 18),
-                      // Recent Readings
-                      _SectionTitle(title: 'Recent Readings'),
-                      _RecentReadingsList(books: recentReadings),
-                      const SizedBox(height: 18),
-                      // Special Club Banner
-                      _BookClubBanner(),
-                      const SizedBox(height: 18),
-                      // Footer
-                      _Footer(),
-                    ],
-                  ),
-                ),
-                // Sidebar Widgets
-                if (isWide)
-                  SizedBox(
-                    width: 300,
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.only(top: 32, right: 16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
+        child: isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : error.isNotEmpty
+                ? Center(child: Text(error, style: TextStyle(color: Colors.red)))
+                : LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isWide = constraints.maxWidth > 1100;
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _OnlineUsersWidget(users: onlineUsers),
-                          const SizedBox(height: 24),
-                          // Add more sidebar widgets here if needed
+                          // Main Content
+                          Expanded(
+                            flex: 4,
+                            child: ListView(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 24,
+                                vertical: 16,
+                              ),
+                              children: [
+                                // Greeting Banner
+                                _GreetingBanner(userName: userName),
+                                const SizedBox(height: 18),
+                                // Quote/Highlight Section
+                                _QuoteCarousel(quotes: quotes),
+                                const SizedBox(height: 18),
+                                // New Releases & Arrivals
+                                _SectionTitle(title: 'New Releases'),
+                                _HorizontalBookList(books: newArrivals, label: 'New Arrivals'),
+                                const SizedBox(height: 18),
+                                // Recommended For You
+                                _SectionTitle(title: 'Recommended for You'),
+                                _RecommendedList(books: recommended),
+                                const SizedBox(height: 18),
+                                // Popular Books
+                                _SectionTitle(title: 'Popular Books'),
+                                _HorizontalBookList(books: popularBooks),
+                                const SizedBox(height: 18),
+                                // Recent Readings
+                                _SectionTitle(title: 'Recent Readings'),
+                                _RecentReadingsList(books: recentReadings),
+                                const SizedBox(height: 18),
+                                // Special Club Banner
+                                _BookClubBanner(),
+                                const SizedBox(height: 18),
+                                // Footer
+                                _Footer(),
+                                const SizedBox(height: 18),
+                                // Navigation Button for testing
+                                Center(
+                                  child: ElevatedButton(
+                                    onPressed: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) => BookDetailsPage(bookId: '123'), // Provide a valid bookId here
+                                        ),
+                                      );
+                                    },
+                                    child: const Text('Go to Book Details'),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          // Sidebar Widgets
+                          if (isWide)
+                            SizedBox(
+                              width: 300,
+                              child: SingleChildScrollView(
+                                padding: const EdgeInsets.only(top: 32, right: 16),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    _OnlineUsersWidget(users: onlineUsers),
+                                    const SizedBox(height: 24),
+                                    // Add more sidebar widgets here if needed
+                                  ],
+                                ),
+                              ),
+                            ),
                         ],
-                      ),
-                    ),
+                      );
+                    },
                   ),
-              ],
-            );
-          },
-        ),
       ),
     );
   }
@@ -460,12 +442,25 @@ class _HorizontalBookList extends StatelessWidget {
                       ),
                     ClipRRect(
                       borderRadius: BorderRadius.circular(12),
-                      child: Image.network(
-                        book['cover'],
-                        width: 70,
-                        height: 80,
-                        fit: BoxFit.cover,
-                      ),
+                      child: book['cover'] != null
+                          ? Image.network(
+                              book['cover'],
+                              width: 70,
+                              height: 80,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) => Container(
+                                width: 70,
+                                height: 80,
+                                color: Colors.grey[300],
+                                child: const Icon(Icons.book, size: 40, color: Colors.grey),
+                              ),
+                            )
+                          : Container(
+                              width: 70,
+                              height: 80,
+                              color: Colors.grey[300],
+                              child: const Icon(Icons.book, size: 40, color: Colors.grey),
+                            ),
                     ),
                     const SizedBox(height: 4),
                     SizedBox(
@@ -524,12 +519,25 @@ class _RecommendedList extends StatelessWidget {
                   children: [
                     ClipRRect(
                       borderRadius: BorderRadius.circular(10),
-                      child: Image.network(
-                        book['cover'],
-                        width: 70,
-                        height: 80,
-                        fit: BoxFit.cover,
-                      ),
+                      child: book['cover'] != null
+                          ? Image.network(
+                              book['cover'],
+                              width: 70,
+                              height: 80,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) => Container(
+                                width: 70,
+                                height: 80,
+                                color: Colors.grey[300],
+                                child: const Icon(Icons.book, size: 40, color: Colors.grey),
+                              ),
+                            )
+                          : Container(
+                              width: 70,
+                              height: 80,
+                              color: Colors.grey[300],
+                              child: const Icon(Icons.book, size: 40, color: Colors.grey),
+                            ),
                     ),
                     const SizedBox(height: 4),
                     Text(
@@ -609,12 +617,25 @@ class _RecentReadingsList extends StatelessWidget {
                   children: [
                     ClipRRect(
                       borderRadius: BorderRadius.circular(8),
-                      child: Image.network(
-                        book['cover'],
-                        width: 60,
-                        height: 70,
-                        fit: BoxFit.cover,
-                      ),
+                      child: book['cover'] != null
+                          ? Image.network(
+                              book['cover'],
+                              width: 60,
+                              height: 70,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) => Container(
+                                width: 60,
+                                height: 70,
+                                color: Colors.grey[300],
+                                child: const Icon(Icons.book, size: 35, color: Colors.grey),
+                              ),
+                            )
+                          : Container(
+                              width: 60,
+                              height: 70,
+                              color: Colors.grey[300],
+                              child: const Icon(Icons.book, size: 35, color: Colors.grey),
+                            ),
                     ),
                     const SizedBox(height: 4),
                     Text(
@@ -756,14 +777,11 @@ class _Footer extends StatelessWidget {
           Divider(),
           SizedBox(height: 8),
           Text(
-            'BRAIN COPYRIGHT (C) BRAINSTATION 23 LMS - 2025. ALL RIGHTS RESERVED. 23',
+            'Mr. and His Team COPYRIGHT (C) - 2025. ALL RIGHTS RESERVED',
             style: TextStyle(color: Colors.grey, fontSize: 12),
           ),
           SizedBox(height: 4),
-          Text(
-            'DATA RETENTION SUMMARY    |    GET THE MOBILE APP',
-            style: TextStyle(color: Colors.blueGrey, fontSize: 12),
-          ),
+
         ],
       ),
     );

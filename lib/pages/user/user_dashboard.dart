@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'user_books.dart';
+import '../../pages/club/book_club.dart';
 
 class UserDashboardPage extends StatelessWidget {
   const UserDashboardPage({
@@ -136,7 +138,12 @@ class UserDashboardPage extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(left: 16),
               child: ElevatedButton.icon(
-                onPressed: onMyBooksTap,
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const UserBooksPage()),
+                  );
+                },
                 icon: const Icon(Icons.menu_book),
                 label: const Text('My Books'),
                 style: ElevatedButton.styleFrom(
@@ -154,6 +161,18 @@ class UserDashboardPage extends StatelessWidget {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
+              ),
+            ),
+            // Navigation Button for testing
+            Center(
+              child: ElevatedButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const BookClubPage()),
+                  );
+                },
+                child: const Text('Go to Book Club'),
               ),
             ),
           ],

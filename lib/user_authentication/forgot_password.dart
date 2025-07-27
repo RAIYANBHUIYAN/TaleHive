@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:library_management_app/user_authentication/checkmail.dart'; // Import the check mail page
+import 'package:talehive/user_authentication/checkmail.dart'; // Import the check mail page
 
 class ForgotPassword extends StatelessWidget {
   const ForgotPassword({super.key});
