@@ -1521,12 +1521,23 @@ class _BorrowRequestDialogState extends State<BorrowRequestDialog> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Text('Borrow Request',
-              style: GoogleFonts.montserrat(
-                fontWeight: FontWeight.bold,
-                fontSize: 28,
-                color: const Color(0xFF22223b),
-              )),
+          Row(
+            children: [
+              Expanded(
+                child: Text('Borrow Request',
+                    style: GoogleFonts.montserrat(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 28,
+                      color: const Color(0xFF22223b),
+                    )),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, color: Colors.red, size: 28),
+                onPressed: () => Navigator.of(context).pop(),
+                splashRadius: 20,
+              ),
+            ],
+          ),
           const SizedBox(height: 18),
           ClipRRect(
             borderRadius: BorderRadius.circular(20),
