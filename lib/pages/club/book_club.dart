@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import '../../pages/user/author_dashboard.dart';
 
 class BookClubPage extends StatefulWidget {
   const BookClubPage({Key? key}) : super(key: key);
@@ -12,30 +15,59 @@ class _BookClubPageState extends State<BookClubPage> {
   final TextEditingController _searchController = TextEditingController();
   double _minRating = 0.0;
 
-  // Example book data
-  final List<Map<String, dynamic>> _allBooks = List.generate(
-    8,
-    (i) => {
-      'title': 'Book Title $i',
-      'author': 'Author Name $i',
-      'cover': 'https://covers.openlibrary.org/b/id/10523338-L.jpg',
-      'rating': 4.0 + (i % 2) * 0.5,
-      'description':
-          'This is a short description of the book. It gives a quick overview of the story, genre, or what makes it interesting.',
-    },
-  );
+  List<Map<String, dynamic>> _books = [];
+  bool _isLoading = true;
+  String _error = '';
+  String _searchText = 'harry potter';
 
-  String _searchText = '';
+  @override
+  void initState() {
+    super.initState();
+    fetchBooks();
+  }
+
+  Future<void> fetchBooks([String? query]) async {
+    setState(() {
+      _isLoading = true;
+      _error = '';
+    });
+    final q = query ?? _searchText;
+    try {
+      final response = await http.get(Uri.parse('https://openlibrary.org/search.json?q=${Uri.encodeComponent(q)}'));
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final List docs = data['docs'] ?? [];
+        setState(() {
+          _books = docs.map<Map<String, dynamic>>((doc) => {
+            'title': doc['title'] ?? '',
+            'author': (doc['author_name'] != null && doc['author_name'].isNotEmpty) ? doc['author_name'][0] : 'Unknown',
+            'cover': doc['cover_i'] != null ? 'https://covers.openlibrary.org/b/id/${doc['cover_i']}-L.jpg' : null,
+            'rating': 4.0, // OpenLibrary does not provide rating
+            'description': doc['first_sentence'] ?? '',
+          }).toList();
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _error = 'Failed to load books.';
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _error = 'Error: $e';
+        _isLoading = false;
+      });
+    }
+  }
 
   List<Map<String, dynamic>> get _filteredBooks {
-    return _allBooks.where((book) {
-      final searchLower = _searchText.toLowerCase();
-      final matchesSearch =
-          book['title'].toString().toLowerCase().contains(searchLower) ||
-          book['author'].toString().toLowerCase().contains(searchLower) ||
-          book['description'].toString().toLowerCase().contains(searchLower);
+    if (_minRating == 0.0) {
+      return _books;
+    }
+    return _books.where((book) {
       final matchesRating = (book['rating'] as double) >= _minRating;
-      return matchesSearch && matchesRating;
+      return matchesRating;
     }).toList();
   }
 
@@ -200,6 +232,9 @@ class _BookClubPageState extends State<BookClubPage> {
                             _searchText = value;
                           });
                         },
+                        onSubmitted: (value) {
+                          fetchBooks(value);
+                        },
                         decoration: InputDecoration(
                           hintText: 'Search books by title, author, or genre',
                           filled: true,
@@ -233,7 +268,11 @@ class _BookClubPageState extends State<BookClubPage> {
             ),
             const SizedBox(height: 28),
             // Book List
-            if (_filteredBooks.isEmpty)
+            if (_isLoading)
+              const Center(child: CircularProgressIndicator())
+            else if (_error.isNotEmpty)
+              Center(child: Text(_error, style: TextStyle(color: Colors.red)))
+            else if (_filteredBooks.isEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 40),
                 child: Center(
@@ -259,12 +298,25 @@ class _BookClubPageState extends State<BookClubPage> {
                           children: [
                             ClipRRect(
                               borderRadius: BorderRadius.circular(12),
-                              child: Image.network(
-                                (book['cover'] ?? '') as String,
-                                width: 80,
-                                height: 110,
-                                fit: BoxFit.cover,
-                              ),
+                              child: book['cover'] != null
+                                  ? Image.network(
+                                      book['cover'],
+                                      width: 80,
+                                      height: 110,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (context, error, stackTrace) => Container(
+                                        width: 80,
+                                        height: 110,
+                                        color: Colors.grey[300],
+                                        child: const Icon(Icons.book, size: 40, color: Colors.grey),
+                                      ),
+                                    )
+                                  : Container(
+                                      width: 80,
+                                      height: 110,
+                                      color: Colors.grey[300],
+                                      child: const Icon(Icons.book, size: 40, color: Colors.grey),
+                                    ),
                             ),
                             const SizedBox(width: 18),
                             Expanded(
@@ -330,6 +382,18 @@ class _BookClubPageState extends State<BookClubPage> {
                       ),
                     ),
                   )),
+            // Navigation Button for testing
+            Center(
+              child: ElevatedButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const AuthorDashboardPage()),
+                  );
+                },
+                child: const Text('Go to Author Dashboard'),
+              ),
+            ),
           ],
         ),
       ),
