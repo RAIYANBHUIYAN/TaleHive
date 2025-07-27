@@ -1521,16 +1521,10 @@ class _BorrowRequestDialogState extends State<BorrowRequestDialog> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          // Close button positioned at top right
           Row(
+            mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              Expanded(
-                child: Text('Borrow Request',
-                    style: GoogleFonts.montserrat(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 28,
-                      color: const Color(0xFF22223b),
-                    )),
-              ),
               IconButton(
                 icon: const Icon(Icons.close, color: Colors.red, size: 28),
                 onPressed: () => Navigator.of(context).pop(),
@@ -1538,6 +1532,14 @@ class _BorrowRequestDialogState extends State<BorrowRequestDialog> {
               ),
             ],
           ),
+          // Title centered below
+          Text('Borrow Request',
+              style: GoogleFonts.montserrat(
+                fontWeight: FontWeight.bold,
+                fontSize: 28,
+                color: const Color(0xFF22223b),
+              ),
+              textAlign: TextAlign.center),
           const SizedBox(height: 18),
           ClipRRect(
             borderRadius: BorderRadius.circular(20),
