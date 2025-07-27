@@ -917,7 +917,17 @@ class _RatingReviewsSection extends StatelessWidget {
                     Row(
                       children: [
                         ElevatedButton(
-                          onPressed: () {},
+                          onPressed: () {
+                            showDialog(
+                              context: context,
+                              barrierDismissible: true,
+                              builder: (context) => WriteReviewDialog(
+                                bookCover: book.cover,
+                                bookName: book.title,
+                                authorName: book.author,
+                              ),
+                            );
+                          },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF0096C7),
                             foregroundColor: Colors.white,
@@ -1243,6 +1253,226 @@ class _Footer extends StatelessWidget {
           SizedBox(height: 4),
 
         ],
+      ),
+    );
+  }
+}
+
+class WriteReviewDialog extends StatefulWidget {
+  final String bookCover;
+  final String bookName;
+  final String authorName;
+  
+  const WriteReviewDialog({
+    Key? key,
+    required this.bookCover,
+    required this.bookName,
+    required this.authorName,
+  }) : super(key: key);
+
+  @override
+  State<WriteReviewDialog> createState() => _WriteReviewDialogState();
+}
+
+class _WriteReviewDialogState extends State<WriteReviewDialog> {
+  int rating = 0;
+  final TextEditingController reviewController = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
+
+  @override
+  void dispose() {
+    reviewController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      backgroundColor: const Color(0xFF8BC7DB),
+      child: Container(
+        width: MediaQuery.of(context).size.width > 500 ? 500 : double.infinity,
+        padding: const EdgeInsets.all(32),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // Close button in top right
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white, size: 28),
+                    onPressed: () => Navigator.of(context).pop(),
+                    splashRadius: 20,
+                  ),
+                ],
+              ),
+              
+              // Title
+              Text(
+                'Write a Review',
+                style: GoogleFonts.montserrat(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 28,
+                  color: const Color(0xFF22223b),
+                ),
+              ),
+              const SizedBox(height: 24),
+              
+              // Book cover
+              ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Image.network(
+                  widget.bookCover,
+                  width: 120,
+                  height: 150,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    width: 120,
+                    height: 150,
+                    color: Colors.grey[300],
+                    child: const Icon(Icons.book, size: 40, color: Colors.grey),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              
+              // Book title
+              Text(
+                widget.bookName,
+                style: GoogleFonts.montserrat(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 20,
+                  color: const Color(0xFF22223b),
+                ),
+                textAlign: TextAlign.center,
+              ),
+              
+              // Author name
+              Text(
+                widget.authorName,
+                style: GoogleFonts.montserrat(
+                  fontWeight: FontWeight.w500,
+                  fontSize: 16,
+                  color: Colors.black87,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 20),
+              
+              // Star rating
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(5, (i) => IconButton(
+                  icon: Icon(
+                    i < rating ? Icons.star : Icons.star_border,
+                    color: const Color(0xFFFF6B35),
+                    size: 32,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      rating = i + 1;
+                    });
+                  },
+                  splashRadius: 20,
+                )),
+              ),
+              const SizedBox(height: 20),
+              
+              // Reviews label
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Reviews',
+                  style: GoogleFonts.montserrat(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 16,
+                    color: const Color(0xFF22223b),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              
+              // Review text field
+              Form(
+                key: _formKey,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: TextFormField(
+                    controller: reviewController,
+                    minLines: 4,
+                    maxLines: 6,
+                    decoration: InputDecoration(
+                      hintText: 'Write your review about this book',
+                      hintStyle: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 14,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                      contentPadding: const EdgeInsets.all(16),
+                      filled: true,
+                      fillColor: Colors.white,
+                    ),
+                    validator: (value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return 'Please enter a review';
+                      }
+                      return null;
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              
+              // Submit button
+              SizedBox(
+                width: 120,
+                child: ElevatedButton(
+                  onPressed: () {
+                    if (_formKey.currentState!.validate() && rating > 0) {
+                      // Handle review submission here
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Review submitted successfully!'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                      Navigator.of(context).pop();
+                    } else if (rating == 0) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Please select a rating'),
+                          backgroundColor: Colors.orange,
+                        ),
+                      );
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF38B000),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    textStyle: GoogleFonts.montserrat(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  child: const Text('Submit'),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
