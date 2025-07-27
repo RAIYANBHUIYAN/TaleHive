@@ -1040,6 +1040,75 @@ class _CommunityReviewsChart extends StatelessWidget {
   }
 }
 
+class BorrowSuccessDialog extends StatelessWidget {
+  const BorrowSuccessDialog({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      backgroundColor: Colors.white,
+      child: Container(
+        width: MediaQuery.of(context).size.width > 400 ? 400 : double.infinity,
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Close button in top right
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.red,
+                    shape: BoxShape.circle,
+                  ),
+                  child: IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white, size: 20),
+                    onPressed: () => Navigator.of(context).pop(),
+                    splashRadius: 16,
+                    padding: const EdgeInsets.all(4),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            
+            // Success message
+            Text(
+              'Thank you for the book borrow request',
+              style: GoogleFonts.montserrat(
+                fontWeight: FontWeight.bold,
+                fontSize: 20,
+                color: const Color(0xFF0096C7),
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            
+            Text(
+              'Please, wait for the Admin\'s Approval',
+              style: GoogleFonts.montserrat(
+                fontWeight: FontWeight.w500,
+                fontSize: 16,
+                color: const Color(0xFF0096C7),
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            
+            // Divider line like in the image
+            const Divider(
+              thickness: 1,
+              color: Colors.grey,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _ReviewItem extends StatelessWidget {
   final Review review;
   const _ReviewItem({required this.review});
@@ -1302,10 +1371,17 @@ class _WriteReviewDialogState extends State<WriteReviewDialog> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white, size: 28),
-                    onPressed: () => Navigator.of(context).pop(),
-                    splashRadius: 20,
+                  Container(
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                    child: IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white, size: 20),
+                      onPressed: () => Navigator.of(context).pop(),
+                      splashRadius: 16,
+                      padding: const EdgeInsets.all(4),
+                    ),
                   ),
                 ],
               ),
@@ -1521,12 +1597,32 @@ class _BorrowRequestDialogState extends State<BorrowRequestDialog> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          // Close button positioned at top right
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              Container(
+                decoration: const BoxDecoration(
+                  color: Colors.red,
+                  shape: BoxShape.circle,
+                ),
+                child: IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white, size: 20),
+                  onPressed: () => Navigator.of(context).pop(),
+                  splashRadius: 16,
+                  padding: const EdgeInsets.all(4),
+                ),
+              ),
+            ],
+          ),
+          // Title centered below
           Text('Borrow Request',
               style: GoogleFonts.montserrat(
                 fontWeight: FontWeight.bold,
                 fontSize: 28,
                 color: const Color(0xFF22223b),
-              )),
+              ),
+              textAlign: TextAlign.center),
           const SizedBox(height: 18),
           ClipRRect(
             borderRadius: BorderRadius.circular(20),
@@ -1664,10 +1760,17 @@ class _BorrowRequestDialogState extends State<BorrowRequestDialog> {
                   overflow: TextOverflow.visible,
                 ),
               ),
-              IconButton(
-                icon: const Icon(Icons.close, color: Colors.red, size: 28),
-                onPressed: () => Navigator.of(context).pop(),
-                splashRadius: 20,
+              Container(
+                decoration: const BoxDecoration(
+                  color: Colors.red,
+                  shape: BoxShape.circle,
+                ),
+                child: IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white, size: 20),
+                  onPressed: () => Navigator.of(context).pop(),
+                  splashRadius: 16,
+                  padding: const EdgeInsets.all(4),
+                ),
               ),
             ],
           ),
@@ -1803,7 +1906,14 @@ class _BorrowRequestDialogState extends State<BorrowRequestDialog> {
                       );
                       return;
                     }
+                    // Close current dialog first
                     Navigator.of(context).pop();
+                    // Show success message dialog
+                    showDialog(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (context) => const BorrowSuccessDialog(),
+                    );
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF0096C7),
