@@ -96,7 +96,10 @@ class _BookClubPageState extends State<BookClubPage> {
                   children: [
                     const Text(
                       'Filter by Minimum Rating',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                      ),
                     ),
                     const SizedBox(height: 18),
                     Row(
@@ -197,7 +200,10 @@ class _BookClubPageState extends State<BookClubPage> {
                         const SizedBox(height: 8),
                         Text(
                           'Discover and discuss books with the community',
-                          style: TextStyle(color: Colors.blueGrey[600], fontSize: 15),
+                          style: TextStyle(
+                            color: Colors.blueGrey[600],
+                            fontSize: 15,
+                          ),
                         ),
                         const SizedBox(height: 10),
                         Container(
@@ -221,7 +227,10 @@ class _BookClubPageState extends State<BookClubPage> {
                 borderRadius: BorderRadius.circular(16),
               ),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 child: Row(
                   children: [
                     Expanded(
@@ -239,8 +248,14 @@ class _BookClubPageState extends State<BookClubPage> {
                           hintText: 'Search books by title, author, or genre',
                           filled: true,
                           fillColor: Colors.white,
-                          prefixIcon: const Icon(Icons.search, color: Color(0xFF0096C7)),
-                          contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
+                          prefixIcon: const Icon(
+                            Icons.search,
+                            color: Color(0xFF0096C7),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            vertical: 0,
+                            horizontal: 16,
+                          ),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                             borderSide: BorderSide.none,
@@ -259,7 +274,10 @@ class _BookClubPageState extends State<BookClubPage> {
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 12,
+                        ),
                       ),
                     ),
                   ],
@@ -283,95 +301,94 @@ class _BookClubPageState extends State<BookClubPage> {
                 ),
               )
             else
-              ..._filteredBooks.map((book) => Padding(
-                    padding: const EdgeInsets.only(bottom: 18),
-                    child: Card(
-                      elevation: 3,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      color: Colors.white,
-                      child: Padding(
-                        padding: const EdgeInsets.all(18),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: book['cover'] != null
-                                  ? Image.network(
-                                      book['cover'],
-                                      width: 80,
-                                      height: 110,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (context, error, stackTrace) => Container(
-                                        width: 80,
-                                        height: 110,
-                                        color: Colors.grey[300],
-                                        child: const Icon(Icons.book, size: 40, color: Colors.grey),
-                                      ),
-                                    )
-                                  : Container(
-                                      width: 80,
-                                      height: 110,
-                                      color: Colors.grey[300],
-                                      child: const Icon(Icons.book, size: 40, color: Colors.grey),
-                                    ),
+              ..._filteredBooks.map(
+                (book) => Padding(
+                  padding: const EdgeInsets.only(bottom: 18),
+                  child: Card(
+                    elevation: 3,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    color: Colors.white,
+                    child: Padding(
+                      padding: const EdgeInsets.all(18),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Image.network(
+                              (book['cover'] ?? '') as String,
+                              width: 80,
+                              height: 110,
+                              fit: BoxFit.cover,
                             ),
-                            const SizedBox(width: 18),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    (book['title'] ?? '') as String,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 18,
-                                      color: Color(0xFF0096C7),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    (book['author'] ?? '') as String,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w500,
-                                      fontSize: 15,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.star, color: Colors.amber, size: 18),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        '${book['rating']}',
-                                        style: const TextStyle(fontWeight: FontWeight.bold),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    (book['description'] ?? '') as String,
-                                    maxLines: 3,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(fontSize: 14, color: Colors.black87),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Column(
+                          ),
+                          const SizedBox(width: 18),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                ElevatedButton(
-                                  onPressed: () {},
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF0096C7),
-                                    foregroundColor: Colors.white,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8),
+                                Text(
+                                  (book['title'] ?? '') as String,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 18,
+                                    color: Color(0xFF0096C7),
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  (book['author'] ?? '') as String,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w500,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.star,
+                                      color: Colors.amber,
+                                      size: 18,
                                     ),
-                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      '${book['rating']}',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  (book['description'] ?? '') as String,
+                                  maxLines: 3,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Column(
+                            children: [
+                              ElevatedButton(
+                                onPressed: () {},
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF0096C7),
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 8,
                                   ),
                                   child: const Text('View'),
                                 ),
