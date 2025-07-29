@@ -7,14 +7,16 @@ class BooksAndClubManagementPage extends StatefulWidget {
   const BooksAndClubManagementPage({Key? key}) : super(key: key);
 
   @override
-  State<BooksAndClubManagementPage> createState() => _BooksAndClubManagementPageState();
+  State<oksAndClubManagementPage> createState() =>
+      _BooksAndClubManagementPageState();
 }
 
-class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage> with SingleTickerProviderStateMixin {
+class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _bookSearchController = TextEditingController();
-  
+
   // Filter categories
   List<String> _bookCategories = [
     'Machine learning',
@@ -25,9 +27,9 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
     'Next.js easy way',
     'C, C++, Python in one',
   ];
-  
+
   List<String> _selectedCategories = [];
-  
+
   // Sample data for demonstration
   List<Map<String, dynamic>> _books = [
     {
@@ -178,8 +180,6 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
         bottom: false,
         child: Column(
           children: [
-
-
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
               decoration: BoxDecoration(
@@ -202,7 +202,10 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
                   fontWeight: FontWeight.w500,
                   fontSize: 13,
                 ),
-                labelPadding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+                labelPadding: const EdgeInsets.symmetric(
+                  horizontal: 2,
+                  vertical: 2,
+                ),
                 indicatorPadding: EdgeInsets.zero,
                 indicatorSize: TabBarIndicatorSize.tab,
                 dividerColor: Colors.transparent,
@@ -290,11 +293,7 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(
-                            Icons.add,
-                            color: Colors.white,
-                            size: 20,
-                          ),
+                          const Icon(Icons.add, color: Colors.white, size: 20),
                           const SizedBox(width: 8),
                           Text(
                             'Add Book',
@@ -461,16 +460,16 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
                 itemBuilder: (context, index) {
                   final book = _books[index];
                   final isEven = index % 2 == 0;
-                  
+
                   return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 16,
+                    ),
                     decoration: BoxDecoration(
                       color: isEven ? Colors.white : const Color(0xFFFAFCFF),
                       border: Border(
-                        bottom: BorderSide(
-                          color: Colors.grey[200]!,
-                          width: 1,
-                        ),
+                        bottom: BorderSide(color: Colors.grey[200]!, width: 1),
                       ),
                     ),
                     child: SingleChildScrollView(
@@ -623,11 +622,7 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
         child: InkWell(
           borderRadius: BorderRadius.circular(6),
           onTap: onTap,
-          child: Icon(
-            icon,
-            color: color,
-            size: 14,
-          ),
+          child: Icon(icon, color: color, size: 14),
         ),
       ),
     );
@@ -637,7 +632,9 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
     final nameController = TextEditingController(text: book['name']);
     final languageController = TextEditingController(text: book['language']);
     final typeController = TextEditingController(text: book['type']);
-    final quantityController = TextEditingController(text: '1'); // Default quantity
+    final quantityController = TextEditingController(
+      text: '1',
+    ); // Default quantity
 
     showDialog(
       context: context,
@@ -814,11 +811,8 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
         };
       }
     });
-    
-    _showSnackBar(
-      'Book "$name" updated successfully!',
-      isSuccess: true,
-    );
+
+    _showSnackBar('Book "$name" updated successfully!', isSuccess: true);
   }
 
   void _showDeleteConfirmationDialog(Map<String, dynamic> book) {
@@ -832,9 +826,7 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
           ),
           child: Container(
             width: MediaQuery.of(context).size.width * 0.9,
-            constraints: const BoxConstraints(
-              maxWidth: 400,
-            ),
+            constraints: const BoxConstraints(maxWidth: 400),
             padding: const EdgeInsets.all(24),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -884,10 +876,7 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
                 ),
                 const SizedBox(height: 24),
                 // Divider
-                Container(
-                  height: 1,
-                  color: Colors.grey[300],
-                ),
+                Container(height: 1, color: Colors.grey[300]),
                 const SizedBox(height: 24),
                 // Confirmation message
                 Text(
@@ -939,7 +928,7 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
     setState(() {
       _books.remove(book);
     });
-    
+
     _showSnackBar(
       'Book "${book['name']}" deleted successfully!',
       isSuccess: true,
@@ -957,9 +946,7 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
           ),
           child: Container(
             width: MediaQuery.of(context).size.width * 0.9,
-            constraints: const BoxConstraints(
-              maxWidth: 450,
-            ),
+            constraints: const BoxConstraints(maxWidth: 450),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -1016,10 +1003,7 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
                   ),
                 ),
                 // Divider
-                Container(
-                  height: 1,
-                  color: Colors.grey[300],
-                ),
+                Container(height: 1, color: Colors.grey[300]),
                 const SizedBox(height: 24),
                 // Content
                 Flexible(
@@ -1034,13 +1018,19 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              _buildViewDetailItem('Book ID :', '${book['id']}'),
+                              _buildViewDetailItem(
+                                'Book ID :',
+                                '${book['id']}',
+                              ),
                               const SizedBox(height: 16),
                               _buildViewDetailItem('Name :', book['name']),
                               const SizedBox(height: 16),
                               _buildViewDetailItem('Type :', book['type']),
                               const SizedBox(height: 16),
-                              _buildViewDetailItem('Language :', book['language']),
+                              _buildViewDetailItem(
+                                'Language :',
+                                book['language'],
+                              ),
                             ],
                           ),
                         ),
@@ -1143,10 +1133,7 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
           padding: const EdgeInsets.symmetric(vertical: 8),
           decoration: BoxDecoration(
             border: Border(
-              bottom: BorderSide(
-                color: Colors.grey[300]!,
-                width: 1,
-              ),
+              bottom: BorderSide(color: Colors.grey[300]!, width: 1),
             ),
           ),
           child: Text(
@@ -1167,7 +1154,7 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
     final languageController = TextEditingController();
     final typeController = TextEditingController();
     final quantityController = TextEditingController();
-    
+
     String? selectedBookFile;
     String? selectedPdfFile;
     String? selectedSummaryFile;
@@ -1286,17 +1273,23 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
                               ],
                             ),
                             const SizedBox(height: 24),
-                            
+
                             // File selection indicators
-                            if (selectedBookFile != null) 
-                              _buildFileIndicator('Book File', selectedBookFile!),
-                            if (selectedPdfFile != null) 
+                            if (selectedBookFile != null)
+                              _buildFileIndicator(
+                                'Book File',
+                                selectedBookFile!,
+                              ),
+                            if (selectedPdfFile != null)
                               _buildFileIndicator('PDF File', selectedPdfFile!),
-                            if (selectedSummaryFile != null) 
-                              _buildFileIndicator('Summary File', selectedSummaryFile!),
-                            
+                            if (selectedSummaryFile != null)
+                              _buildFileIndicator(
+                                'Summary File',
+                                selectedSummaryFile!,
+                              ),
+
                             const SizedBox(height: 16),
-                            
+
                             // Action buttons
                             Column(
                               children: [
@@ -1308,22 +1301,31 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
                                         text: 'CANCEL',
                                         backgroundColor: Colors.grey[300]!,
                                         textColor: Colors.grey[700]!,
-                                        onPressed: () => Navigator.of(context).pop(),
+                                        onPressed: () =>
+                                            Navigator.of(context).pop(),
                                       ),
                                     ),
                                     const SizedBox(width: 16),
                                     Expanded(
                                       child: _buildDialogActionButton(
                                         text: 'ADD BOOK',
-                                        backgroundColor: const Color(0xFF0096C7),
+                                        backgroundColor: const Color(
+                                          0xFF0096C7,
+                                        ),
                                         textColor: Colors.white,
                                         onPressed: () async {
-                                          final result = await _pickFile(['pdf', 'epub', 'txt']);
+                                          final result = await _pickFile([
+                                            'pdf',
+                                            'epub',
+                                            'txt',
+                                          ]);
                                           if (result != null) {
                                             setState(() {
                                               selectedBookFile = result;
                                             });
-                                            _showSnackBar('Book file selected: ${result.split('/').last}');
+                                            _showSnackBar(
+                                              'Book file selected: ${result.split('/').last}',
+                                            );
                                           }
                                         },
                                       ),
@@ -1339,22 +1341,29 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
                                         text: 'CANCEL',
                                         backgroundColor: Colors.grey[300]!,
                                         textColor: Colors.grey[700]!,
-                                        onPressed: () => Navigator.of(context).pop(),
+                                        onPressed: () =>
+                                            Navigator.of(context).pop(),
                                       ),
                                     ),
                                     const SizedBox(width: 16),
                                     Expanded(
                                       child: _buildDialogActionButton(
                                         text: 'ADD PDF',
-                                        backgroundColor: const Color(0xFF0096C7),
+                                        backgroundColor: const Color(
+                                          0xFF0096C7,
+                                        ),
                                         textColor: Colors.white,
                                         onPressed: () async {
-                                          final result = await _pickFile(['pdf']);
+                                          final result = await _pickFile([
+                                            'pdf',
+                                          ]);
                                           if (result != null) {
                                             setState(() {
                                               selectedPdfFile = result;
                                             });
-                                            _showSnackBar('PDF file selected: ${result.split('/').last}');
+                                            _showSnackBar(
+                                              'PDF file selected: ${result.split('/').last}',
+                                            );
                                           }
                                         },
                                       ),
@@ -1370,22 +1379,32 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
                                         text: 'CANCEL',
                                         backgroundColor: Colors.grey[300]!,
                                         textColor: Colors.grey[700]!,
-                                        onPressed: () => Navigator.of(context).pop(),
+                                        onPressed: () =>
+                                            Navigator.of(context).pop(),
                                       ),
                                     ),
                                     const SizedBox(width: 16),
                                     Expanded(
                                       child: _buildDialogActionButton(
                                         text: 'ADD SUMMARY',
-                                        backgroundColor: const Color(0xFF0096C7),
+                                        backgroundColor: const Color(
+                                          0xFF0096C7,
+                                        ),
                                         textColor: Colors.white,
                                         onPressed: () async {
-                                          final result = await _pickFile(['pdf', 'txt', 'doc', 'docx']);
+                                          final result = await _pickFile([
+                                            'pdf',
+                                            'txt',
+                                            'doc',
+                                            'docx',
+                                          ]);
                                           if (result != null) {
                                             setState(() {
                                               selectedSummaryFile = result;
                                             });
-                                            _showSnackBar('Summary file selected: ${result.split('/').last}');
+                                            _showSnackBar(
+                                              'Summary file selected: ${result.split('/').last}',
+                                            );
                                           }
                                         },
                                       ),
@@ -1460,11 +1479,7 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
       ),
       child: Row(
         children: [
-          Icon(
-            Icons.check_circle,
-            color: Colors.green,
-            size: 20,
-          ),
+          Icon(Icons.check_circle, color: Colors.green, size: 20),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -1505,13 +1520,17 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
   }) {
     // Here you would implement the actual save logic
     // For now, we'll just show a success message
-    final fileCount = [bookFile, pdfFile, summaryFile].where((f) => f != null).length;
-    
+    final fileCount = [
+      bookFile,
+      pdfFile,
+      summaryFile,
+    ].where((f) => f != null).length;
+
     _showSnackBar(
       'Book "$name" saved successfully with $fileCount file(s)!',
       isSuccess: true,
     );
-    
+
     // You can add the book to your list here
     // setState(() {
     //   _books.add({
@@ -1533,9 +1552,7 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
         ),
         backgroundColor: isSuccess ? Colors.green : const Color(0xFF0096C7),
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     );
   }
@@ -1577,10 +1594,7 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
               vertical: 16,
             ),
           ),
-          style: GoogleFonts.montserrat(
-            fontSize: 14,
-            color: Colors.black87,
-          ),
+          style: GoogleFonts.montserrat(fontSize: 14, color: Colors.black87),
         ),
       ],
     );
@@ -1595,9 +1609,7 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
     return Container(
       width: double.infinity,
       height: 48,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-      ),
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(12)),
       child: ElevatedButton(
         onPressed: onPressed,
         style: ElevatedButton.styleFrom(
@@ -1645,9 +1657,7 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
               ),
               child: Container(
                 width: MediaQuery.of(context).size.width * 0.9,
-                constraints: const BoxConstraints(
-                  maxWidth: 400,
-                ),
+                constraints: const BoxConstraints(maxWidth: 400),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -1704,10 +1714,7 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
                       ),
                     ),
                     // Divider
-                    Container(
-                      height: 1,
-                      color: Colors.grey[300],
-                    ),
+                    Container(height: 1, color: Colors.grey[300]),
                     const SizedBox(height: 16),
                     // Category list
                     Flexible(
@@ -1721,8 +1728,9 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
                                 itemCount: _bookCategories.length,
                                 itemBuilder: (context, index) {
                                   final category = _bookCategories[index];
-                                  final isSelected = _selectedCategories.contains(category);
-                                  
+                                  final isSelected = _selectedCategories
+                                      .contains(category);
+
                                   return Container(
                                     margin: const EdgeInsets.only(bottom: 8),
                                     child: Material(
@@ -1732,7 +1740,9 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
                                         onTap: () {
                                           setState(() {
                                             if (isSelected) {
-                                              _selectedCategories.remove(category);
+                                              _selectedCategories.remove(
+                                                category,
+                                              );
                                             } else {
                                               _selectedCategories.add(category);
                                             }
@@ -1744,13 +1754,19 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
                                             vertical: 12,
                                           ),
                                           decoration: BoxDecoration(
-                                            color: isSelected 
-                                                ? const Color(0xFF0096C7).withOpacity(0.1)
+                                            color: isSelected
+                                                ? const Color(
+                                                    0xFF0096C7,
+                                                  ).withOpacity(0.1)
                                                 : Colors.transparent,
-                                            borderRadius: BorderRadius.circular(8),
-                                            border: isSelected 
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                            border: isSelected
                                                 ? Border.all(
-                                                    color: const Color(0xFF0096C7),
+                                                    color: const Color(
+                                                      0xFF0096C7,
+                                                    ),
                                                     width: 1,
                                                   )
                                                 : null,
@@ -1762,10 +1778,12 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
                                                   category,
                                                   style: GoogleFonts.montserrat(
                                                     fontSize: 14,
-                                                    color: isSelected 
-                                                        ? const Color(0xFF0096C7)
+                                                    color: isSelected
+                                                        ? const Color(
+                                                            0xFF0096C7,
+                                                          )
                                                         : Colors.black87,
-                                                    fontWeight: isSelected 
+                                                    fontWeight: isSelected
                                                         ? FontWeight.w600
                                                         : FontWeight.w400,
                                                   ),
@@ -1774,7 +1792,9 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
                                               if (isSelected)
                                                 Icon(
                                                   Icons.check,
-                                                  color: const Color(0xFF0096C7),
+                                                  color: const Color(
+                                                    0xFF0096C7,
+                                                  ),
                                                   size: 18,
                                                 ),
                                             ],
@@ -1839,12 +1859,12 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
       _showSnackBar('No categories selected for filtering');
       return;
     }
-    
+
     _showSnackBar(
       'Filter applied for ${_selectedCategories.length} category(ies): ${_selectedCategories.join(', ')}',
       isSuccess: true,
     );
-    
+
     // Here you would implement the actual filtering logic
     // For example, filter the _books list based on selected categories
   }
@@ -1852,9 +1872,13 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
   // Book Club Dialog Methods
   void _showUpdateBookClubDialog(Map<String, dynamic> bookClub) {
     final nameController = TextEditingController(text: bookClub['name']);
-    final categoryController = TextEditingController(text: bookClub['category']);
+    final categoryController = TextEditingController(
+      text: bookClub['category'],
+    );
     final statusController = TextEditingController(text: bookClub['status']);
-    final quantityController = TextEditingController(text: '1'); // Default quantity
+    final quantityController = TextEditingController(
+      text: '1',
+    ); // Default quantity
 
     showDialog(
       context: context,
@@ -2030,11 +2054,8 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
         };
       }
     });
-    
-    _showSnackBar(
-      'Book Club "$name" updated successfully!',
-      isSuccess: true,
-    );
+
+    _showSnackBar('Book Club "$name" updated successfully!', isSuccess: true);
   }
 
   void _showDeleteBookClubConfirmationDialog(Map<String, dynamic> bookClub) {
@@ -2048,9 +2069,7 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
           ),
           child: Container(
             width: MediaQuery.of(context).size.width * 0.9,
-            constraints: const BoxConstraints(
-              maxWidth: 400,
-            ),
+            constraints: const BoxConstraints(maxWidth: 400),
             padding: const EdgeInsets.all(24),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -2100,10 +2119,7 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
                 ),
                 const SizedBox(height: 24),
                 // Divider
-                Container(
-                  height: 1,
-                  color: Colors.grey[300],
-                ),
+                Container(height: 1, color: Colors.grey[300]),
                 const SizedBox(height: 24),
                 // Confirmation message
                 Text(
@@ -2155,7 +2171,7 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
     setState(() {
       _bookClubs.remove(bookClub);
     });
-    
+
     _showSnackBar(
       'Book Club "${bookClub['name']}" deleted successfully!',
       isSuccess: true,
@@ -2173,9 +2189,7 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
           ),
           child: Container(
             width: MediaQuery.of(context).size.width * 0.9,
-            constraints: const BoxConstraints(
-              maxWidth: 450,
-            ),
+            constraints: const BoxConstraints(maxWidth: 450),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -2232,10 +2246,7 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
                   ),
                 ),
                 // Divider
-                Container(
-                  height: 1,
-                  color: Colors.grey[300],
-                ),
+                Container(height: 1, color: Colors.grey[300]),
                 const SizedBox(height: 24),
                 // Content
                 Flexible(
@@ -2250,13 +2261,22 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              _buildViewDetailItem('Club ID :', '${bookClub['id']}'),
+                              _buildViewDetailItem(
+                                'Club ID :',
+                                '${bookClub['id']}',
+                              ),
                               const SizedBox(height: 16),
                               _buildViewDetailItem('Name :', bookClub['name']),
                               const SizedBox(height: 16),
-                              _buildViewDetailItem('Category :', bookClub['category']),
+                              _buildViewDetailItem(
+                                'Category :',
+                                bookClub['category'],
+                              ),
                               const SizedBox(height: 16),
-                              _buildViewDetailItem('Status :', bookClub['status']),
+                              _buildViewDetailItem(
+                                'Status :',
+                                bookClub['status'],
+                              ),
                             ],
                           ),
                         ),
@@ -2423,11 +2443,7 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(
-                            Icons.add,
-                            color: Colors.white,
-                            size: 20,
-                          ),
+                          const Icon(Icons.add, color: Colors.white, size: 20),
                           const SizedBox(width: 8),
                           Text(
                             'Add Book',
@@ -2552,16 +2568,16 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
                 itemBuilder: (context, index) {
                   final bookClub = _bookClubs[index];
                   final isEven = index % 2 == 0;
-                  
+
                   return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 16,
+                    ),
                     decoration: BoxDecoration(
                       color: isEven ? Colors.white : const Color(0xFFFAFCFF),
                       border: Border(
-                        bottom: BorderSide(
-                          color: Colors.grey[200]!,
-                          width: 1,
-                        ),
+                        bottom: BorderSide(color: Colors.grey[200]!, width: 1),
                       ),
                     ),
                     child: SingleChildScrollView(
@@ -2656,7 +2672,9 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
                                   icon: Icons.delete,
                                   color: Colors.red,
                                   onTap: () {
-                                    _showDeleteBookClubConfirmationDialog(bookClub);
+                                    _showDeleteBookClubConfirmationDialog(
+                                      bookClub,
+                                    );
                                   },
                                 ),
                                 _buildActionButton(
