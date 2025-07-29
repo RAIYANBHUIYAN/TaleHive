@@ -329,7 +329,7 @@ class _BookClubPageState extends State<BookClubPage> {
                                   maxLines: 3,
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
-                                    fontSize: 14,
+                                    fontSize: 15,
                                     color: Colors.black87,
                                   ),
                                 ),
