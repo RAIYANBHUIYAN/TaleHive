@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'catalog/all_users_books_reqst_Catalog_management.dart';
 import 'books/books_and_club_management.dart';
 import 'users/user_management.dart';
+import '../../components/admin_sidebar.dart';
 
 class AdminDashboardPage extends StatefulWidget {
   const AdminDashboardPage({Key? key}) : super(key: key);
@@ -35,6 +36,23 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     setState(() {
       _isSidebarOpen = !_isSidebarOpen;
     });
+  }
+
+  void _handleSidebarTap(String label) {
+    if (label == 'Log Out') {
+      // TODO: Implement logout logic
+    } else if (label == 'Catalog') {
+      Navigator.of(context).push(_createRoute(const AllUsersBookRequestCatalogManagementPage()));
+      _toggleSidebar();
+    } else if (label == 'Books') {
+      Navigator.of(context).push(_createRoute(const BooksAndClubManagementPage()));
+      _toggleSidebar();
+    } else if (label == 'Users') {
+      Navigator.of(context).push(_createRoute(const UserManagementPage()));
+      _toggleSidebar();
+    } else {
+      _toggleSidebar();
+    }
   }
 
   @override
@@ -70,146 +88,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             left: _isSidebarOpen ? 0 : -280,
             top: 0,
             bottom: 0,
-            child: _buildSidebar(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSidebar() {
-    return Container(
-      width: 280,
-      color: const Color(0xFF0096C7),
-      child: Column(
-        children: [
-          const SizedBox(height: 40),
-          // Logo Section
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-
-          ),
-          const SizedBox(height: 24),
-          // Profile Section
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 24),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: Colors.white.withOpacity(0.2),
-                width: 1,
-              ),
-            ),
-            child: Row(
-              children: [
-                // Profile Avatar
-                Container(
-                  width: 100,
-                  height: 100,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: Colors.white.withOpacity(0.3),
-                      width: 2,
-                    ),
-                  ),
-                  child: ClipOval(
-                    child: Image.asset(
-                      'Asset/images/loren.jpg',
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return const Icon(
-                          Icons.person,
-                          color: Color(0xFF0096C7),
-                          size: 30,
-                        );
-                      },
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                // Profile Info
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Admin',
-                        style: GoogleFonts.montserrat(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'System Administrator',
-                        style: GoogleFonts.montserrat(
-                          color: Colors.white70,
-                          fontSize: 11,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Container(
-                            width: 6,
-                            height: 6,
-                            decoration: const BoxDecoration(
-                              color: Colors.green,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Online',
-                            style: GoogleFonts.montserrat(
-                              color: Colors.white70,
-                              fontSize: 10,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-          // Navigation Menu
-          Expanded(
-            child: Column(
-              children: [
-                _buildSidebarItem(
-                  icon: Icons.dashboard,
-                  label: 'Dashboard',
-                  isSelected: true,
-                ),
-                _buildSidebarItem(
-                  icon: Icons.menu_book,
-                  label: 'Catalog',
-                ),
-                _buildSidebarItem(
-                  icon: Icons.book,
-                  label: 'Books',
-                ),
-                _buildSidebarItem(
-                  icon: Icons.people,
-                  label: 'Users',
-                ),
-              ],
-            ),
-          ),
-          // Logout Button
-          Container(
-            margin: const EdgeInsets.all(24),
-            child: _buildSidebarItem(
-              icon: Icons.logout,
-              label: 'Log Out',
+            child: AdminSidebar(
+              onItemTap: _handleSidebarTap,
+              isDashboard: true,
             ),
           ),
         ],
@@ -217,51 +98,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     );
   }
 
-  Widget _buildSidebarItem({
-    required IconData icon,
-    required String label,
-    bool isSelected = false,
-  }) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      decoration: BoxDecoration(
-        color: isSelected ? Colors.white.withOpacity(0.2) : Colors.transparent,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: ListTile(
-        leading: Icon(
-          icon,
-          color: Colors.white,
-          size: 24,
-        ),
-        title: Text(
-          label,
-          style: GoogleFonts.montserrat(
-            color: Colors.white,
-            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-            fontSize: 16,
-          ),
-        ),
-        onTap: () {
-          // Handle navigation
-          if (label == 'Log Out') {
-            // Handle logout
-          } else if (label == 'Catalog') {
-            Navigator.of(context).push(_createRoute(const AllUsersBookRequestCatalogManagementPage()));
-            _toggleSidebar();
-          } else if (label == 'Books') {
-            Navigator.of(context).push(_createRoute(const BooksAndClubManagementPage()));
-            _toggleSidebar();
-          } else if (label == 'Users') {
-            Navigator.of(context).push(_createRoute(const UserManagementPage()));
-            _toggleSidebar();
-          } else {
-            _toggleSidebar();
-          }
-        },
-      ),
-    );
-  }
+
+
+
 
   Widget _buildHeader() {
     final bool isMobile = MediaQuery.of(context).size.width < 768;
@@ -1004,71 +843,5 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     );
   }
 
-  Widget _buildMostReadableBookItem() {
-    final bool isMobile = MediaQuery.of(context).size.width < 768;
-    
-    return Container(
-      margin: EdgeInsets.symmetric(horizontal: isMobile ? 16 : 20),
-      padding: EdgeInsets.all(isMobile ? 12 : 16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8F9FA),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: Colors.grey[200]!,
-          width: 1,
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: EdgeInsets.all(isMobile ? 6 : 8),
-            decoration: BoxDecoration(
-              color: const Color(0xFF0096C7).withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(
-              Icons.menu_book,
-              color: const Color(0xFF0096C7),
-              size: isMobile ? 16 : 20,
-            ),
-          ),
-          SizedBox(width: isMobile ? 8 : 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Deep Learning - Matara',
-                  style: GoogleFonts.montserrat(
-                    fontWeight: FontWeight.w600,
-                    fontSize: isMobile ? 12 : 14,
-                    color: const Color(0xFF2D3748),
-                  ),
-                ),
-                Text(
-                  'Branch ID: 1',
-                  style: GoogleFonts.montserrat(
-                    fontSize: isMobile ? 10 : 12,
-                    color: const Color(0xFF4A5568),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Container(
-            padding: EdgeInsets.all(isMobile ? 2 : 4),
-            decoration: BoxDecoration(
-              color: const Color(0xFF0096C7).withOpacity(0.1),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Icon(
-              Icons.sync,
-              color: const Color(0xFF0096C7),
-              size: isMobile ? 12 : 16,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+
 }

@@ -14,7 +14,7 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
   late TabController _tabController;
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _bookSearchController = TextEditingController();
-  
+
   // Filter categories
   List<String> _bookCategories = [
     'Machine learning',
@@ -25,9 +25,9 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
     'Next.js easy way',
     'C, C++, Python in one',
   ];
-  
+
   List<String> _selectedCategories = [];
-  
+
   // Sample data for demonstration
   List<Map<String, dynamic>> _books = [
     {
@@ -461,7 +461,7 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
                 itemBuilder: (context, index) {
                   final book = _books[index];
                   final isEven = index % 2 == 0;
-                  
+
                   return Container(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                     decoration: BoxDecoration(
@@ -814,7 +814,7 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
         };
       }
     });
-    
+
     _showSnackBar(
       'Book "$name" updated successfully!',
       isSuccess: true,
@@ -939,7 +939,7 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
     setState(() {
       _books.remove(book);
     });
-    
+
     _showSnackBar(
       'Book "${book['name']}" deleted successfully!',
       isSuccess: true,
@@ -1167,7 +1167,7 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
     final languageController = TextEditingController();
     final typeController = TextEditingController();
     final quantityController = TextEditingController();
-    
+
     String? selectedBookFile;
     String? selectedPdfFile;
     String? selectedSummaryFile;
@@ -1286,17 +1286,17 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
                               ],
                             ),
                             const SizedBox(height: 24),
-                            
+
                             // File selection indicators
-                            if (selectedBookFile != null) 
+                            if (selectedBookFile != null)
                               _buildFileIndicator('Book File', selectedBookFile!),
-                            if (selectedPdfFile != null) 
+                            if (selectedPdfFile != null)
                               _buildFileIndicator('PDF File', selectedPdfFile!),
-                            if (selectedSummaryFile != null) 
+                            if (selectedSummaryFile != null)
                               _buildFileIndicator('Summary File', selectedSummaryFile!),
-                            
+
                             const SizedBox(height: 16),
-                            
+
                             // Action buttons
                             Column(
                               children: [
@@ -1506,12 +1506,12 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
     // Here you would implement the actual save logic
     // For now, we'll just show a success message
     final fileCount = [bookFile, pdfFile, summaryFile].where((f) => f != null).length;
-    
+
     _showSnackBar(
       'Book "$name" saved successfully with $fileCount file(s)!',
       isSuccess: true,
     );
-    
+
     // You can add the book to your list here
     // setState(() {
     //   _books.add({
@@ -1722,7 +1722,7 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
                                 itemBuilder: (context, index) {
                                   final category = _bookCategories[index];
                                   final isSelected = _selectedCategories.contains(category);
-                                  
+
                                   return Container(
                                     margin: const EdgeInsets.only(bottom: 8),
                                     child: Material(
@@ -1744,15 +1744,15 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
                                             vertical: 12,
                                           ),
                                           decoration: BoxDecoration(
-                                            color: isSelected 
+                                            color: isSelected
                                                 ? const Color(0xFF0096C7).withOpacity(0.1)
                                                 : Colors.transparent,
                                             borderRadius: BorderRadius.circular(8),
-                                            border: isSelected 
+                                            border: isSelected
                                                 ? Border.all(
-                                                    color: const Color(0xFF0096C7),
-                                                    width: 1,
-                                                  )
+                                              color: const Color(0xFF0096C7),
+                                              width: 1,
+                                            )
                                                 : null,
                                           ),
                                           child: Row(
@@ -1762,10 +1762,10 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
                                                   category,
                                                   style: GoogleFonts.montserrat(
                                                     fontSize: 14,
-                                                    color: isSelected 
+                                                    color: isSelected
                                                         ? const Color(0xFF0096C7)
                                                         : Colors.black87,
-                                                    fontWeight: isSelected 
+                                                    fontWeight: isSelected
                                                         ? FontWeight.w600
                                                         : FontWeight.w400,
                                                   ),
@@ -1839,12 +1839,12 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
       _showSnackBar('No categories selected for filtering');
       return;
     }
-    
+
     _showSnackBar(
       'Filter applied for ${_selectedCategories.length} category(ies): ${_selectedCategories.join(', ')}',
       isSuccess: true,
     );
-    
+
     // Here you would implement the actual filtering logic
     // For example, filter the _books list based on selected categories
   }
@@ -2030,7 +2030,7 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
         };
       }
     });
-    
+
     _showSnackBar(
       'Book Club "$name" updated successfully!',
       isSuccess: true,
@@ -2155,7 +2155,7 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
     setState(() {
       _bookClubs.remove(bookClub);
     });
-    
+
     _showSnackBar(
       'Book Club "${bookClub['name']}" deleted successfully!',
       isSuccess: true,
@@ -2552,7 +2552,7 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
                 itemBuilder: (context, index) {
                   final bookClub = _bookClubs[index];
                   final isEven = index % 2 == 0;
-                  
+
                   return Container(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                     decoration: BoxDecoration(

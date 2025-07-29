@@ -10,6 +10,8 @@ import 'package:talehive/pages/user/user_books.dart';
 import 'package:talehive/pages/user/user_dashboard.dart';
 import 'package:talehive/pages/user/user_home.dart';
 
+import 'admin_authentication/admin_login.dart';
+
 
 
 class myapp extends StatelessWidget {
@@ -20,7 +22,7 @@ class myapp extends StatelessWidget {
     return MaterialApp(
         debugShowCheckedModeBanner: false,
 
-        home: UserDashboardPage(onMyBooksTap: () {  }, onEditProfileTap: () {  },));
+        home: AdminDashboardPage() ,);
   }
 }
 

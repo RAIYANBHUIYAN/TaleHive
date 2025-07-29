@@ -10,7 +10,7 @@ class UserManagementPage extends StatefulWidget {
 
 class _UserManagementPageState extends State<UserManagementPage> {
   final TextEditingController _searchController = TextEditingController();
-  
+
   // Sample data for demonstration
   List<Map<String, dynamic>> _users = [
     {
@@ -320,7 +320,7 @@ class _UserManagementPageState extends State<UserManagementPage> {
                 itemBuilder: (context, index) {
                   final user = _users[index];
                   final isEven = index % 2 == 0;
-                  
+
                   return Container(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                     decoration: BoxDecoration(
@@ -1119,7 +1119,7 @@ class _UserManagementPageState extends State<UserManagementPage> {
       'User "$name" added successfully!',
       isSuccess: true,
     );
-    
+
     // You can add the user to your list here
     // setState(() {
     //   _users.add({
@@ -1150,7 +1150,7 @@ class _UserManagementPageState extends State<UserManagementPage> {
         };
       }
     });
-    
+
     _showSnackBar(
       'User "$name" updated successfully!',
       isSuccess: true,
@@ -1161,7 +1161,7 @@ class _UserManagementPageState extends State<UserManagementPage> {
     setState(() {
       _users.remove(user);
     });
-    
+
     _showSnackBar(
       'User "${user['name']}" deleted successfully!',
       isSuccess: true,

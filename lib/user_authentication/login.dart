@@ -29,10 +29,22 @@ class _LoginState extends State<Login> {
             crossAxisAlignment:
                 CrossAxisAlignment.center, // Center content horizontally
             children: [
-              // Add the logo at the top
+              // Add the logo at the top with error handling
               Image.asset(
-                'Asset/images/logo.jpg', // Assuming this is the correct path to your logo asset
-                height: 100, // Adjust height as needed
+                'Asset/images/logo.jpg',
+                height: 100,
+                errorBuilder: (context, error, stackTrace) {
+                  return Column(
+                    children: [
+                      Icon(Icons.image_not_supported, size: 60, color: Colors.grey),
+                      SizedBox(height: 8),
+                      Text(
+                        'Logo not found',
+                        style: TextStyle(color: Colors.red, fontSize: 14),
+                      ),
+                    ],
+                  );
+                },
               ),
               SizedBox(height: 20), // Spacing below the logo
               Column(
