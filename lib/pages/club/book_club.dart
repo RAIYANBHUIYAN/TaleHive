@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../user/author_dashboard.dart';
+// Ensure this import is correct based on your project structure
 
 class BookClubPage extends StatefulWidget {
   const BookClubPage({Key? key}) : super(key: key);
