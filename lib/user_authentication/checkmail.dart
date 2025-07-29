@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:library_management_app/user_authentication/reset_password.dart'; // Import the reset password page
+import 'reset_password.dart'; // Import the reset password page
 
 class CheckMail extends StatelessWidget {
   const CheckMail({super.key});
