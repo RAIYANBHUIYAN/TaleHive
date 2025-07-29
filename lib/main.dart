@@ -16,8 +16,7 @@ class myapp extends StatelessWidget {
     return MaterialApp(
         debugShowCheckedModeBanner: false,
 
-        home: BookDetailsPage(bookId: 'mock',),
-    );
+        home: UserDashboardPage(onMyBooksTap: () {  }, onEditProfileTap: () {  },));
   }
 }
 
