@@ -390,15 +390,17 @@ class _BookClubPageState extends State<BookClubPage> {
                                     horizontal: 14,
                                     vertical: 8,
                                   ),
-                                  child: const Text('View'),
                                 ),
-                              ],
-                            ),
-                          ],
-                        ),
+                                child: const Text('View'),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
-                  )),
+                  ),
+                ),
+            ).toList(),
             // Navigation Button for testing
             Center(
               child: ElevatedButton(
