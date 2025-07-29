@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'user_home.dart';
 
 class AuthorDashboardPage extends StatefulWidget {
   const AuthorDashboardPage({Key? key}) : super(key: key);
@@ -527,6 +528,12 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                         width: 48,
                         height: 64,
                         fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => Container(
+                          width: 48, // match width
+                          height: 64, // match height
+                          color: Colors.grey[300],
+                          child: const Icon(Icons.book, size: 32, color: Colors.grey),
+                        ),
                       ),
                     ),
                     title: Text(
@@ -554,6 +561,18 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                     ),
                   );
                 },
+              ),
+            ),
+            // Navigation Button for testing
+            Center(
+              child: ElevatedButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const UserHomePage()),
+                  );
+                },
+                child: const Text('Go to User Home'),
               ),
             ),
           ],
