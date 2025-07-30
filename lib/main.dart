@@ -5,6 +5,7 @@ import 'package:library_management_app/pages/user/book_details.dart';
 import 'package:library_management_app/pages/user/user_dashboard.dart';
 import 'package:library_management_app/pages/user/user_home.dart';
 import 'package:library_management_app/user_authentication/login.dart';
+import 'package:talehive/pages/admin/admin_dashboard.dart';
 
 class myapp extends StatelessWidget {
   const myapp({super.key});
@@ -14,7 +15,7 @@ class myapp extends StatelessWidget {
     return MaterialApp(
         debugShowCheckedModeBanner: false,
 
-        home: UserDashboardPage(onMyBooksTap: () {  }, onEditProfileTap: () {  },));
+        home: AdminDashboardPage()
   }
 }
 
