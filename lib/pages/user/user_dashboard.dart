@@ -235,6 +235,7 @@ class _ProfileDetails extends StatelessWidget {
                 ],
               ),
             ),
+            const SizedBox(height: 10),
             if (!isNarrow) ...[
               const SizedBox(width: 8),
               ElevatedButton.icon(
@@ -256,6 +257,7 @@ class _ProfileDetails extends StatelessWidget {
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
                   ),
+
                   elevation: 0,
                 ),
               ),
