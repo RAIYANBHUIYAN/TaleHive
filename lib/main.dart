@@ -12,18 +12,18 @@ import 'package:talehive/pages/user/user_home.dart';
 
 import 'admin_authentication/admin_login.dart';
 
-class myapp extends StatelessWidget {
-  const myapp({super.key});
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-        debugShowCheckedModeBanner: false,
-
-        home: AdminDashboardPage() ,);
+      debugShowCheckedModeBanner: false,
+      home: AdminDashboardPage(),
+    );
   }
 }
 
 void main() {
-  runApp(const myapp());
+  runApp(const MyApp());
 }
