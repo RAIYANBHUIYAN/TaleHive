@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:library_management_app/user_authentication/signup.dart'; // Import the signup page
-import 'package:library_management_app/user_authentication/forgot_password.dart'; // Import the forgot password page
+import 'signup.dart'; // Import the signup page using a relative path
+import 'forgot_password.dart'; // Import the forgot password page using a relative path
 
 // Convert to StatefulWidget to manage password visibility state
 class Login extends StatefulWidget {
@@ -29,10 +29,22 @@ class _LoginState extends State<Login> {
             crossAxisAlignment:
                 CrossAxisAlignment.center, // Center content horizontally
             children: [
-              // Add the logo at the top
+              // Add the logo at the top with error handling
               Image.asset(
-                'Asset/images/logo.jpg', // Assuming this is the correct path to your logo asset
-                height: 100, // Adjust height as needed
+                'Asset/images/logo.jpg',
+                height: 100,
+                errorBuilder: (context, error, stackTrace) {
+                  return Column(
+                    children: [
+                      Icon(Icons.image_not_supported, size: 60, color: Colors.grey),
+                      SizedBox(height: 8),
+                      Text(
+                        'Logo not found',
+                        style: TextStyle(color: Colors.red, fontSize: 14),
+                      ),
+                    ],
+                  );
+                },
               ),
               SizedBox(height: 20), // Spacing below the logo
               Column(
