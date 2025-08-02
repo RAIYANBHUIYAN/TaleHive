@@ -12,7 +12,9 @@ import 'package:talehive/pages/user/user_dashboard.dart';
 import 'package:talehive/pages/user/user_home.dart';
 import 'package:talehive/user_authentication/login.dart';
 
+import 'admin_authentication/admin_forgot_password.dart';
 import 'admin_authentication/admin_login.dart';
+import 'admin_authentication/admin_reset_password_confirmation.dart';
 
 
 
@@ -28,9 +30,12 @@ class MyApp extends StatelessWidget {
         primarySwatch: Colors.blue,
         visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
-      home: const Login(), // Start with login page
+      home: const AdminLogin(), // Start with login page
       routes: {
         '/login': (context) => const Login(),
+        '/admin-dashboard': (context) => AdminDashboardPage(),
+        '/admin-forgot-password': (context) => AdminForgotPassword(),
+        '/admin-reset-password-confirmation': (context) => AdminResetPasswordConfirmation(email: ''),
 
         '/user-home': (context) => const UserHomePage(),
 
