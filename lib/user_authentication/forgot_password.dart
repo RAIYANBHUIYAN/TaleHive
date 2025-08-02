@@ -268,6 +268,7 @@ class _ForgotPasswordState extends State<ForgotPassword> {
                       'Your Premier Digital Library for Exploring Technical, Training, and IT Books',
                       style: TextStyle(fontSize: 14, color: Colors.black87),
                       textAlign: TextAlign.center,
+                      //all is done here arifaa
                     ),
                   ),
                 ],
