@@ -24,6 +24,10 @@ dependencies:
   firebase_database: ^12.0.0
   cloud_firestore: ^6.0.0
   google_sign_in: ^6.1.5
+  syncfusion_flutter_pdfviewer: ^30.1.42
+  url_launcher: ^6.3.2
+  googleapis: ^14.0.0
+  googleapis_auth: ^2.0.0
 
 
 dev_dependencies:
