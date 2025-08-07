@@ -5,6 +5,7 @@ import 'package:talehive/pages/admin/books/books_and_club_management.dart';
 import 'package:talehive/pages/admin/catalog/all_users_books_reqst_Catalog_management.dart';
 import 'package:talehive/pages/admin/users/user_management.dart';
 import 'package:talehive/pages/club/book_club.dart';
+import 'package:talehive/pages/main_home_page/main_page.dart';
 import 'package:talehive/pages/user/author_dashboard.dart';
 import 'package:talehive/pages/user/book_details.dart';
 import 'package:talehive/pages/user/user_books.dart';
@@ -30,7 +31,7 @@ class MyApp extends StatelessWidget {
         primarySwatch: Colors.blue,
         visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
-      home: const AdminLogin(), // Start with login page
+      home: const MainPage(), // Start with login page
       routes: {
         '/login': (context) => const Login(),
         '/admin-dashboard': (context) => AdminDashboardPage(),
