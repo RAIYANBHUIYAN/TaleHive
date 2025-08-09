@@ -31,7 +31,7 @@ class MyApp extends StatelessWidget {
         primarySwatch: Colors.blue,
         visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
-      home: const MainPage(), // Start with login page
+      home: const UserHomePage(), // Start with login page
       routes: {
         '/login': (context) => const Login(),
         '/admin-dashboard': (context) => AdminDashboardPage(),

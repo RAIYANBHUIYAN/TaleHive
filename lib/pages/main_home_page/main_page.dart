@@ -929,80 +929,31 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
   }
 
   Widget _buildFooter() {
-    return Container(
-      margin: const EdgeInsets.only(top: 32),
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            const Color(0xFF2D3748),
-            const Color(0xFF1A202C),
-          ],
-        ),
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF0096C7), Color(0xFF00B4D8)],
-                  ),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Image.asset(
-                    'Asset/images/icon.jpg',
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      return const Icon(
-                        Icons.library_books,
-                        color: Colors.white,
-                        size: 24,
-                      );
-                    },
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'TaleHive',
-                style: GoogleFonts.montserrat(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Your gateway to our curated PDF book collection.',
-            style: GoogleFonts.montserrat(
-              fontSize: 16,
-              color: Colors.grey[400],
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 24),
-          Text(
-            '© 2025 Mr and His Team. All rights reserved.',
-            style: GoogleFonts.montserrat(
-              fontSize: 12,
-              color: Colors.grey[500],
-            ),
-            textAlign: TextAlign.center,
-          ),
+  return Container(
+    width: double.infinity, // Cover full width
+    margin: const EdgeInsets.only(top: 32),
+    padding: const EdgeInsets.all(24),
+    decoration: BoxDecoration(
+      gradient: LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          const Color(0xFF0096C7).withOpacity(0.8), // Related to app's primary color
+          const Color(0xFF0077B6), // Darker shade of the primary color
         ],
       ),
-    );
-  }
+    ),
+    child: Text(
+      '© 2025 Mr and His Team. All rights reserved.',
+      style: GoogleFonts.montserrat(
+        fontSize: 12,
+        color: Colors.white, // Changed to white for better contrast
+        fontWeight: FontWeight.w500,
+      ),
+      textAlign: TextAlign.center,
+    ),
+  );
+}
 
   void _navigateToLogin() {
     Navigator.push(

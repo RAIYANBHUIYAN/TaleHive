@@ -1,114 +1,146 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:http/http.dart' as http;
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart'; // Add this import
 
-class UserHomePage extends StatelessWidget {
+class UserHomePage extends StatefulWidget {
   const UserHomePage({Key? key}) : super(key: key);
 
   @override
-  Widget build(BuildContext context) {
-    final userName = ' Nahid ';
-    final quotes = [
-      "There is more treasure in books than in all the pirate's loot on Treasure Island. - Walt Disney",
-      "A room without books is like a body without a soul. - Cicero",
-      "Books are a uniquely portable magic. - Stephen King",
-    ];
-    final newArrivals = [
-      {
-        'title': 'Holy Bible',
-        'cover': 'https://covers.openlibrary.org/b/id/10523338-L.jpg',
-      },
-      {
-        'title': 'Harry Potter',
-        'cover': 'https://covers.openlibrary.org/b/id/10523339-L.jpg',
-      },
-      {
-        'title': 'Lean UX',
-        'cover': 'https://covers.openlibrary.org/b/id/10523340-L.jpg',
-      },
-    ];
-    final recommended = <Map<String, dynamic>>[
-      {
-        'title': "Don't Make Me Think",
-        'cover': 'https://covers.openlibrary.org/b/id/10523341-L.jpg',
-        'author': 'Steve Krug',
-        'rating': 4.5,
-      },
-      {
-        'title': 'The Design of Everyday Things',
-        'cover': 'https://covers.openlibrary.org/b/id/10523342-L.jpg',
-        'author': 'Don Norman',
-        'rating': 4.6,
-      },
-      {
-        'title': 'Sprint',
-        'cover': 'https://covers.openlibrary.org/b/id/10523343-L.jpg',
-        'author': 'Jake Knapp',
-        'rating': 4.4,
-      },
-      {
-        'title': 'Lean UX',
-        'cover': 'https://covers.openlibrary.org/b/id/10523344-L.jpg',
-        'author': 'Jeff Gothelf',
-        'rating': 4.3,
-      },
-      {
-        'title': 'React',
-        'cover': 'https://covers.openlibrary.org/b/id/10523345-L.jpg',
-        'author': 'Dan Abramov',
-        'rating': 4.7,
-      },
-    ];
-    final popularBooks = [
-      {
-        'title': 'Rich Dad Poor Dad',
-        'cover': 'https://covers.openlibrary.org/b/id/10523346-L.jpg',
-      },
-      {
-        'title': 'Harry Potter',
-        'cover': 'https://covers.openlibrary.org/b/id/10523339-L.jpg',
-      },
-      {
-        'title': 'React',
-        'cover': 'https://covers.openlibrary.org/b/id/10523345-L.jpg',
-      },
-      {
-        'title': 'Sprint',
-        'cover': 'https://covers.openlibrary.org/b/id/10523343-L.jpg',
-      },
-    ];
-    final recentReadings = [
-      {
-        'title': 'Little Fires Everywhere',
-        'cover': 'https://covers.openlibrary.org/b/id/10523347-L.jpg',
-        'author': 'Celeste Ng',
-        'rating': 4.5,
-      },
-      {
-        'title': 'The Silent Patient',
-        'cover': 'https://covers.openlibrary.org/b/id/10523348-L.jpg',
-        'author': 'Alex Michaelides',
-        'rating': 4.5,
-      },
-      {
-        'title': 'The Glass Hotel',
-        'cover': 'https://covers.openlibrary.org/b/id/10523349-L.jpg',
-        'author': 'Emily St. John Mandel',
-        'rating': 4.5,
-      },
-      {
-        'title': 'Such a Fun Age',
-        'cover': 'https://covers.openlibrary.org/b/id/10523350-L.jpg',
-        'author': 'Kiley Reid',
-        'rating': 4.3,
-      },
-      {
-        'title': 'Normal People',
-        'cover': 'https://covers.openlibrary.org/b/id/10523351-L.jpg',
-        'author': 'Sally Rooney',
-        'rating': 4.2,
-      },
-    ];
-    final onlineUsers = ['Noushin Nurjahan', 'Other users (?)', 'User 3'];
+  State<UserHomePage> createState() => _UserHomePageState();
+}
 
+class _UserHomePageState extends State<UserHomePage> {
+  final userName = ' Nahid ';
+  final quotes = [
+    "There is more treasure in books than in all the pirate's loot on Treasure Island. - Walt Disney",
+    "A room without books is like a body without a soul. - Cicero",
+    "Books are a uniquely portable magic. - Stephen King",
+  ];
+
+  // Firebase instance
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  // Google Drive setup for thumbnails
+  GoogleSignInAccount? _account;
+  List<Map<String, dynamic>> _firestoreBooks = []; // Changed from _drivePdfBooks
+  bool _isLoadingBooks = false;
+  final Map<String, String> _thumbnailCache = {};
+
+  final GoogleSignIn _googleSignIn = GoogleSignIn(
+    scopes: [
+      'https://www.googleapis.com/auth/drive.readonly',
+      'https://www.googleapis.com/auth/drive.file',
+    ],
+  );
+
+  // Dynamic data from Firestore books
+  List<Map<String, dynamic>> get newArrivals => _firestoreBooks.take(3).toList();
+  List<Map<String, dynamic>> get recommended => _firestoreBooks.skip(3).take(5).toList();
+  List<Map<String, dynamic>> get popularBooks => _firestoreBooks.skip(8).take(4).toList();
+  List<Map<String, dynamic>> get recentReadings => _firestoreBooks.skip(12).take(5).toList();
+
+  final onlineUsers = ['Noushin Nurjahan', 'Other users (?)', 'User 3'];
+
+  @override
+  void initState() {
+    super.initState();
+    // Auto-load books from Firestore and initialize Google Sign-In for thumbnails
+    _loadBooksFromFirestore();
+    _initializeGoogleSignIn();
+  }
+
+  // Initialize Google Sign-In for thumbnail generation
+  Future<void> _initializeGoogleSignIn() async {
+    try {
+      _account = await _googleSignIn.signInSilently();
+      if (_account == null) {
+        print('Google Sign-In not available for thumbnails');
+      } else {
+        print('Signed in as: ${_account!.email} for thumbnails');
+      }
+    } catch (e) {
+      print('Google Sign-In initialization failed: $e');
+    }
+  }
+
+  // Load books from Firestore instead of Google Drive
+  Future<void> _loadBooksFromFirestore() async {
+    if (_isLoadingBooks) return;
+
+    setState(() {
+      _isLoadingBooks = true;
+    });
+
+    try {
+      print('Loading books from Firestore...');
+
+      QuerySnapshot querySnapshot = await _firestore.collection('Books').get();
+      List<Map<String, dynamic>> loadedBooks = [];
+
+      for (var doc in querySnapshot.docs) {
+        Map<String, dynamic> bookData = doc.data() as Map<String, dynamic>;
+        bookData['id'] = doc.id;
+        
+        // Ensure we have the required fields for display
+        bookData['title'] = bookData['title'] ?? 'Unknown Title';
+        bookData['author'] = bookData['author'] ?? bookData['authorName'] ?? '';
+        bookData['category'] = bookData['bookType'] ?? bookData['category'] ?? 'General';
+        bookData['rating'] = bookData['rating'] ?? _generateRating();
+        
+        // Use Google Drive thumbnail if file ID is available
+        if (bookData['googleDriveFileId'] != null) {
+          bookData['cover'] = 'https://drive.google.com/thumbnail?id=${bookData['googleDriveFileId']}&sz=w400-h500';
+        } else {
+          bookData['cover'] = null;
+        }
+
+        loadedBooks.add(bookData);
+      }
+
+      setState(() {
+        _firestoreBooks = loadedBooks;
+      });
+
+      _showSnackBar('Successfully loaded ${_firestoreBooks.length} books from library!');
+      
+    } catch (error) {
+      print('Error loading books from Firestore: $error');
+      _showSnackBar('Error loading books: ${error.toString()}');
+    } finally {
+      setState(() {
+        _isLoadingBooks = false;
+      });
+    }
+  }
+
+  double _generateRating() {
+    return 3.5 + (DateTime.now().millisecondsSinceEpoch % 150) / 100;
+  }
+
+  void _showSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          message,
+          style: GoogleFonts.montserrat(),
+        ),
+        backgroundColor: const Color(0xFF0096C7),
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF7FAFC),
       body: SafeArea(
@@ -133,25 +165,34 @@ class UserHomePage extends StatelessWidget {
                       // Quote/Highlight Section
                       _QuoteCarousel(quotes: quotes),
                       const SizedBox(height: 18),
-                      // New Releases & Arrivals
-                      _SectionTitle(title: 'New Releases'),
-                      _HorizontalBookList(
-                        books: newArrivals,
-                        label: 'New Arrivals',
-                      ),
-                      const SizedBox(height: 18),
-                      // Recommended For You
-                      _SectionTitle(title: 'Recommended for You'),
-                      _RecommendedList(books: recommended),
-                      const SizedBox(height: 18),
-                      // Popular Books
-                      _SectionTitle(title: 'Popular Books'),
-                      _HorizontalBookList(books: popularBooks),
-                      const SizedBox(height: 18),
-                      // Recent Readings
-                      _SectionTitle(title: 'Recent Readings'),
-                      _RecentReadingsList(books: recentReadings),
-                      const SizedBox(height: 18),
+                      // Loading indicator
+                      if (_isLoadingBooks) _buildLoadingSection(),
+                      // Show sections only if books are loaded
+                      if (_firestoreBooks.isNotEmpty) ...[
+                        // New Releases & Arrivals
+                        _SectionTitle(title: 'New Releases'),
+                        _HorizontalBookList(
+                          books: newArrivals,
+                          label: 'New Arrivals',
+                        ),
+                        const SizedBox(height: 18),
+                        // Recommended For You
+                        _SectionTitle(title: 'Recommended for You'),
+                        _RecommendedList(books: recommended),
+                        const SizedBox(height: 18),
+                        // Popular Books
+                        _SectionTitle(title: 'Popular Books'),
+                        _HorizontalBookList(books: popularBooks),
+                        const SizedBox(height: 18),
+                        // Recent Readings
+                        _SectionTitle(title: 'Recent Readings'),
+                        _RecentReadingsList(books: recentReadings),
+                        const SizedBox(height: 18),
+                      ] else if (!_isLoadingBooks) ...[
+                        // Empty state
+                        _buildEmptyState(),
+                        const SizedBox(height: 18),
+                      ],
                       // Special Club Banner
                       _BookClubBanner(),
                       const SizedBox(height: 18),
@@ -171,7 +212,25 @@ class UserHomePage extends StatelessWidget {
                         children: [
                           _OnlineUsersWidget(users: onlineUsers),
                           const SizedBox(height: 24),
-                          // Add more sidebar widgets here if needed
+                          // Refresh button
+                          ElevatedButton.icon(
+                            onPressed: _loadBooksFromFirestore,
+                            icon: _isLoadingBooks
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.refresh),
+                            label: Text(_isLoadingBooks ? 'Loading...' : 'Refresh Books'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF0096C7),
+                              foregroundColor: Colors.white,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -181,11 +240,91 @@ class UserHomePage extends StatelessWidget {
           },
         ),
       ),
+      floatingActionButton: !isWide(context) ? FloatingActionButton(
+        onPressed: _loadBooksFromFirestore,
+        backgroundColor: const Color(0xFF0096C7),
+        child: _isLoadingBooks
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 2,
+                ),
+              )
+            : const Icon(Icons.refresh, color: Colors.white),
+      ) : null,
+    );
+  }
+
+  bool isWide(BuildContext context) {
+    return MediaQuery.of(context).size.width > 1100;
+  }
+
+  Widget _buildLoadingSection() {
+    return Container(
+      margin: const EdgeInsets.all(24),
+      child: Column(
+        children: [
+          const CircularProgressIndicator(
+            color: Color(0xFF0096C7),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Loading books from library...',
+            style: GoogleFonts.montserrat(
+              fontSize: 16,
+              color: Colors.grey[600],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Fetching books from Firestore database',
+            style: GoogleFonts.montserrat(
+              fontSize: 12,
+              color: Colors.grey[500],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Container(
+      margin: const EdgeInsets.all(24),
+      child: Column(
+        children: [
+          Icon(
+            Icons.library_books,
+            size: 64,
+            color: Colors.grey[400],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'No books in library yet',
+            style: GoogleFonts.montserrat(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey[600],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Ask authors to publish books or contact admin',
+            style: GoogleFonts.montserrat(
+              fontSize: 14,
+              color: Colors.grey[500],
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
     );
   }
 }
 
-// --- Components ---
+// --- Components (Updated to handle dynamic data) ---
 
 class _GreetingBanner extends StatelessWidget {
   final String userName;
@@ -421,6 +560,21 @@ class _HorizontalBookList extends StatelessWidget {
   const _HorizontalBookList({required this.books, this.label});
   @override
   Widget build(BuildContext context) {
+    if (books.isEmpty) {
+      return Container(
+        height: 150,
+        child: Center(
+          child: Text(
+            'No books available',
+            style: GoogleFonts.montserrat(
+              color: Colors.grey[600],
+              fontSize: 16,
+            ),
+          ),
+        ),
+      );
+    }
+
     return SizedBox(
       height: 150,
       child: ListView.separated(
@@ -461,17 +615,32 @@ class _HorizontalBookList extends StatelessWidget {
                     ClipRRect(
                       borderRadius: BorderRadius.circular(12),
                       child: Image.network(
-                        book['cover'],
+                        book['cover'] ?? '',
                         width: 70,
                         height: 80,
                         fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Container(
+                            width: 70,
+                            height: 80,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF0096C7).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(
+                              Icons.picture_as_pdf,
+                              color: Color(0xFF0096C7),
+                              size: 30,
+                            ),
+                          );
+                        },
                       ),
                     ),
                     const SizedBox(height: 4),
                     SizedBox(
                       width: 90,
                       child: Text(
-                        book['title'],
+                        book['title'] ?? 'No Title',
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.center,
@@ -494,6 +663,21 @@ class _RecommendedList extends StatelessWidget {
   const _RecommendedList({required this.books});
   @override
   Widget build(BuildContext context) {
+    if (books.isEmpty) {
+      return Container(
+        height: 190,
+        child: Center(
+          child: Text(
+            'No recommendations available',
+            style: GoogleFonts.montserrat(
+              color: Colors.grey[600],
+              fontSize: 16,
+            ),
+          ),
+        ),
+      );
+    }
+
     return SizedBox(
       height: 190,
       child: ListView.separated(
@@ -525,15 +709,30 @@ class _RecommendedList extends StatelessWidget {
                     ClipRRect(
                       borderRadius: BorderRadius.circular(10),
                       child: Image.network(
-                        book['cover'],
+                        book['cover'] ?? '',
                         width: 70,
                         height: 80,
                         fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Container(
+                            width: 70,
+                            height: 80,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF0096C7).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(
+                              Icons.picture_as_pdf,
+                              color: Color(0xFF0096C7),
+                              size: 30,
+                            ),
+                          );
+                        },
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      book['title'],
+                      book['title'] ?? 'No Title',
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.center,
@@ -542,22 +741,23 @@ class _RecommendedList extends StatelessWidget {
                         fontSize: 13,
                       ),
                     ),
-                    Text(
-                      book['author'],
-                      style: const TextStyle(
-                        color: Colors.blueGrey,
-                        fontSize: 12,
+                    if (book['author'] != null && book['author'].toString().trim().isNotEmpty)
+                      Text(
+                        book['author'],
+                        style: const TextStyle(
+                          color: Colors.blueGrey,
+                          fontSize: 12,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
                     const SizedBox(height: 2),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         const Icon(Icons.star, color: Colors.amber, size: 13),
                         Text(
-                          '${book['rating']}',
+                          '${book['rating']?.toStringAsFixed(1) ?? '4.5'}',
                           style: const TextStyle(fontSize: 11),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -591,6 +791,21 @@ class _RecentReadingsList extends StatelessWidget {
   const _RecentReadingsList({required this.books});
   @override
   Widget build(BuildContext context) {
+    if (books.isEmpty) {
+      return Container(
+        height: 150,
+        child: Center(
+          child: Text(
+            'No recent readings',
+            style: GoogleFonts.montserrat(
+              color: Colors.grey[600],
+              fontSize: 16,
+            ),
+          ),
+        ),
+      );
+    }
+
     return SizedBox(
       height: 150,
       child: ListView.separated(
@@ -610,15 +825,30 @@ class _RecentReadingsList extends StatelessWidget {
                     ClipRRect(
                       borderRadius: BorderRadius.circular(8),
                       child: Image.network(
-                        book['cover'],
+                        book['cover'] ?? '',
                         width: 60,
                         height: 70,
                         fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Container(
+                            width: 60,
+                            height: 70,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF0096C7).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(
+                              Icons.picture_as_pdf,
+                              color: Color(0xFF0096C7),
+                              size: 25,
+                            ),
+                          );
+                        },
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      book['title'],
+                      book['title'] ?? 'No Title',
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.center,
@@ -627,22 +857,23 @@ class _RecentReadingsList extends StatelessWidget {
                         fontSize: 13,
                       ),
                     ),
-                    Text(
-                      book['author'],
-                      style: const TextStyle(
-                        color: Colors.blueGrey,
-                        fontSize: 12,
+                    if (book['author'] != null && book['author'].toString().trim().isNotEmpty)
+                      Text(
+                        book['author'],
+                        style: const TextStyle(
+                          color: Colors.blueGrey,
+                          fontSize: 12,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
                     const SizedBox(height: 2),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         const Icon(Icons.star, color: Colors.amber, size: 13),
                         Text(
-                          '${book['rating']}',
+                          '${book['rating']?.toStringAsFixed(1) ?? '4.5'}',
                           style: const TextStyle(fontSize: 11),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
