@@ -3,14 +3,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 class ResetPasswordConfirmation extends StatefulWidget {
   final String email;
-  
-  const ResetPasswordConfirmation({
-    super.key,
-    required this.email,
-  });
+
+  const ResetPasswordConfirmation({super.key, required this.email});
 
   @override
-  State<ResetPasswordConfirmation> createState() => _ResetPasswordConfirmationState();
+  State<ResetPasswordConfirmation> createState() =>
+      _ResetPasswordConfirmationState();
 }
 
 class _ResetPasswordConfirmationState extends State<ResetPasswordConfirmation> {
@@ -19,9 +17,7 @@ class _ResetPasswordConfirmationState extends State<ResetPasswordConfirmation> {
   Future<void> _resendResetEmail() async {
     setState(() => isResending = true);
     try {
-      await FirebaseAuth.instance.sendPasswordResetEmail(
-        email: widget.email,
-      );
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: widget.email);
       _showSuccess('Password reset email sent again! Please check your inbox.');
     } on FirebaseAuthException catch (e) {
       String errorMessage = 'Failed to resend email';
@@ -57,9 +53,7 @@ class _ResetPasswordConfirmationState extends State<ResetPasswordConfirmation> {
         ),
         backgroundColor: Colors.red[600],
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         margin: EdgeInsets.all(16),
         duration: Duration(seconds: 4),
         elevation: 8,
@@ -88,9 +82,7 @@ class _ResetPasswordConfirmationState extends State<ResetPasswordConfirmation> {
         ),
         backgroundColor: Colors.green[600],
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         margin: EdgeInsets.all(16),
         duration: Duration(seconds: 3),
         elevation: 8,
@@ -101,8 +93,14 @@ class _ResetPasswordConfirmationState extends State<ResetPasswordConfirmation> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.grey[100], // light background
       appBar: AppBar(
-        title: Text('Check Your Email'),
+        title: Text(
+          'Check Your Email',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        backgroundColor: Colors.teal[600],
+        elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.arrow_back),
           onPressed: () {
@@ -112,37 +110,44 @@ class _ResetPasswordConfirmationState extends State<ResetPasswordConfirmation> {
       ),
       body: Center(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20.0),
+          padding: const EdgeInsets.all(25.0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Email icon
+              // Email icon with shadow
               Container(
-                padding: EdgeInsets.all(20),
+                padding: EdgeInsets.all(25),
                 decoration: BoxDecoration(
-                  color: Colors.lightGreen.withOpacity(0.1),
+                  color: Colors.teal.withOpacity(0.15),
                   shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black12,
+                      blurRadius: 12,
+                      offset: Offset(0, 6),
+                    ),
+                  ],
                 ),
                 child: Icon(
                   Icons.email_outlined,
-                  size: 80,
-                  color: Colors.lightGreen,
+                  size: 90,
+                  color: Colors.teal[600],
                 ),
               ),
               SizedBox(height: 30),
-              
+
               // Title
               Text(
                 'Check Your Email',
                 style: TextStyle(
-                  fontSize: 32,
-                  color: Colors.blue,
+                  fontSize: 34,
+                  color: Colors.teal[700],
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              SizedBox(height: 20),
-              
+              SizedBox(height: 18),
+
               // Description
               Container(
                 width: 350,
@@ -150,18 +155,15 @@ class _ResetPasswordConfirmationState extends State<ResetPasswordConfirmation> {
                   children: [
                     Text(
                       'We\'ve sent a password reset link to:',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.grey[600],
-                      ),
+                      style: TextStyle(fontSize: 18, color: Colors.grey[700]),
                       textAlign: TextAlign.center,
                     ),
-                    SizedBox(height: 10),
+                    SizedBox(height: 12),
                     Text(
                       widget.email,
                       style: TextStyle(
-                        fontSize: 18,
-                        color: Colors.blue,
+                        fontSize: 20,
+                        color: Colors.teal[700],
                         fontWeight: FontWeight.bold,
                       ),
                       textAlign: TextAlign.center,
@@ -172,40 +174,44 @@ class _ResetPasswordConfirmationState extends State<ResetPasswordConfirmation> {
                       style: TextStyle(
                         fontSize: 16,
                         color: Colors.grey[600],
+                        height: 1.4,
                       ),
                       textAlign: TextAlign.center,
                     ),
                   ],
                 ),
               ),
-              SizedBox(height: 40),
-              
+              SizedBox(height: 35),
+
               // Instructions
               Container(
                 width: 350,
-                padding: EdgeInsets.all(20),
+                padding: EdgeInsets.all(22),
                 decoration: BoxDecoration(
                   color: Colors.blue.withOpacity(0.05),
-                  borderRadius: BorderRadius.circular(15),
+                  borderRadius: BorderRadius.circular(18),
                   border: Border.all(color: Colors.blue.withOpacity(0.2)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black12,
+                      blurRadius: 8,
+                      offset: Offset(0, 4),
+                    ),
+                  ],
                 ),
                 child: Column(
                   children: [
-                    Icon(
-                      Icons.info_outline,
-                      color: Colors.blue,
-                      size: 30,
-                    ),
+                    Icon(Icons.info_outline, color: Colors.blue, size: 35),
                     SizedBox(height: 15),
                     Text(
                       'What to do next:',
                       style: TextStyle(
-                        fontSize: 18,
+                        fontSize: 20,
                         fontWeight: FontWeight.bold,
-                        color: Colors.blue,
+                        color: Colors.blue[700],
                       ),
                     ),
-                    SizedBox(height: 10),
+                    SizedBox(height: 12),
                     Text(
                       '1. Check your email inbox\n'
                       '2. Look for an email from TaleHive\n'
@@ -215,77 +221,80 @@ class _ResetPasswordConfirmationState extends State<ResetPasswordConfirmation> {
                       style: TextStyle(
                         fontSize: 16,
                         color: Colors.grey[700],
-                        height: 1.5,
+                        height: 1.6,
                       ),
                       textAlign: TextAlign.left,
                     ),
                   ],
                 ),
               ),
-              SizedBox(height: 30),
-              
+              SizedBox(height: 35),
+
               // Resend email button
               TextButton.icon(
                 onPressed: isResending ? null : _resendResetEmail,
-                icon: isResending 
+                icon: isResending
                     ? SizedBox(
-                        width: 16,
-                        height: 16,
+                        width: 18,
+                        height: 18,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          color: Colors.lightGreen,
+                          color: Colors.teal,
                         ),
                       )
-                    : Icon(Icons.refresh, color: Colors.lightGreen),
+                    : Icon(Icons.refresh, color: Colors.teal),
                 label: Text(
                   isResending ? 'Sending...' : 'Didn\'t receive email? Resend',
                   style: TextStyle(
-                    color: Colors.lightGreen,
+                    color: Colors.teal[700],
                     fontSize: 16,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
               SizedBox(height: 20),
-              
+
               // Back to Login button
               ElevatedButton(
                 onPressed: () {
                   Navigator.popUntil(context, (route) => route.isFirst);
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.lightGreen,
+                  backgroundColor: Colors.teal[600],
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(30.0),
+                    borderRadius: BorderRadius.circular(25.0),
                   ),
-                  padding: EdgeInsets.symmetric(
-                    horizontal: 60,
-                    vertical: 15,
-                  ),
-                ),
-                child: Text(
-                  'BACK TO LOGIN',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
+                  padding: EdgeInsets.symmetric(horizontal: 60, vertical: 18),
+                  textStyle: TextStyle(
+                    fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
+                child: Text('BACK TO LOGIN'),
               ),
-              SizedBox(height: 40),
-              
-              // TaleHive branding
+              SizedBox(height: 50),
+
+              // Branding
               Column(
                 children: [
                   Text(
                     'TaleHive',
-                    style: TextStyle(fontSize: 24, color: Colors.blue),
+                    style: TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.teal[700],
+                    ),
                   ),
+                  SizedBox(height: 6),
                   Container(
                     width: 300,
                     child: Text(
                       'Your Premier Digital Library for Exploring Technical, Training, and IT Books',
-                      style: TextStyle(fontSize: 14, color: Colors.black87),
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: Colors.grey[800],
+                        height: 1.4,
+                      ),
                       textAlign: TextAlign.center,
                     ),
                   ),

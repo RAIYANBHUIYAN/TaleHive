@@ -1,14 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'signup.dart'; // Import the signup page using a relative path
 import 'forgot_password.dart'; // Import the forgot password page using a relative path
 // Add this import at the top of login.dart:
 import '../pages/user/author_dashboard.dart'; // Import the author dashboard page
 import '../pages/user/user_home.dart'; // Import the user home page
 
-// Convert to StatefulWidget to manage password visibility state
 class Login extends StatefulWidget {
   const Login({super.key});
 
@@ -17,9 +13,6 @@ class Login extends StatefulWidget {
 }
 
 class _LoginState extends State<Login> {
-  final _formKey = GlobalKey<FormState>();
-  final emailController = TextEditingController();
-  final passwordController = TextEditingController();
   // State variable to toggle password visibility
   bool _isPasswordVisible = false;
   bool isLoading = false;
@@ -78,13 +71,16 @@ class _LoginState extends State<Login> {
 
       String userName = user?.displayName ?? 'User';
       String firstName = userName.split(' ').first;
-      _showSuccess('Welcome to TaleHive, $firstName! 🎉 Signed in successfully with Google');
+      _showSuccess(
+        'Welcome to TaleHive, $firstName! 🎉 Signed in successfully with Google',
+      );
     } on FirebaseAuthException catch (e) {
       _showError(e.message ?? 'Google Sign-In failed');
     } catch (e) {
       String errorMessage = 'Google Sign-In failed';
       if (e.toString().contains('ApiException: 10')) {
-        errorMessage = 'Google Sign-In configuration error. Please contact support.';
+        errorMessage =
+            'Google Sign-In configuration error. Please contact support.';
         print('DEBUG: SHA-1 fingerprint missing from Firebase project');
       } else {
         errorMessage = 'Error: $e';
@@ -204,9 +200,7 @@ class _LoginState extends State<Login> {
         ),
         backgroundColor: Colors.red[600],
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         margin: EdgeInsets.all(16),
         duration: Duration(seconds: 4),
         elevation: 8,
@@ -235,9 +229,7 @@ class _LoginState extends State<Login> {
         ),
         backgroundColor: Colors.green[600],
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         margin: EdgeInsets.all(16),
         duration: Duration(seconds: 3),
         elevation: 8,
@@ -248,17 +240,13 @@ class _LoginState extends State<Login> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.grey[100], // Softer background color
       body: Center(
-        // Center the content vertically
         child: SingleChildScrollView(
-          // Wrap in SingleChildScrollView to prevent overflow on small screens
-          padding: const EdgeInsets.all(20.0), // Add some padding
+          padding: const EdgeInsets.all(25.0),
           child: Column(
-            // Changed Row to Column for mobile layout
-            mainAxisAlignment:
-                MainAxisAlignment.center, // Center content vertically
-            crossAxisAlignment:
-                CrossAxisAlignment.center, // Center content horizontally
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               // Add the logo at the top with error handling
               Image.asset(
@@ -267,7 +255,11 @@ class _LoginState extends State<Login> {
                 errorBuilder: (context, error, stackTrace) {
                   return Column(
                     children: [
-                      Icon(Icons.image_not_supported, size: 60, color: Colors.grey),
+                      Icon(
+                        Icons.image_not_supported,
+                        size: 60,
+                        color: Colors.grey,
+                      ),
                       SizedBox(height: 8),
                       Text(
                         'Logo not found',
@@ -296,16 +288,12 @@ class _LoginState extends State<Login> {
                     width:
                         300, // Keep a reasonable width for the form container
                     child: Form(
-                      key: _formKey,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           TextFormField(
-                            controller: emailController,
-                            validator: (value) => value == null || !value.contains('@') ? 'Enter valid email' : null,
-                            keyboardType: TextInputType.emailAddress,
                             decoration: InputDecoration(
-                              labelText: 'Email',
+                              labelText: 'Username',
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(30.0),
                                 borderSide: BorderSide(
@@ -329,8 +317,6 @@ class _LoginState extends State<Login> {
                           ),
                           SizedBox(height: 15), // Spacing between fields
                           TextFormField(
-                            controller: passwordController,
-                            validator: (value) => value == null || value.length < 6 ? 'Minimum 6 characters' : null,
                             decoration: InputDecoration(
                               labelText: 'Password',
                               border: OutlineInputBorder(
@@ -419,7 +405,7 @@ class _LoginState extends State<Login> {
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
                       ElevatedButton(
-                        onPressed: isLoading ? null : _loginWithEmail,
+                        onPressed: () {},
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.lightGreen,
                           shape: RoundedRectangleBorder(
@@ -430,12 +416,10 @@ class _LoginState extends State<Login> {
                             vertical: 15,
                           ),
                         ),
-                        child: isLoading
-                            ? CircularProgressIndicator(color: Colors.white)
-                            : Text(
-                                'LOG IN',
-                                style: TextStyle(color: Colors.white),
-                              ),
+                        child: Text(
+                          'LOG IN',
+                          style: TextStyle(color: Colors.white),
+                        ),
                       ),
                       ElevatedButton(
                         onPressed: () {
@@ -500,10 +484,7 @@ class _LoginState extends State<Login> {
                       ),
                       Padding(
                         padding: EdgeInsets.symmetric(horizontal: 8.0),
-                        child: Text(
-                          "or",
-                          style: TextStyle(color: Colors.grey),
-                        ),
+                        child: Text("or", style: TextStyle(color: Colors.grey)),
                       ),
                       Expanded(
                         child: Divider(color: Colors.grey, thickness: 1),
@@ -569,24 +550,29 @@ class _LoginState extends State<Login> {
                 ],
               ),
 
-              SizedBox(
-                height: 40,
-              ), // Add significant spacing between the two sections
+              SizedBox(height: 50),
 
+              // Footer Text
               Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Text(
                     'TaleHive',
-                    style: TextStyle(fontSize: 24, color: Colors.blue),
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.teal[700],
+                    ),
                   ),
-
+                  SizedBox(height: 8),
                   Container(
                     width: 300,
                     child: Text(
                       'Your Premier Digital Library for Exploring Technical, Training, and IT Books',
-                      style: TextStyle(fontSize: 14, color: Colors.black87),
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: Colors.grey[800],
+                        height: 1.4,
+                      ),
                       textAlign: TextAlign.center,
                     ),
                   ),
