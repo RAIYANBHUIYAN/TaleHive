@@ -229,7 +229,7 @@ class _ProfileDetails extends StatelessWidget {
                     user['id'] as String,
                     style: const TextStyle(
                       color: Color(0xFF4a4e69),
-                      fontSize: 18,
+                      fontSize: 28,
                     ),
                   ),
                 ],
