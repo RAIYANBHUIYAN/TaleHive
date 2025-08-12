@@ -1,25 +1,35 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../main_home_page/main_page.dart'; // Fixed path
+
 
 class UserDashboardPage extends StatelessWidget {
   const UserDashboardPage({
     Key? key,
     required this.onMyBooksTap,
     required this.onEditProfileTap,
+    this.userData,
   }) : super(key: key);
 
   final VoidCallback onMyBooksTap;
   final VoidCallback onEditProfileTap;
+  final Map<String, dynamic>? userData;
 
   @override
   Widget build(BuildContext context) {
+    // Use dynamic data if available, otherwise fallback to static
     final user = {
-      'name': 'Arif Abdullah',
-      'id': 'BS 1754',
-      'books': 100,
-      'friends': 1245,
-      'following': 8,
-      'joined': 'Month DD YEAR',
-      'genres': 'Romance, Mystery/Thriller, Fantasy, Science Fiction, +5 More',
+      'name': userData?['firstName'] ?? userData?['name'] ?? 'Arif Abdullah',
+      'id': userData?['email']?.split('@')[0] ?? 'BS 1754',
+      'books': userData?['booksRead'] ?? 100,
+      'friends': userData?['friends'] ?? 1245,
+      'following': userData?['following'] ?? 8,
+      'joined': userData?['createdAt'] != null
+          ? _formatDate(userData!['createdAt'])
+          : 'Month DD YEAR',
+      'genres': userData?['favoriteGenres'] ?? 'Romance, Mystery/Thriller, Fantasy, Science Fiction, +5 More',
+      'photoURL': userData?['photoURL'],
     };
     final isMobile = MediaQuery.of(context).size.width < 600;
     return Scaffold(
@@ -48,6 +58,16 @@ class UserDashboardPage extends StatelessWidget {
             const Spacer(),
           ],
         ),
+        actions: [  // Add this actions section
+          IconButton(
+            onPressed: () => _showLogoutDialog(context),
+            icon: const Icon(
+              Icons.logout,
+              color: Colors.white,
+            ),
+            tooltip: 'Logout',
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
@@ -93,9 +113,9 @@ class UserDashboardPage extends StatelessWidget {
                                   CircleAvatar(
                                     radius: 56,
                                     backgroundColor: Colors.white,
-                                    backgroundImage: AssetImage(
-                                      'Asset/images/arif.jpg',
-                                    ),
+                                    backgroundImage: user['photoURL'] != null && user['photoURL'].isNotEmpty
+                                        ? NetworkImage(user['photoURL'])
+                                        : const AssetImage('Asset/images/arif.jpg') as ImageProvider,
                                   ),
                                   const SizedBox(height: 18),
                                   _ProfileDetails(
@@ -111,9 +131,9 @@ class UserDashboardPage extends StatelessWidget {
                                   CircleAvatar(
                                     radius: 56,
                                     backgroundColor: Colors.white,
-                                    backgroundImage: AssetImage(
-                                      'Asset/images/arif.jpg',
-                                    ),
+                                    backgroundImage: user['photoURL'] != null && user['photoURL'].isNotEmpty
+                                        ? NetworkImage(user['photoURL'])
+                                        : const AssetImage('Asset/images/arif.jpg') as ImageProvider,
                                   ),
                                   const SizedBox(width: 36),
                                   Expanded(
@@ -186,6 +206,93 @@ class UserDashboardPage extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  static String _formatDate(dynamic timestamp) {
+    if (timestamp == null) return 'Month DD YEAR';
+    try {
+      if (timestamp is Timestamp) {
+        final date = timestamp.toDate();
+        return '${_getMonthName(date.month)} ${date.day} ${date.year}';
+      }
+      return 'Month DD YEAR';
+    } catch (e) {
+      return 'Month DD YEAR';
+    }
+  }
+
+  static String _getMonthName(int month) {
+    const months = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    return months[month - 1];
+  }
+
+  static void _showLogoutDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Logout'),
+          content: const Text('Are you sure you want to logout?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => _performLogout(context),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Logout'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  static void _performLogout(BuildContext context) async {
+    try {
+      // Show loading dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Text('Logging out...'),
+            ],
+          ),
+        ),
+      );
+
+      // Sign out from Firebase
+      await FirebaseAuth.instance.signOut();
+
+      // Navigate to main page and clear all previous routes
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => const MainPage()),
+        (Route<dynamic> route) => false,
+      );
+
+    } catch (e) {
+      // Close loading dialog
+      Navigator.pop(context);
+      
+      // Show error
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error logging out: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 }
 

@@ -33,13 +33,32 @@ class MyApp extends StatelessWidget {
       ),
       home: const MainPage(), // Start with login page
       routes: {
+        // User Authentication
         '/login': (context) => const Login(),
-        '/admin-dashboard': (context) => AdminDashboardPage(),
+
+        // Admin Authentication
+        '/admin-login': (context) => AdminLogin(),
         '/admin-forgot-password': (context) => AdminForgotPassword(),
         '/admin-reset-password-confirmation': (context) => AdminResetPasswordConfirmation(email: ''),
 
-        '/user-home': (context) => const UserHomePage(),
+        // Main Home Page
+        '/main-page': (context) => const MainPage(),
 
+        // Admin Pages
+        '/admin-dashboard': (context) => AdminDashboardPage(),
+        '/admin-books-club-management': (context) => BooksAndClubManagementPage(),
+        '/admin-users-management': (context) => UserManagementPage(),
+        '/admin-all-users-books-requests-catalog': (context) => AllUsersBookRequestCatalogManagementPage(),
+
+        // Club Page
+        '/book-club': (context) => BookClubPage(),
+
+        // User Pages
+        '/user-home': (context) => const UserHomePage(),
+        '/user-dashboard': (context) => UserDashboardPage(onMyBooksTap: () {  }, onEditProfileTap: () {  },),
+        '/user-books': (context) => UserBooksPage(),
+        '/user-book-details': (context) => BookDetailsPage(bookId: 'mock',),
+        '/author-dashboard': (context) => AuthorDashboardPage(),
       },
     );
   }
