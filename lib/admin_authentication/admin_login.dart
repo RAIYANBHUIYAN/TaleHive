@@ -1,217 +1,321 @@
 import 'package:flutter/material.dart';
-import 'admin_forgot_password.dart'; // Import the forgot password page
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'admin_forgot_password.dart';
 
-// Convert to StatefulWidget to manage password visibility state
 class AdminLogin extends StatefulWidget {
   const AdminLogin({super.key});
 
   @override
-  State<AdminLogin> createState() => _LoginState();
+  State<AdminLogin> createState() => _AdminLoginState();
 }
 
-class _LoginState extends State<AdminLogin> {
-  // State variable to toggle password visibility
+class _AdminLoginState extends State<AdminLogin> {
+  final _formKey = GlobalKey<FormState>();
+  final emailController = TextEditingController();
+  final passwordController = TextEditingController();
   bool _isPasswordVisible = false;
+  bool isLoading = false;
+
+  Future<void> _adminLogin() async {
+    if (_formKey.currentState!.validate()) {
+      setState(() => isLoading = true);
+      try {
+        // Sign in with Firebase Auth
+        final UserCredential userCredential = await FirebaseAuth.instance
+            .signInWithEmailAndPassword(
+          email: emailController.text.trim(),
+          password: passwordController.text.trim(),
+        );
+
+        final User? user = userCredential.user;
+        if (user != null) {
+          // Admin authenticated successfully with Firebase Auth
+          Navigator.pushReplacementNamed(context, '/admin-dashboard');
+          _showSuccess('Welcome Admin! Login successful.');
+        }
+      } on FirebaseAuthException catch (e) {
+        String errorMessage = 'Login failed';
+        if (e.code == 'user-not-found') {
+          errorMessage = 'No admin account found with this email.';
+        } else if (e.code == 'wrong-password') {
+          errorMessage = 'Incorrect password. Please try again.';
+        } else if (e.code == 'invalid-email') {
+          errorMessage = 'Please enter a valid email address.';
+        } else if (e.code == 'too-many-requests') {
+          errorMessage = 'Too many failed attempts. Please try again later.';
+        }
+        _showError(errorMessage);
+      } catch (e) {
+        _showError('Error: $e');
+      } finally {
+        setState(() => isLoading = false);
+      }
+    }
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(Icons.error_outline, color: Colors.white, size: 24),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                message,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.red[600],
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        margin: EdgeInsets.all(16),
+        duration: Duration(seconds: 4),
+        elevation: 8,
+      ),
+    );
+  }
+
+  void _showSuccess(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(Icons.check_circle_outline, color: Colors.white, size: 24),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                message,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.green[600],
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        margin: EdgeInsets.all(16),
+        duration: Duration(seconds: 3),
+        elevation: 8,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Center(
-        // Center the content vertically
         child: SingleChildScrollView(
-          // Wrap in SingleChildScrollView to prevent overflow on small screens
-          padding: const EdgeInsets.all(20.0), // Add some padding
+          padding: const EdgeInsets.all(20.0),
           child: Column(
-            // Changed Row to Column for mobile layout
-            mainAxisAlignment:
-            MainAxisAlignment.center, // Center content vertically
-            crossAxisAlignment:
-            CrossAxisAlignment.center, // Center content horizontally
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Add the logo at the top
+              // Logo
               Image.asset(
-                'Asset/images/logo.jpg', // Assuming this is the correct path to your logo asset
-                height: 100, // Adjust height as needed
-              ),
-              SizedBox(height: 20), // Spacing below the logo
-              Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment:
-                CrossAxisAlignment.center, // Center elements horizontally
-                children: [
-                  Text(
-                    'Welcome Admin !!',
-                    style: TextStyle(
-                      fontSize: 40,
-                      color: Colors.blue,
-                    ), // Slightly smaller font size for mobile
-                  ),
-                  Text('Please enter your credentials to log in'),
-                  SizedBox(height: 20), // Add some spacing
-                  Container(
-                    width:
-                    300, // Keep a reasonable width for the form container
-                    child: Form(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          TextFormField(
-                            decoration: InputDecoration(
-                              labelText: 'Username',
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(30.0),
-                                borderSide: BorderSide(
-                                  color: Colors.lightGreen,
-                                ),
-                              ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(30.0),
-                                borderSide: BorderSide(
-                                  color: Colors.lightGreen,
-                                ),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(30.0),
-                                borderSide: BorderSide(
-                                  color: Colors.lightGreenAccent,
-                                  width: 2.0,
-                                ),
-                              ),
-                            ),
-                          ),
-                          SizedBox(height: 15), // Spacing between fields
-                          TextFormField(
-                            decoration: InputDecoration(
-                              labelText: 'Password',
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(30.0),
-                                borderSide: BorderSide(
-                                  color: Colors.lightGreen,
-                                ),
-                              ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(30.0),
-                                borderSide: BorderSide(
-                                  color: Colors.lightGreen,
-                                ),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(30.0),
-                                borderSide: BorderSide(
-                                  color: Colors.lightGreenAccent,
-                                  width: 2.0,
-                                ),
-                              ),
-                              // Add the password visibility toggle icon
-                              suffixIcon: IconButton(
-                                icon: Icon(
-                                  _isPasswordVisible
-                                      ? Icons.visibility
-                                      : Icons.visibility_off,
-                                  color: Colors
-                                      .grey, // Adjust icon color as needed
-                                ),
-                                onPressed: () {
-                                  // Toggle password visibility state
-                                  setState(() {
-                                    _isPasswordVisible = !_isPasswordVisible;
-                                  });
-                                },
-                              ),
-                            ),
-                            obscureText:
-                            !_isPasswordVisible, // Use the state variable here
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  SizedBox(height: 10), // Spacing
-                  TextButton(
-                    onPressed: () {
-                      // Navigate to the Forgot Password page with a custom animation
-                      Navigator.push(
-                        context,
-                        PageRouteBuilder(
-                          pageBuilder:
-                              (context, animation, secondaryAnimation) =>
-                          const AdminForgotPassword(),
-                          transitionsBuilder:
-                              (context, animation, secondaryAnimation, child) {
-                            const begin = Offset(
-                              1.0,
-                              0.0,
-                            ); // Start from the right
-                            const end = Offset.zero; // End at the center
-                            const curve =
-                                Curves.ease; // Smooth animation curve
-
-                            var tween = Tween(
-                              begin: begin,
-                              end: end,
-                            ).chain(CurveTween(curve: curve));
-
-                            return SlideTransition(
-                              position: animation.drive(tween),
-                              child: child,
-                            );
-                          },
-                        ),
-                      );
-                    },
-                    child: Text(
-                      'Forgot password?',
-                      style: TextStyle(color: Colors.blueGrey),
-                    ),
-                  ),
-                  SizedBox(height: 20), // Spacing
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                'Asset/images/logo.jpg',
+                height: 100,
+                errorBuilder: (context, error, stackTrace) {
+                  return Column(
                     children: [
-                      ElevatedButton(
-                        onPressed: () {},
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.lightGreen,
-                          shape: RoundedRectangleBorder(
+                      Icon(Icons.image_not_supported, size: 60, color: Colors.grey),
+                      SizedBox(height: 8),
+                      Text(
+                        'Logo not found',
+                        style: TextStyle(color: Colors.red, fontSize: 14),
+                      ),
+                    ],
+                  );
+                },
+              ),
+              SizedBox(height: 20),
+              
+              // Title and description
+              Text(
+                'Welcome Admin!',
+                style: TextStyle(
+                  fontSize: 40,
+                  color: Colors.blue,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              SizedBox(height: 10),
+              Text(
+                'Please enter your admin credentials to log in',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.grey[600],
+                ),
+                textAlign: TextAlign.center,
+              ),
+              SizedBox(height: 30),
+              
+              // Form
+              Container(
+                width: 350,
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    children: [
+                      TextFormField(
+                        controller: emailController,
+                        validator: (value) => value == null || !value.contains('@') || !value.contains('.') ? 'Enter valid email' : null,
+                        keyboardType: TextInputType.emailAddress,
+                        decoration: InputDecoration(
+                          labelText: 'Admin Email',
+                          prefixIcon: Icon(Icons.admin_panel_settings, color: Colors.lightGreen),
+                          border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(30.0),
+                            borderSide: BorderSide(
+                              color: Colors.lightGreen,
+                            ),
                           ),
-                          padding: EdgeInsets.symmetric(
-                            horizontal: 40,
-                            vertical: 15,
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(30.0),
+                            borderSide: BorderSide(
+                              color: Colors.lightGreen,
+                            ),
                           ),
-                        ),
-                        child: Text(
-                          'LOG IN',
-                          style: TextStyle(color: Colors.white),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(30.0),
+                            borderSide: BorderSide(
+                              color: Colors.lightGreenAccent,
+                              width: 2.0,
+                            ),
+                          ),
                         ),
                       ),
-
+                      SizedBox(height: 15),
+                      TextFormField(
+                        controller: passwordController,
+                        validator: (value) => value == null || value.length < 6 ? 'Password must be at least 6 characters' : null,
+                        obscureText: !_isPasswordVisible,
+                        decoration: InputDecoration(
+                          labelText: 'Password',
+                          prefixIcon: Icon(Icons.lock, color: Colors.lightGreen),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              _isPasswordVisible
+                                  ? Icons.visibility
+                                  : Icons.visibility_off,
+                              color: Colors.grey,
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                _isPasswordVisible = !_isPasswordVisible;
+                              });
+                            },
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(30.0),
+                            borderSide: BorderSide(
+                              color: Colors.lightGreen,
+                            ),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(30.0),
+                            borderSide: BorderSide(
+                              color: Colors.lightGreen,
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(30.0),
+                            borderSide: BorderSide(
+                              color: Colors.lightGreenAccent,
+                              width: 2.0,
+                            ),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
-                ],
+                ),
               ),
-
-              SizedBox(
-                height: 40,
-              ), // Add significant spacing between the two sections
-
+              SizedBox(height: 10),
+              
+              // Forgot Password Link
+              TextButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    PageRouteBuilder(
+                      pageBuilder: (context, animation, secondaryAnimation) =>
+                          const AdminForgotPassword(),
+                      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                        const begin = Offset(1.0, 0.0);
+                        const end = Offset.zero;
+                        const curve = Curves.ease;
+                        var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+                        return SlideTransition(
+                          position: animation.drive(tween),
+                          child: child,
+                        );
+                      },
+                    ),
+                  );
+                },
+                child: Text(
+                  'Forgot password?',
+                  style: TextStyle(
+                    color: Colors.blueGrey,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+              SizedBox(height: 20),
+              
+              // Login Button
+              ElevatedButton(
+                onPressed: isLoading ? null : _adminLogin,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.lightGreen,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(30.0),
+                  ),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: 80,
+                    vertical: 15,
+                  ),
+                ),
+                child: isLoading
+                    ? CircularProgressIndicator(color: Colors.white)
+                    : Text(
+                        'ADMIN LOGIN',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+              ),
+              SizedBox(height: 40),
+              
+              // TaleHive branding
               Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Text(
-                    'Brain Station 23',
+                    'TaleHive',
                     style: TextStyle(fontSize: 24, color: Colors.blue),
                   ),
-                  Text(
-                    'Library',
-                    style: TextStyle(fontSize: 18, color: Colors.black54),
-                  ),
-                  SizedBox(height: 10), // Spacing
                   Container(
                     width: 300,
                     child: Text(
-                      'Your Premier Digital Library for Exploring Technical, Training, and IT Books',
+                      'Admin Portal - Your Premier Digital Library Management System',
                       style: TextStyle(fontSize: 14, color: Colors.black87),
                       textAlign: TextAlign.center,
                     ),
@@ -223,5 +327,12 @@ class _LoginState extends State<AdminLogin> {
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    emailController.dispose();
+    passwordController.dispose();
+    super.dispose();
   }
 }
