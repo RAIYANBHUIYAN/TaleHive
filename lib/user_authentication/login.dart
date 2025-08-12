@@ -4,6 +4,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'signup.dart'; // Import the signup page using a relative path
 import 'forgot_password.dart'; // Import the forgot password page using a relative path
+// Add this import at the top of login.dart:
+import '../pages/user/author_dashboard.dart'; // Import the author dashboard page
+import '../pages/user/user_home.dart'; // Import the user home page
 
 // Convert to StatefulWidget to manage password visibility state
 class Login extends StatefulWidget {
@@ -25,12 +28,14 @@ class _LoginState extends State<Login> {
     if (_formKey.currentState!.validate()) {
       setState(() => isLoading = true);
       try {
-        await FirebaseAuth.instance.signInWithEmailAndPassword(
+        UserCredential userCredential = await FirebaseAuth.instance.signInWithEmailAndPassword(
           email: emailController.text.trim(),
           password: passwordController.text.trim(),
         );
-        // Navigate to user-home page
-        Navigator.pushReplacementNamed(context, '/user-home');
+        
+        // Check user role and navigate accordingly
+        await _saveUserToFirestore(userCredential.user!);
+        
         _showSuccess('Welcome back! Login successful');
       } on FirebaseAuthException catch (e) {
         String error = 'Login failed';
@@ -55,8 +60,7 @@ class _LoginState extends State<Login> {
         return;
       }
 
-      final GoogleSignInAuthentication googleAuth =
-          await googleUser.authentication;
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
 
       final credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
@@ -67,29 +71,11 @@ class _LoginState extends State<Login> {
           .signInWithCredential(credential);
       final User? user = userCredential.user;
 
-      // Save user info to Firestore
+      // Check user role and navigate accordingly
       if (user != null) {
-        final userDoc = FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid);
-        final docSnapshot = await userDoc.get();
-
-        // Save only if not already exists
-        if (!docSnapshot.exists) {
-          await userDoc.set({
-            'uid': user.uid,
-            'firstName': user.displayName?.split(' ').first ?? '',
-            'lastName': user.displayName?.split(' ').last ?? '',
-            'email': user.email ?? '',
-            'photoURL': user.photoURL ?? '',
-            'provider': 'google',
-            'createdAt': FieldValue.serverTimestamp(),
-          });
-        }
+        await _saveUserToFirestore(user);
       }
 
-      // Navigate to user-home page
-      Navigator.pushReplacementNamed(context, '/user-home');
       String userName = user?.displayName ?? 'User';
       String firstName = userName.split(' ').first;
       _showSuccess('Welcome to TaleHive, $firstName! 🎉 Signed in successfully with Google');
@@ -106,6 +92,94 @@ class _LoginState extends State<Login> {
       _showError(errorMessage);
     } finally {
       setState(() => isLoading = false);
+    }
+  }
+
+  // In login.dart, update the _saveUserToFirestore method to check user role:
+
+  Future<void> _saveUserToFirestore(User user) async {
+    try {
+      print('💾 Checking user role for: ${user.email}');
+
+      // First check if user exists in 'authors' collection
+      DocumentSnapshot authorDoc = await FirebaseFirestore.instance
+          .collection('authors')
+          .doc(user.uid)
+          .get();
+
+      if (authorDoc.exists) {
+        print('✅ User found in authors collection');
+        // User is an author - update and navigate to author dashboard
+        await FirebaseFirestore.instance.collection('authors').doc(user.uid).update({
+          'lastLoginAt': FieldValue.serverTimestamp(),
+          'email': user.email,
+          'displayName': user.displayName,
+          'photoURL': user.photoURL,
+        });
+        
+        // Navigate to Author Dashboard
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const AuthorDashboardPage()),
+        );
+        return;
+      }
+
+      // Check if user exists in 'users' collection
+      DocumentSnapshot userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+
+      if (userDoc.exists) {
+        print('✅ User found in users collection');
+        // User is a reader - update and navigate to user home
+        await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
+          'lastLoginAt': FieldValue.serverTimestamp(),
+          'email': user.email,
+          'displayName': user.displayName,
+          'photoURL': user.photoURL,
+        });
+        
+        // Navigate to User Home
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const UserHomePage()),
+        );
+        return;
+      }
+
+      print('⚠️ User not found in any collection, creating as reader');
+      // If user doesn't exist in either collection, create as reader (default)
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        'uid': user.uid,
+        'firstName': user.displayName?.split(' ').first ?? 'User',
+        'lastName': user.displayName?.split(' ').skip(1).join(' ') ?? '',
+        'email': user.email ?? '',
+        'photoURL': user.photoURL ?? '',
+        'displayName': user.displayName ?? 'User',
+        'role': 'reader',
+        'provider': user.providerData.isNotEmpty ? user.providerData.first.providerId : 'unknown',
+        'createdAt': FieldValue.serverTimestamp(),
+        'lastLoginAt': FieldValue.serverTimestamp(),
+        'isActive': true,
+        'booksRead': 0,
+        'favoriteGenres': 'Fiction, Science',
+      });
+
+      // Navigate to User Home
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const UserHomePage()),
+      );
+
+    } catch (e) {
+      print('❌ Error checking user role: $e');
+      // Fallback navigation to user home if there's an error
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const UserHomePage()),
+      );
     }
   }
 

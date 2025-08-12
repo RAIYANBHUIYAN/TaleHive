@@ -502,7 +502,7 @@ class _BookCoverActions extends StatelessWidget {
             ),
             _ActionChipButton(
               icon: Icons.summarize,
-              label: 'Summary',
+              label: 'Abstract',
               color: Color(0xFFB5179E),
               minWidth: 140,
             ),

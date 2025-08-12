@@ -5,6 +5,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:http/http.dart' as http;
 import 'package:google_sign_in/google_sign_in.dart';
+// Add these imports at the top of the file:
+import 'package:firebase_auth/firebase_auth.dart';
+import '../main_home_page/main_page.dart';
 
 class AuthorDashboardPage extends StatefulWidget {
   const AuthorDashboardPage({Key? key}) : super(key: key);
@@ -430,17 +433,35 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF6C63FF),
         elevation: 0,
-        title: const Text(
-          'Author Dashboard',
-          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+        title: const Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Author',
+              style: TextStyle(
+                fontWeight: FontWeight.bold, 
+                color: Colors.white,
+                fontSize: 18,
+              ),
+            ),
+            Text(
+              'Dashboard',
+              style: TextStyle(
+                fontWeight: FontWeight.bold, 
+                color: Colors.white,
+                fontSize: 18,
+              ),
+            ),
+          ],
         ),
+        centerTitle: false, // Keep it aligned to the left
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white),
             tooltip: 'Refresh Books',
             onPressed: _loadBooksFromFirebase,
           ),
-          // Add Google Sign-In status button
           IconButton(
             icon: Icon(
               _account != null ? Icons.account_circle : Icons.account_circle_outlined,
@@ -450,9 +471,9 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
             onPressed: _initializeGoogleSignIn,
           ),
           IconButton(
-            icon: const Icon(Icons.edit, color: Colors.white),
-            tooltip: 'Edit Profile',
-            onPressed: () => _showEditProfileDialog(context),
+            icon: const Icon(Icons.logout, color: Colors.white),
+            tooltip: 'Logout',
+            onPressed: _showLogoutDialog,
           ),
         ],
       ),
@@ -523,6 +544,15 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                               ],
                             ),
                           ),
+                          // Add edit button here
+                          IconButton(
+                            icon: const Icon(
+                              Icons.edit,
+                              color: Color(0xFF6C63FF),
+                            ),
+                            tooltip: 'Edit Profile',
+                            onPressed: () => _showEditProfileDialog(context),
+                          ),
                         ],
                       ),
                     ),
@@ -549,8 +579,8 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                         Expanded(
                           child: Text(
                             _account != null
-                                ? 'Google Drive connected: ${_account!.email}. PDF thumbnails will load from first page.'
-                                : 'Google Drive not connected. Tap the account icon to sign in for PDF thumbnails.',
+                                ? 'Google Drive connected: ${_account!.email}.'
+                                : 'Google Drive not connected.',
                             style: TextStyle(
                               color: _account != null ? Colors.green[700] : Colors.orange[700],
                               fontSize: 13,
@@ -901,7 +931,7 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
 
   void _showPublishBookDialog() {
     final titleController = TextEditingController();
-    final descriptionController = TextEditingController();
+    // Removed descriptionController
     final authorNameController = TextEditingController(text: author['name']);
     final priceController = TextEditingController();
     final aboutAuthorController = TextEditingController(text: author['bio']);
@@ -913,8 +943,8 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
     bool isPublishing = false;
     
     final List<String> bookTypes = [
-      'Fiction', 'Non-Fiction', 'Science Fiction', 'Fantasy', 'Mystery', 
-      'Romance', 'Thriller', 'Biography', 'Self-Help', 'History', 'Science', 'Technology', 'Other'
+      'Fiction', 'Non-Fiction', 'Politics & Public Affairs', 'Business', 'Classic',
+      'Philosophy', 'Thriller', 'Religion & Spirituality' , 'Horror', 'Historical Friction/Novels/Poetry', 'Science', 'IT & Comps', 'Other'
     ];
 
     showDialog(
@@ -1007,13 +1037,12 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                   ),
                   const SizedBox(height: 16),
 
-                  // Form fields
+                  // Form fields - REMOVED DESCRIPTION FIELD
                   TextField(controller: titleController, decoration: const InputDecoration(labelText: 'Book Title')),
                   const SizedBox(height: 8),
                   TextField(controller: authorNameController, decoration: const InputDecoration(labelText: 'Author Name')),
                   const SizedBox(height: 8),
-                  TextField(controller: descriptionController, decoration: const InputDecoration(labelText: 'Description'), maxLines: 2),
-                  const SizedBox(height: 8),
+                  // Description field REMOVED completely
                   TextField(controller: priceController, decoration: const InputDecoration(labelText: 'Price (\$)'), keyboardType: TextInputType.number),
                   const SizedBox(height: 8),
                   TextField(controller: languageController, decoration: const InputDecoration(labelText: 'Language')),
@@ -1066,7 +1095,7 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                   final bookData = {
                     'title': titleController.text.trim(),
                     'author': authorNameController.text.trim(),
-                    'description': descriptionController.text.trim(),
+                    // REMOVED 'description' field completely
                     'price': double.tryParse(priceController.text) ?? 0.0,
                     'aboutAuthor': aboutAuthorController.text.trim(),
                     'language': languageController.text.trim(),
@@ -1101,6 +1130,75 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
         },
       ),
     );
+  }
+
+  void _showLogoutDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Logout'),
+          content: const Text('Are you sure you want to logout?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: _performLogout,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Logout'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _performLogout() async {
+    try {
+      // Show loading dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Text('Logging out...'),
+            ],
+          ),
+        ),
+      );
+
+      // Sign out from Firebase Auth
+      await FirebaseAuth.instance.signOut();
+      
+      // DON'T sign out from Google Sign-In - keep it for thumbnails
+      // await _googleSignIn.signOut(); // REMOVE THIS LINE
+
+      // Navigate to main page and clear all previous routes
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => const MainPage()),
+        (Route<dynamic> route) => false,
+      );
+
+    } catch (e) {
+      // Close loading dialog
+      Navigator.pop(context);
+      
+      // Show error
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error logging out: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 }
 

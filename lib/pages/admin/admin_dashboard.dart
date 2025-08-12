@@ -5,7 +5,9 @@ import 'catalog/all_users_books_reqst_Catalog_management.dart';
 import 'books/books_and_club_management.dart';
 import 'users/user_management.dart';
 import '../../components/admin_sidebar.dart';
-
+// Add these imports at the top of the file:
+import 'package:firebase_auth/firebase_auth.dart';
+import '../main_home_page/main_page.dart';
 class AdminDashboardPage extends StatefulWidget {
   const AdminDashboardPage({Key? key}) : super(key: key);
 
@@ -40,7 +42,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
   void _handleSidebarTap(String label) {
     if (label == 'Log Out') {
-      // TODO: Implement logout logic
+      _showLogoutDialog();
     } else if (label == 'Catalog') {
       Navigator.of(context).push(_createRoute(const AllUsersBookRequestCatalogManagementPage()));
       _toggleSidebar();
@@ -97,10 +99,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       ),
     );
   }
-
-
-
-
 
   Widget _buildHeader() {
     final bool isMobile = MediaQuery.of(context).size.width < 768;
@@ -843,5 +841,147 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     );
   }
 
+  void _showLogoutDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
+            children: [
+              Icon(
+                Icons.logout,
+                color: Colors.red[600],
+                size: 24,
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Logout',
+                style: GoogleFonts.montserrat(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                ),
+              ),
+            ],
+          ),
+          content: Text(
+            'Are you sure you want to logout from admin panel?',
+            style: GoogleFonts.montserrat(
+              fontSize: 14,
+              color: Colors.grey[600],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(
+                'Cancel',
+                style: GoogleFonts.montserrat(
+                  color: Colors.grey[600],
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: _performLogout,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red[600],
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 10,
+                ),
+              ),
+              child: Text(
+                'Logout',
+                style: GoogleFonts.montserrat(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
 
+  Future<void> _performLogout() async {
+    try {
+      // Close logout dialog first
+      Navigator.pop(context);
+      
+      // Show loading dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(
+                color: Color(0xFF0096C7),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Logging out...',
+                style: GoogleFonts.montserrat(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      // Sign out from Firebase Auth
+      await FirebaseAuth.instance.signOut();
+
+      // Navigate to main page and clear all previous routes
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => const MainPage()),
+        (Route<dynamic> route) => false,
+      );
+
+    } catch (e) {
+      // Close loading dialog
+      Navigator.pop(context);
+      
+      // Show error message
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.error_outline, color: Colors.white),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Error logging out: ${e.toString()}',
+                  style: GoogleFonts.montserrat(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: Colors.red[600],
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          margin: const EdgeInsets.all(16),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
+  }
 }

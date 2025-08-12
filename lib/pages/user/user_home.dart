@@ -5,7 +5,13 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart'; // Add this import
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:image_picker/image_picker.dart';
+import 'user_dashboard.dart';
+import '../club/book_club.dart';
+import 'book_details.dart';
 
 class UserHomePage extends StatefulWidget {
   const UserHomePage({Key? key}) : super(key: key);
@@ -15,19 +21,22 @@ class UserHomePage extends StatefulWidget {
 }
 
 class _UserHomePageState extends State<UserHomePage> {
-  final userName = ' Nahid ';
+  // Firebase Auth variables
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  User? _currentUser;
+  Map<String, dynamic>? _userData;
+  bool _isLoadingUser = true;
+
   final quotes = [
     "There is more treasure in books than in all the pirate's loot on Treasure Island. - Walt Disney",
     "A room without books is like a body without a soul. - Cicero",
     "Books are a uniquely portable magic. - Stephen King",
   ];
 
-  // Firebase instance
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-
   // Google Drive setup for thumbnails
   GoogleSignInAccount? _account;
-  List<Map<String, dynamic>> _firestoreBooks = []; // Changed from _drivePdfBooks
+  List<Map<String, dynamic>> _firestoreBooks = [];
   bool _isLoadingBooks = false;
   final Map<String, String> _thumbnailCache = {};
 
@@ -49,9 +58,142 @@ class _UserHomePageState extends State<UserHomePage> {
   @override
   void initState() {
     super.initState();
-    // Auto-load books from Firestore and initialize Google Sign-In for thumbnails
+    _initializeUserSession();
     _loadBooksFromFirestore();
     _initializeGoogleSignIn();
+  }
+
+  // Initialize user session - Fixed version
+  void _initializeUserSession() async {
+    print('🔐 Initializing user session...');
+    
+    // Check current user first
+    User? currentUser = _auth.currentUser;
+    if (currentUser != null) {
+
+      await _fetchUserData(currentUser);
+    } else {
+      print('❌ No user logged in');
+      setState(() {
+        _currentUser = null;
+        _userData = null;
+        _isLoadingUser = false;
+      });
+    }
+
+    // Listen for auth state changes
+    _auth.authStateChanges().listen((User? user) async {
+      print('🔄 Auth state changed: ${user?.email ?? 'null'}');
+      if (user != null && user != _currentUser) {
+        await _fetchUserData(user);
+      } else if (user == null) {
+        setState(() {
+          _currentUser = null;
+          _userData = null;
+          _isLoadingUser = false;
+        });
+      }
+    });
+  }
+
+  // Fetch user data from Firestore - Fixed version
+  Future<void> _fetchUserData(User user) async {
+    print('📥 Fetching user data for: ${user.email}');
+    
+    try {
+      setState(() {
+        _currentUser = user;
+        _isLoadingUser = true;
+      });
+
+      // Fetch user data from Firestore
+      DocumentSnapshot userDoc = await _firestore.collection('users').doc(user.uid).get();
+      
+      if (userDoc.exists) {
+        Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
+        print('✅ User data found in Firestore: ${userData['name']}');
+        
+        setState(() {
+          _userData = userData;
+          _isLoadingUser = false;
+        });
+      } else {
+        print('⚠️ User not found in Firestore, creating new document...');
+        
+        // Create user document if it doesn't exist
+        Map<String, dynamic> newUserData = {
+          'uid': user.uid,
+          'email': user.email,
+          'firstName': user.displayName?.split(' ').first ?? 'User',
+          'name': user.displayName ?? 'User',
+          'photoURL': user.photoURL ?? '',
+          'createdAt': FieldValue.serverTimestamp(),
+          'lastLoginAt': FieldValue.serverTimestamp(),
+          'booksRead': 0,
+          'favoriteGenres': 'Fiction, Science',
+        };
+
+        await _firestore.collection('users').doc(user.uid).set(newUserData);
+        print('✅ New user document created');
+        
+        setState(() {
+          _userData = newUserData;
+          _isLoadingUser = false;
+        });
+      }
+
+      // Update last login time
+      await _firestore.collection('users').doc(user.uid).update({
+        'lastLoginAt': FieldValue.serverTimestamp(),
+      });
+
+    } catch (e) {
+      print('❌ Error fetching user data: $e');
+      setState(() {
+        _userData = {
+          'name': user.displayName ?? 'User',
+          'email': user.email ?? '',
+          'photoURL': user.photoURL ?? '',
+        };
+        _isLoadingUser = false;
+      });
+    }
+  }
+
+  // Helper methods for greeting and user name
+  String _getGreeting() {
+    final hour = DateTime.now().hour;
+    if (hour < 12) {
+      return 'Good Morning,';
+    } else if (hour < 17) {
+      return 'Good Afternoon,';
+    } else {
+      return 'Good Evening,';
+    }
+  }
+
+  String _getUserDisplayName() {
+    if (_isLoadingUser) {
+      return 'Loading...';
+    } else if (_currentUser != null) {
+      // Try firstName first, then fallback to other sources
+      String name = _userData?['firstName'] ?? 
+                    _userData?['name'] ?? 
+                    _currentUser!.displayName ?? 
+                    _currentUser!.email?.split('@')[0] ?? 
+                    'User';
+      return name;
+    } else {
+      return 'Guest';
+    }
+  }
+
+  String _getUserFirstName() {
+    String fullName = _getUserDisplayName();
+    if (fullName == 'Loading...' || fullName == 'Guest') {
+      return fullName;
+    }
+    return fullName.split(' ').first;
   }
 
   // Initialize Google Sign-In for thumbnail generation
@@ -68,7 +210,7 @@ class _UserHomePageState extends State<UserHomePage> {
     }
   }
 
-  // Load books from Firestore instead of Google Drive
+  // Load books from Firestore
   Future<void> _loadBooksFromFirestore() async {
     if (_isLoadingBooks) return;
 
@@ -106,8 +248,8 @@ class _UserHomePageState extends State<UserHomePage> {
         _firestoreBooks = loadedBooks;
       });
 
-      _showSnackBar('Successfully loaded ${_firestoreBooks.length} books from library!');
-      
+      print('✅ Loaded ${_firestoreBooks.length} books');
+     
     } catch (error) {
       print('Error loading books from Firestore: $error');
       _showSnackBar('Error loading books: ${error.toString()}');
@@ -123,6 +265,7 @@ class _UserHomePageState extends State<UserHomePage> {
   }
 
   void _showSnackBar(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -159,8 +302,53 @@ class _UserHomePageState extends State<UserHomePage> {
                       vertical: 16,
                     ),
                     children: [
-                      // Greeting Banner
-                      _GreetingBanner(userName: userName),
+                      // Debug info (remove in production)
+                      if (_isLoadingUser)
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          margin: const EdgeInsets.only(bottom: 16),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            '🔄 Loading user session...',
+                            style: GoogleFonts.montserrat(fontSize: 12),
+                          ),
+                        ),
+                      if (!_isLoadingUser && _currentUser != null)
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          margin: const EdgeInsets.only(bottom: 16),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+
+                        ),
+                      if (!_isLoadingUser && _currentUser == null)
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          margin: const EdgeInsets.only(bottom: 16),
+                          decoration: BoxDecoration(
+                            color: Colors.red.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            '❌ No user logged in',
+                            style: GoogleFonts.montserrat(fontSize: 12),
+                          ),
+                        ),
+
+                      // Greeting Banner - Updated to use dynamic name
+                      _GreetingBanner(
+                        userName: _getUserFirstName(),
+                        greeting: _getGreeting(),
+                        isLoading: _isLoadingUser,
+                        userData: _userData,
+                        currentUser: _currentUser,
+                        onEditProfile: _showEditProfileDialog, // Add this
+                      ),
                       const SizedBox(height: 18),
                       // Quote/Highlight Section
                       _QuoteCarousel(quotes: quotes),
@@ -212,6 +400,30 @@ class _UserHomePageState extends State<UserHomePage> {
                         children: [
                           _OnlineUsersWidget(users: onlineUsers),
                           const SizedBox(height: 24),
+                          // User info card
+                          if (_currentUser != null)
+                            Card(
+                              child: Padding(
+                                padding: const EdgeInsets.all(16),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'User Profile',
+                                      style: GoogleFonts.montserrat(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text('Name: ${_getUserDisplayName()}'),
+                                    Text('Email: ${_currentUser!.email}'),
+                                    Text('Books Read: ${_userData?['booksRead'] ?? 0}'),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          const SizedBox(height: 16),
                           // Refresh button
                           ElevatedButton.icon(
                             onPressed: _loadBooksFromFirestore,
@@ -322,13 +534,150 @@ class _UserHomePageState extends State<UserHomePage> {
       ),
     );
   }
+
+  void _showEditProfileDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          'Edit Profile Picture',
+          style: GoogleFonts.montserrat(fontWeight: FontWeight.bold),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircleAvatar(
+              radius: 50,
+              backgroundColor: Colors.grey[200],
+              backgroundImage: _userData?['photoURL'] != null && _userData!['photoURL'].isNotEmpty
+                  ? NetworkImage(_userData!['photoURL'])
+                  : null,
+              child: _userData?['photoURL'] == null || _userData!['photoURL'].isEmpty
+                  ? Icon(Icons.person, size: 50, color: Colors.grey[600])
+                  : null,
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: () => _updateProfilePicture(ImageSource.camera),
+                  icon: const Icon(Icons.camera_alt),
+                  label: const Text('Camera'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0096C7),
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+                ElevatedButton.icon(
+                  onPressed: () => _updateProfilePicture(ImageSource.gallery),
+                  icon: const Icon(Icons.photo_library),
+                  label: const Text('Gallery'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0096C7),
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _updateProfilePicture(ImageSource source) async {
+    Navigator.pop(context); // Close dialog
+    
+    try {
+      // Show loading
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(color: Color(0xFF0096C7)),
+              const SizedBox(height: 16),
+              Text(
+                'Updating profile picture...',
+                style: GoogleFonts.montserrat(),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      final ImagePicker picker = ImagePicker();
+      final XFile? image = await picker.pickImage(source: source);
+      
+      if (image != null && _currentUser != null) {
+        // Upload to Firebase Storage
+        String downloadUrl = await _uploadImageToFirebase(File(image.path));
+        
+        // Update Firestore user document
+        await _firestore.collection('users').doc(_currentUser!.uid).update({
+          'photoURL': downloadUrl,
+        });
+
+        // Update local state
+        setState(() {
+          _userData?['photoURL'] = downloadUrl;
+        });
+
+        Navigator.pop(context); // Close loading dialog
+        _showSnackBar('Profile picture updated successfully!');
+      } else {
+        Navigator.pop(context); // Close loading dialog
+      }
+    } catch (e) {
+      Navigator.pop(context); // Close loading dialog
+      _showSnackBar('Error updating profile picture: ${e.toString()}');
+    }
+  }
+
+  Future<String> _uploadImageToFirebase(File imageFile) async {
+    try {
+      final FirebaseStorage storage = FirebaseStorage.instance;
+      final String fileName = 'profile_${_currentUser!.uid}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final Reference ref = storage.ref().child('profile_pictures').child(fileName);
+      
+      final UploadTask uploadTask = ref.putFile(imageFile);
+      final TaskSnapshot snapshot = await uploadTask;
+      final String downloadUrl = await snapshot.ref.getDownloadURL();
+      
+      return downloadUrl;
+    } catch (e) {
+      throw Exception('Failed to upload image: $e');
+    }
+  }
 }
 
-// --- Components (Updated to handle dynamic data) ---
-
+// Updated _GreetingBanner to accept dynamic data
 class _GreetingBanner extends StatelessWidget {
   final String userName;
-  const _GreetingBanner({required this.userName});
+  final String greeting;
+  final bool isLoading;
+  final Map<String, dynamic>? userData;
+  final User? currentUser;
+  final VoidCallback? onEditProfile; // Add this
+
+  const _GreetingBanner({
+    required this.userName,
+    required this.greeting,
+    required this.isLoading,
+    this.userData,
+    this.currentUser,
+    this.onEditProfile, // Add this
+  });
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -365,53 +714,54 @@ class _GreetingBanner extends StatelessWidget {
                     BoxShadow(
                       color: Colors.black.withOpacity(0.15),
                       blurRadius: 8,
-                      offset: Offset(0, 4),
+                      offset: const Offset(0, 4),
                     ),
                   ],
                   border: Border.all(color: Colors.white, width: 3),
                 ),
-                child: CircleAvatar(
-                  radius: 32,
-                  backgroundImage: AssetImage('Asset/images/nahid.jpg'),
-                  backgroundColor: Colors.white,
-                ),
+                child: _buildProfileAvatar(context), // Pass context here
               ),
               const SizedBox(width: 18),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Good morning,',
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w400,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      greeting,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w400,
+                      ),
                     ),
-                  ),
-                  Text(
-                    userName.trim(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.1,
-                      shadows: [
-                        Shadow(
-                          color: Colors.black26,
-                          blurRadius: 4,
-                          offset: Offset(0, 2),
-                        ),
-                      ],
+                    Text(
+                      isLoading ? 'Loading...' : userName,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.1,
+                        shadows: [
+                          Shadow(
+                            color: Colors.black26,
+                            blurRadius: 4,
+                            offset: Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ],
           ),
           const SizedBox(height: 8),
-          const Text(
-            'Start your day with a book',
-            style: TextStyle(color: Colors.white70, fontSize: 16),
+          Text(
+            currentUser != null 
+                ? 'Welcome back! Start your reading journey' 
+                : 'Start your day with a book',
+            style: const TextStyle(color: Colors.white70, fontSize: 16),
           ),
           const SizedBox(height: 18),
           Row(
@@ -419,7 +769,9 @@ class _GreetingBanner extends StatelessWidget {
               Expanded(
                 child: TextField(
                   decoration: InputDecoration(
-                    hintText: 'Request for a BOOK? or Search...',
+                    hintText: currentUser != null 
+                        ? 'Search your library...' 
+                        : 'Request for a BOOK? or Search...',
                     filled: true,
                     fillColor: Colors.white,
                     prefixIcon: const Icon(
@@ -460,7 +812,80 @@ class _GreetingBanner extends StatelessWidget {
       ),
     );
   }
+
+  Widget _buildProfileAvatar(BuildContext context) {
+    if (isLoading) {
+      return const CircleAvatar(
+        radius: 32,
+        backgroundColor: Colors.white,
+        child: CircularProgressIndicator(
+          color: Color(0xFF0096C7),
+          strokeWidth: 2,
+        ),
+      );
+    }
+
+    // Check if user has photo URL
+    String? photoURL = userData?['photoURL'] ?? currentUser?.photoURL;
+    
+    return GestureDetector(
+      onTap: () {
+        // Navigate to user dashboard
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => UserDashboardPage(
+              userData: userData,
+              onMyBooksTap: () {
+                Navigator.pop(context);
+              },
+              onEditProfileTap: () {
+                Navigator.pop(context);
+                _showEditProfileFromBanner();
+              },
+            ),
+          ),
+        );
+      },
+      child: CircleAvatar(
+        radius: 32,
+        backgroundColor: Colors.white,
+        backgroundImage: photoURL != null && photoURL.isNotEmpty 
+            ? NetworkImage(photoURL)
+            : null,
+        onBackgroundImageError: photoURL != null ? (exception, stackTrace) {
+          print('Failed to load profile image: $exception');
+        } : null,
+        child: photoURL == null || photoURL.isEmpty
+            ? Text(
+                _getInitial(),
+                style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF0096C7),
+                ),
+              )
+            : null,
+      ),
+    );
+  }
+
+  String _getInitial() {
+    return currentUser?.displayName?.isNotEmpty == true 
+        ? currentUser!.displayName![0].toUpperCase()
+        : currentUser?.email?.isNotEmpty == true
+            ? currentUser!.email![0].toUpperCase()
+            : 'U';
+  }
+
+  void _showEditProfileFromBanner() {
+    if (onEditProfile != null) {
+      onEditProfile!();
+    }
+  }
 }
+
+// --- Components (Updated to handle dynamic data) ---
 
 class _QuoteCarousel extends StatefulWidget {
   final List<String> quotes;
@@ -583,71 +1008,99 @@ class _HorizontalBookList extends StatelessWidget {
         separatorBuilder: (context, i) => const SizedBox(width: 14),
         itemBuilder: (context, i) {
           final book = books[i];
-          return ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 100),
-            child: Container(
-              height: 140,
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    if (label != null && i == 0)
-                      Container(
-                        margin: const EdgeInsets.only(bottom: 6),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFB5179E),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          label!,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
+          return GestureDetector(  // Add this
+            onTap: () async {
+              // Show loading indicator
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (context) => const Center(
+                  child: CircularProgressIndicator(),
+                ),
+              );
+              
+              // Small delay to show loading
+              await Future.delayed(const Duration(milliseconds: 300));
+              
+              // Close loading dialog
+              Navigator.pop(context);
+              
+              // Navigate to book details
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => BookDetailsPage(
+                    bookId: book['id'] ?? 'mock',
+                  ),
+                ),
+              );
+            },
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 100),
+              child: Container(
+                height: 140,
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      if (label != null && i == 0)
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 6),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
                           ),
-                          overflow: TextOverflow.ellipsis,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFB5179E),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            label!,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.network(
+                          book['cover'] ?? '',
+                          width: 70,
+                          height: 80,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              width: 70,
+                              height: 80,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0096C7).withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Icon(
+                                Icons.picture_as_pdf,
+                                color: Color(0xFF0096C7),
+                                size: 30,
+                              ),
+                            );
+                          },
                         ),
                       ),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Image.network(
-                        book['cover'] ?? '',
-                        width: 70,
-                        height: 80,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Container(
-                            width: 70,
-                            height: 80,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF0096C7).withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Icon(
-                              Icons.picture_as_pdf,
-                              color: Color(0xFF0096C7),
-                              size: 30,
-                            ),
-                          );
-                        },
+                      const SizedBox(height: 4),
+                      SizedBox(
+                        width: 90,
+                        child: Text(
+                          book['title'] ?? 'No Title',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontSize: 13),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    SizedBox(
-                      width: 90,
-                      child: Text(
-                        book['title'] ?? 'No Title',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 13),
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -686,96 +1139,108 @@ class _RecommendedList extends StatelessWidget {
         separatorBuilder: (context, i) => const SizedBox(width: 14),
         itemBuilder: (context, i) {
           final book = books[i];
-          return ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 120),
-            child: Container(
-              height: 180,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.06),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
+          return GestureDetector(  // Add this
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => BookDetailsPage(
+                    bookId: book['id'] ?? 'mock',
                   ),
-                ],
-              ),
-              padding: const EdgeInsets.all(8),
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
-                      child: Image.network(
-                        book['cover'] ?? '',
-                        width: 70,
-                        height: 80,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Container(
-                            width: 70,
-                            height: 80,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF0096C7).withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: const Icon(
-                              Icons.picture_as_pdf,
-                              color: Color(0xFF0096C7),
-                              size: 30,
-                            ),
-                          );
-                        },
-                      ),
+                ),
+              );
+            },
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 120),
+              child: Container(
+                height: 180,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.06),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      book['title'] ?? 'No Title',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                      ),
-                    ),
-                    if (book['author'] != null && book['author'].toString().trim().isNotEmpty)
-                      Text(
-                        book['author'],
-                        style: const TextStyle(
-                          color: Colors.blueGrey,
-                          fontSize: 12,
+                  ],
+                ),
+                padding: const EdgeInsets.all(8),
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: Image.network(
+                          book['cover'] ?? '',
+                          width: 70,
+                          height: 80,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              width: 70,
+                              height: 80,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0096C7).withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(
+                                Icons.picture_as_pdf,
+                                color: Color(0xFF0096C7),
+                                size: 30,
+                              ),
+                            );
+                          },
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                       ),
-                    const SizedBox(height: 2),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.star, color: Colors.amber, size: 13),
+                      const SizedBox(height: 4),
+                      Text(
+                        book['title'] ?? 'No Title',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                      if (book['author'] != null && book['author'].toString().trim().isNotEmpty)
                         Text(
-                          '${book['rating']?.toStringAsFixed(1) ?? '4.5'}',
-                          style: const TextStyle(fontSize: 11),
+                          book['author'],
+                          style: const TextStyle(
+                            color: Colors.blueGrey,
+                            fontSize: 12,
+                          ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    IconButton(
-                      icon: const Icon(
-                        Icons.favorite_border,
-                        color: Color(0xFFB5179E),
+                      const SizedBox(height: 2),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.star, color: Colors.amber, size: 13),
+                          Text(
+                            '${book['rating']?.toStringAsFixed(1) ?? '4.5'}',
+                            style: const TextStyle(fontSize: 11),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
                       ),
-                      onPressed: () {},
-                      tooltip: 'Add to Favorites',
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                    ),
-                  ],
+                      const SizedBox(height: 4),
+                      IconButton(
+                        icon: const Icon(
+                          Icons.favorite_border,
+                          color: Color(0xFFB5179E),
+                        ),
+                        onPressed: () {},
+                        tooltip: 'Add to Favorites',
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -814,59 +1279,70 @@ class _RecentReadingsList extends StatelessWidget {
         separatorBuilder: (context, i) => const SizedBox(width: 14),
         itemBuilder: (context, i) {
           final book = books[i];
-          return ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 110),
-            child: Container(
-              height: 140,
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.network(
-                        book['cover'] ?? '',
-                        width: 60,
-                        height: 70,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Container(
-                            width: 60,
-                            height: 70,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF0096C7).withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Icon(
-                              Icons.picture_as_pdf,
-                              color: Color(0xFF0096C7),
-                              size: 25,
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      book['title'] ?? 'No Title',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                      ),
-                    ),
-                    if (book['author'] != null && book['author'].toString().trim().isNotEmpty)
-                      Text(
-                        book['author'],
-                        style: const TextStyle(
-                          color: Colors.blueGrey,
-                          fontSize: 12,
+          return GestureDetector(  // Add this
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => BookDetailsPage(
+                    bookId: book['id'] ?? 'mock',
+                  ),
+                ),
+              );
+            },
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 110),
+              child: Container(
+                height: 140,
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.network(
+                          book['cover'] ?? '',
+                          width: 60,
+                          height: 70,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              width: 60,
+                              height: 70,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0096C7).withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Icon(
+                                Icons.picture_as_pdf,
+                                color: Color(0xFF0096C7),
+                                size: 25,
+                              ),
+                            );
+                          },
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                       ),
+                      const SizedBox(height: 4),
+                      Text(
+                        book['title'] ?? 'No Title',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                      if (book['author'] != null && book['author'].toString().trim().isNotEmpty)
+                        Text(
+                          book['author'],
+                          style: const TextStyle(
+                            color: Colors.blueGrey,
+                            fontSize: 12,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                     const SizedBox(height: 2),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -880,7 +1356,8 @@ class _RecentReadingsList extends StatelessWidget {
                         ),
                       ],
                     ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -894,47 +1371,69 @@ class _RecentReadingsList extends StatelessWidget {
 class _BookClubBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      height: 120,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
-        image: const DecorationImage(
-          image: NetworkImage(
-            'https://images.unsplash.com/photo-1516979187457-637abb4f9353?auto=format&fit=crop&w=800&q=80',
+    return GestureDetector(  // Add GestureDetector to make it clickable
+      onTap: () {
+        // Navigate to Book Club page
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const BookClubPage(),
           ),
-          fit: BoxFit.cover,
+        );
+      },
+      child: Container(
+        width: double.infinity,
+        height: 120,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          image: const DecorationImage(
+            image: NetworkImage(
+              'https://images.unsplash.com/photo-1516979187457-637abb4f9353?auto=format&fit=crop&w=800&q=80',
+            ),
+            fit: BoxFit.cover,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.08),
+              blurRadius: 10,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.08),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Stack(
-        children: [
-          Positioned(
-            left: 24,
-            top: 36,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.85),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Text(
-                'TaleHive Book Club',
-                style: TextStyle(
-                  color: Color(0xFF0096C7),
-                  fontWeight: FontWeight.bold,
-                  fontSize: 18,
+        child: Stack(
+          children: [
+            Positioned(
+              left: 24,
+              top: 36,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.85),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(  // Change to Row to add an icon
+                  mainAxisSize: MainAxisSize.min,
+                  children: const [
+                    Text(
+                      'TaleHive Book Club',
+                      style: TextStyle(
+                        color: Color(0xFF0096C7),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                      ),
+                    ),
+                    SizedBox(width: 8),
+                    Icon(
+                      Icons.arrow_forward_ios,
+                      color: Color(0xFF0096C7),
+                      size: 16,
+                    ),
+                  ],
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -987,14 +1486,10 @@ class _Footer extends StatelessWidget {
           Divider(),
           SizedBox(height: 8),
           Text(
-            'BRAIN COPYRIGHT (C) BRAINSTATION 23 LMS - 2025. ALL RIGHTS RESERVED. 23',
+            'TaleHive (C) - 2025. ALL RIGHTS RESERVED.',
             style: TextStyle(color: Colors.grey, fontSize: 12),
           ),
           SizedBox(height: 4),
-          Text(
-            'DATA RETENTION SUMMARY    |    GET THE MOBILE APP',
-            style: TextStyle(color: Colors.blueGrey, fontSize: 12),
-          ),
         ],
       ),
     );

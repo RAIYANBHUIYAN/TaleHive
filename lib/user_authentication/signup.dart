@@ -19,6 +19,10 @@ class _SignupState extends State<Signup> {
   final passwordController = TextEditingController();
   bool _isPasswordVisible = false;
   bool isLoading = false;
+  
+  // Add role selection
+  String selectedRole = 'Reader'; // Default role
+  final List<String> roles = ['Reader', 'Author'];
 
   Future<void> _registerUser() async {
     if (_formKey.currentState!.validate()) {
@@ -32,22 +36,60 @@ class _SignupState extends State<Signup> {
               password: passwordController.text.trim(),
             );
 
-        // Save user info in Firestore
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(userCredential.user!.uid)
-            .set({
-              'firstName': firstNameController.text.trim(),
-              'lastName': lastNameController.text.trim(),
-              'contactNo': contactController.text.trim(),
-              'email': emailController.text.trim(),
-              'username': usernameController.text.trim(),
-              'uid': userCredential.user!.uid,
-              'createdAt': Timestamp.now(),
-            });
+        // Determine collection based on role
+        String collection = selectedRole == 'Author' ? 'authors' : 'users';
+        
+        // Prepare common data
+        Map<String, dynamic> userData = {
+          'firstName': firstNameController.text.trim(),
+          'lastName': lastNameController.text.trim(),
+          'contactNo': contactController.text.trim(),
+          'email': emailController.text.trim(),
+          'username': usernameController.text.trim(),
+          'uid': userCredential.user!.uid,
+          'role': selectedRole.toLowerCase(),
+          'createdAt': Timestamp.now(),
+          'lastLoginAt': Timestamp.now(),
+          'isActive': true,
+        };
 
-        // Show success message
-        _showSuccess('Account created successfully! Please login to continue');
+        // Add role-specific fields
+        if (selectedRole == 'Author') {
+          userData.addAll({
+            'displayName': '${firstNameController.text.trim()} ${lastNameController.text.trim()}',
+            'photoURL': '',
+            'booksPublished': 0,
+            'totalViews': 0,
+            'totalDownloads': 0,
+            'bio': 'Passionate storyteller ready to share amazing stories.',
+            'specialization': [],
+            'socialLinks': {
+              'website': '',
+              'twitter': '',
+              'linkedin': '',
+            },
+            'verificationStatus': 'pending',
+          });
+        } else {
+          userData.addAll({
+            'booksRead': 0,
+            'favoriteGenres': 'Fiction, Science',
+            'photoURL': '',
+          });
+        }
+
+        // Save user info in appropriate Firestore collection
+        await FirebaseFirestore.instance
+            .collection(collection)
+            .doc(userCredential.user!.uid)
+            .set(userData);
+
+        // Show success message based on role
+        String successMessage = selectedRole == 'Author' 
+            ? 'Author account created successfully! Please login to start publishing'
+            : 'Reader account created successfully! Please login to start reading';
+        
+        _showSuccess(successMessage);
 
         // Navigate back to login
         Navigator.pop(context);
@@ -166,6 +208,88 @@ class _SignupState extends State<Signup> {
               ),
               Text('Please provide your information to sign up.'),
               SizedBox(height: 20),
+              
+              // Role Selection Card
+              Container(
+                width: 450,
+                margin: EdgeInsets.only(bottom: 20),
+                padding: EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey[50],
+                  borderRadius: BorderRadius.circular(15),
+                  border: Border.all(color: Colors.grey[300]!),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Select Your Role',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue[800],
+                      ),
+                    ),
+                    SizedBox(height: 12),
+                    Row(
+                      children: roles.map((role) {
+                        bool isSelected = selectedRole == role;
+                        Color roleColor = role == 'Author' ? Colors.purple : Colors.blue;
+                        IconData roleIcon = role == 'Author' ? Icons.edit_outlined : Icons.book_outlined;
+                        
+                        return Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                selectedRole = role;
+                              });
+                            },
+                            child: Container(
+                              margin: EdgeInsets.only(right: role == 'Reader' ? 8 : 0),
+                              padding: EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: isSelected ? roleColor.withOpacity(0.1) : Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: isSelected ? roleColor : Colors.grey[300]!,
+                                  width: isSelected ? 2 : 1,
+                                ),
+                              ),
+                              child: Column(
+                                children: [
+                                  Icon(
+                                    roleIcon,
+                                    color: isSelected ? roleColor : Colors.grey[600],
+                                    size: 32,
+                                  ),
+                                  SizedBox(height: 8),
+                                  Text(
+                                    role,
+                                    style: TextStyle(
+                                      color: isSelected ? roleColor : Colors.grey[600],
+                                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  SizedBox(height: 4),
+                                  Text(
+                                    role == 'Author' ? 'Publish Stories' : 'Read Books',
+                                    style: TextStyle(
+                                      color: Colors.grey[500],
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ),
+              ),
+              
               Container(
                 width: 450,
                 child: Form(
@@ -184,19 +308,19 @@ class _SignupState extends State<Signup> {
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(30.0),
                                   borderSide: BorderSide(
-                                    color: Colors.lightGreen,
+                                    color: selectedRole == 'Author' ? Colors.purple : Colors.lightGreen,
                                   ),
                                 ),
                                 enabledBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(30.0),
                                   borderSide: BorderSide(
-                                    color: Colors.lightGreen,
+                                    color: selectedRole == 'Author' ? Colors.purple : Colors.lightGreen,
                                   ),
                                 ),
                                 focusedBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(30.0),
                                   borderSide: BorderSide(
-                                    color: Colors.lightGreenAccent,
+                                    color: selectedRole == 'Author' ? Colors.purple : Colors.lightGreenAccent,
                                     width: 2.0,
                                   ),
                                 ),
@@ -213,19 +337,19 @@ class _SignupState extends State<Signup> {
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(30.0),
                                   borderSide: BorderSide(
-                                    color: Colors.lightGreen,
+                                    color: selectedRole == 'Author' ? Colors.purple : Colors.lightGreen,
                                   ),
                                 ),
                                 enabledBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(30.0),
                                   borderSide: BorderSide(
-                                    color: Colors.lightGreen,
+                                    color: selectedRole == 'Author' ? Colors.purple : Colors.lightGreen,
                                   ),
                                 ),
                                 focusedBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(30.0),
                                   borderSide: BorderSide(
-                                    color: Colors.lightGreenAccent,
+                                    color: selectedRole == 'Author' ? Colors.purple : Colors.lightGreenAccent,
                                     width: 2.0,
                                   ),
                                 ),
@@ -246,25 +370,24 @@ class _SignupState extends State<Signup> {
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(30.0),
                                   borderSide: BorderSide(
-                                    color: Colors.lightGreen,
+                                    color: selectedRole == 'Author' ? Colors.purple : Colors.lightGreen,
                                   ),
                                 ),
                                 enabledBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(30.0),
                                   borderSide: BorderSide(
-                                    color: Colors.lightGreen,
+                                    color: selectedRole == 'Author' ? Colors.purple : Colors.lightGreen,
                                   ),
                                 ),
                                 focusedBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(30.0),
                                   borderSide: BorderSide(
-                                    color: Colors.lightGreenAccent,
+                                    color: selectedRole == 'Author' ? Colors.purple : Colors.lightGreenAccent,
                                     width: 2.0,
                                   ),
                                 ),
                               ),
-                              keyboardType: TextInputType
-                                  .phone, // Set keyboard type to phone
+                              keyboardType: TextInputType.phone,
                             ),
                           ),
                           SizedBox(width: 10), // Spacing between fields
@@ -277,25 +400,24 @@ class _SignupState extends State<Signup> {
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(30.0),
                                   borderSide: BorderSide(
-                                    color: Colors.lightGreen,
+                                    color: selectedRole == 'Author' ? Colors.purple : Colors.lightGreen,
                                   ),
                                 ),
                                 enabledBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(30.0),
                                   borderSide: BorderSide(
-                                    color: Colors.lightGreen,
+                                    color: selectedRole == 'Author' ? Colors.purple : Colors.lightGreen,
                                   ),
                                 ),
                                 focusedBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(30.0),
                                   borderSide: BorderSide(
-                                    color: Colors.lightGreenAccent,
+                                    color: selectedRole == 'Author' ? Colors.purple : Colors.lightGreenAccent,
                                     width: 2.0,
                                   ),
                                 ),
                               ),
-                              keyboardType: TextInputType
-                                  .emailAddress, // Set keyboard type to email
+                              keyboardType: TextInputType.emailAddress,
                             ),
                           ),
                         ],
@@ -312,19 +434,19 @@ class _SignupState extends State<Signup> {
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(30.0),
                                   borderSide: BorderSide(
-                                    color: Colors.lightGreen,
+                                    color: selectedRole == 'Author' ? Colors.purple : Colors.lightGreen,
                                   ),
                                 ),
                                 enabledBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(30.0),
                                   borderSide: BorderSide(
-                                    color: Colors.lightGreen,
+                                    color: selectedRole == 'Author' ? Colors.purple : Colors.lightGreen,
                                   ),
                                 ),
                                 focusedBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(30.0),
                                   borderSide: BorderSide(
-                                    color: Colors.lightGreenAccent,
+                                    color: selectedRole == 'Author' ? Colors.purple : Colors.lightGreenAccent,
                                     width: 2.0,
                                   ),
                                 ),
@@ -341,23 +463,35 @@ class _SignupState extends State<Signup> {
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(30.0),
                                   borderSide: BorderSide(
-                                    color: Colors.lightGreen,
+                                    color: selectedRole == 'Author' ? Colors.purple : Colors.lightGreen,
                                   ),
                                 ),
                                 enabledBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(30.0),
                                   borderSide: BorderSide(
-                                    color: Colors.lightGreen,
+                                    color: selectedRole == 'Author' ? Colors.purple : Colors.lightGreen,
                                   ),
                                 ),
                                 focusedBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(30.0),
                                   borderSide: BorderSide(
-                                    color: Colors.lightGreenAccent,
+                                    color: selectedRole == 'Author' ? Colors.purple : Colors.lightGreenAccent,
                                     width: 2.0,
                                   ),
                                 ),
-
+                                suffixIcon: IconButton(
+                                  icon: Icon(
+                                    _isPasswordVisible
+                                        ? Icons.visibility
+                                        : Icons.visibility_off,
+                                    color: Colors.grey,
+                                  ),
+                                  onPressed: () {
+                                    setState(() {
+                                      _isPasswordVisible = !_isPasswordVisible;
+                                    });
+                                  },
+                                ),
                               ),
                               obscureText: !_isPasswordVisible,
                             ),
@@ -372,18 +506,21 @@ class _SignupState extends State<Signup> {
               ElevatedButton(
                 onPressed: isLoading ? null : _registerUser,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.lightGreen,
+                  backgroundColor: selectedRole == 'Author' ? Colors.purple : Colors.lightGreen,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(30.0),
                   ),
                   padding: EdgeInsets.symmetric(
                     horizontal: 80,
                     vertical: 15,
-                  ), // Adjust padding
+                  ),
                 ),
                 child: isLoading
                     ? CircularProgressIndicator(color: Colors.white)
-                    : Text('SIGN UP', style: TextStyle(color: Colors.white)),
+                    : Text(
+                        'SIGN UP AS ${selectedRole.toUpperCase()}', 
+                        style: TextStyle(color: Colors.white)
+                      ),
               ),
               SizedBox(height: 40), // Spacing before library info
               Column(
@@ -394,11 +531,12 @@ class _SignupState extends State<Signup> {
                     'TaleHive',
                     style: TextStyle(fontSize: 24, color: Colors.blue),
                   ),
-
                   Container(
                     width: 300,
                     child: Text(
-                      'Your Premier Digital Library for Exploring Technical, Training, and IT Books',
+                      selectedRole == 'Author' 
+                          ? 'Your Platform to Publish and Share Amazing Stories with Thousands of Readers'
+                          : 'Your Premier Digital Library for Exploring Technical, Training, and IT Books',
                       style: TextStyle(fontSize: 14, color: Colors.black87),
                       textAlign: TextAlign.center,
                     ),
