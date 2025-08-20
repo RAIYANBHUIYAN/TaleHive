@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-
+import 'package:supabase_flutter/supabase_flutter.dart';
 class ResetPasswordConfirmation extends StatefulWidget {
   final String email;
 
@@ -12,17 +11,25 @@ class ResetPasswordConfirmation extends StatefulWidget {
 }
 
 class _ResetPasswordConfirmationState extends State<ResetPasswordConfirmation> {
+  final supabase = Supabase.instance.client;
   bool isResending = false;
 
   Future<void> _resendResetEmail() async {
     setState(() => isResending = true);
     try {
-      await FirebaseAuth.instance.sendPasswordResetEmail(email: widget.email);
+      await supabase.auth.resetPasswordForEmail(
+        widget.email,
+        redirectTo: 'https://your-app.com/reset-password', // Optional: your app's reset URL
+      );
       _showSuccess('Password reset email sent again! Please check your inbox.');
-    } on FirebaseAuthException catch (e) {
+    } on AuthException catch (e) {
       String errorMessage = 'Failed to resend email';
-      if (e.code == 'too-many-requests') {
+      if (e.message.contains('rate limit')) {
         errorMessage = 'Too many requests. Please wait before trying again.';
+      } else if (e.message.contains('not found')) {
+        errorMessage = 'Email address not found in our system.';
+      } else {
+        errorMessage = e.message;
       }
       _showError(errorMessage);
     } catch (e) {
@@ -170,7 +177,7 @@ class _ResetPasswordConfirmationState extends State<ResetPasswordConfirmation> {
                     ),
                     SizedBox(height: 20),
                     Text(
-                      'Please check your email and click the link to reset your password. The link will expire in 24 hours.',
+                      'Please check your email and click the link to reset your password. The link will expire in 1 hour for security.',
                       style: TextStyle(
                         fontSize: 16,
                         color: Colors.grey[600],
@@ -214,10 +221,10 @@ class _ResetPasswordConfirmationState extends State<ResetPasswordConfirmation> {
                     SizedBox(height: 12),
                     Text(
                       '1. Check your email inbox\n'
-                      '2. Look for an email from TaleHive\n'
+                      '2. Look for an email from Supabase/TaleHive\n'
                       '3. Click the "Reset Password" link\n'
-                      '4. Create your new password\n'
-                      '5. Return to login with new password',
+                      '4. You\'ll be redirected to create a new password\n'
+                      '5. Return to login with your new password',
                       style: TextStyle(
                         fontSize: 16,
                         color: Colors.grey[700],

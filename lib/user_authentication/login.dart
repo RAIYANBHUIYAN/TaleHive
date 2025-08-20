@@ -1,9 +1,12 @@
+// lib/user_authentication/login.dart
 import 'package:flutter/material.dart';
-import 'signup.dart'; // Import the signup page using a relative path
-import 'forgot_password.dart'; // Import the forgot password page using a relative path
-// Add this import at the top of login.dart:
-import '../pages/user/author_dashboard.dart'; // Import the author dashboard page
-import '../pages/user/user_home.dart'; // Import the user home page
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../pages/user/user_home.dart';
+import '../pages/user/author_dashboard.dart';
+import 'signup.dart';
+import 'forgot_password.dart';
 
 class Login extends StatefulWidget {
   const Login({super.key});
@@ -13,31 +16,73 @@ class Login extends StatefulWidget {
 }
 
 class _LoginState extends State<Login> {
-  // State variable to toggle password visibility
+  final _formKey = GlobalKey<FormState>();
+  final emailController = TextEditingController();
+  final passwordController = TextEditingController();
   bool _isPasswordVisible = false;
   bool isLoading = false;
+  
+  final supabase = Supabase.instance.client;
+  late final GoogleSignIn _googleSignIn;
+
+  @override
+  void initState() {
+    super.initState();
+    _googleSignIn = GoogleSignIn(
+      clientId: dotenv.env['GOOGLE_CLIENT_ID'],
+    );
+  }
 
   Future<void> _loginWithEmail() async {
     if (_formKey.currentState!.validate()) {
       setState(() => isLoading = true);
       try {
-        UserCredential userCredential = await FirebaseAuth.instance.signInWithEmailAndPassword(
+        final AuthResponse response = await supabase.auth.signInWithPassword(
           email: emailController.text.trim(),
           password: passwordController.text.trim(),
         );
-        
-        // Check user role and navigate accordingly
-        await _saveUserToFirestore(userCredential.user!);
-        
-        _showSuccess('Welcome back! Login successful');
-      } on FirebaseAuthException catch (e) {
-        String error = 'Login failed';
-        if (e.code == 'user-not-found') {
-          error = 'No user found for that email.';
-        } else if (e.code == 'wrong-password') {
-          error = 'Incorrect password.';
+
+        if (response.user != null) {
+          // Successful login
+          final user = supabase.auth.currentUser;
+          if (user != null) {
+            // Check user role from database
+            try {
+              // Try to find user in authors table
+              final authorData = await supabase
+                  .from('authors')
+                  .select('role')
+                  .eq('id', user.id)
+                  .maybeSingle();
+              
+              if (authorData != null) {
+                // User is an author
+                Navigator.pushNamedAndRemoveUntil(
+                  context,
+                  '/author_dashboard',
+                  (route) => false,
+                );
+              } else {
+                // User is a reader
+                Navigator.pushNamedAndRemoveUntil(
+                  context,
+                  '/user_home',
+                  (route) => false,
+                );
+              }
+            } catch (e) {
+              // Fallback to user home
+              Navigator.pushNamedAndRemoveUntil(
+                context,
+                '/user_home',
+                (route) => false,
+              );
+            }
+          }
+          _showSuccess('Welcome back! Login successful');
         }
-        _showError(error);
+      } on AuthException catch (e) {
+        _showError('Login failed: ${e.message}');
       } finally {
         setState(() => isLoading = false);
       }
@@ -47,7 +92,12 @@ class _LoginState extends State<Login> {
   Future<void> _loginWithGoogle() async {
     setState(() => isLoading = true);
     try {
-      final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
+      // Force account selection every time - this ensures clean login
+      final GoogleSignInAccount? googleUser = await GoogleSignIn(
+        scopes: ['email', 'profile'],
+        // This forces account selection
+      ).signIn();
+
       if (googleUser == null) {
         setState(() => isLoading = false);
         return;
@@ -55,65 +105,39 @@ class _LoginState extends State<Login> {
 
       final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
 
-      final credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
+      final AuthResponse response = await supabase.auth.signInWithIdToken(
+        provider: OAuthProvider.google,
+        idToken: googleAuth.idToken!,
+        accessToken: googleAuth.accessToken!,
       );
 
-      final UserCredential userCredential = await FirebaseAuth.instance
-          .signInWithCredential(credential);
-      final User? user = userCredential.user;
-
-      // Check user role and navigate accordingly
-      if (user != null) {
-        await _saveUserToFirestore(user);
+      if (response.user != null) {
+        await _saveUserToSupabase(response.user!);
+        await _checkUserRoleAndNavigate(response.user!);
+        _showSuccess('Welcome! Signed in with Google');
       }
-
-      String userName = user?.displayName ?? 'User';
-      String firstName = userName.split(' ').first;
-      _showSuccess(
-        'Welcome to TaleHive, $firstName! 🎉 Signed in successfully with Google',
-      );
-    } on FirebaseAuthException catch (e) {
-      _showError(e.message ?? 'Google Sign-In failed');
     } catch (e) {
-      String errorMessage = 'Google Sign-In failed';
-      if (e.toString().contains('ApiException: 10')) {
-        errorMessage =
-            'Google Sign-In configuration error. Please contact support.';
-        print('DEBUG: SHA-1 fingerprint missing from Firebase project');
-      } else {
-        errorMessage = 'Error: $e';
-      }
-      _showError(errorMessage);
+      _showError('Google Sign-In failed: $e');
     } finally {
       setState(() => isLoading = false);
     }
   }
 
-  // In login.dart, update the _saveUserToFirestore method to check user role:
-
-  Future<void> _saveUserToFirestore(User user) async {
+  Future<void> _checkUserRoleAndNavigate(User user) async {
     try {
-      print('💾 Checking user role for: ${user.email}');
+      // Check if user exists in authors table
+      final authorResponse = await supabase
+          .from('authors')
+          .select()
+          .eq('id', user.id)
+          .maybeSingle();
 
-      // First check if user exists in 'authors' collection
-      DocumentSnapshot authorDoc = await FirebaseFirestore.instance
-          .collection('authors')
-          .doc(user.uid)
-          .get();
-
-      if (authorDoc.exists) {
-        print('✅ User found in authors collection');
-        // User is an author - update and navigate to author dashboard
-        await FirebaseFirestore.instance.collection('authors').doc(user.uid).update({
-          'lastLoginAt': FieldValue.serverTimestamp(),
-          'email': user.email,
-          'displayName': user.displayName,
-          'photoURL': user.photoURL,
-        });
+      if (authorResponse != null) {
+        await supabase
+            .from('authors')
+            .update({'last_login_at': DateTime.now().toIso8601String()})
+            .eq('id', user.id);
         
-        // Navigate to Author Dashboard
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => const AuthorDashboardPage()),
@@ -121,23 +145,19 @@ class _LoginState extends State<Login> {
         return;
       }
 
-      // Check if user exists in 'users' collection
-      DocumentSnapshot userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
+      // Check if user exists in users table
+      final userResponse = await supabase
+          .from('users')
+          .select()
+          .eq('id', user.id)
+          .maybeSingle();
 
-      if (userDoc.exists) {
-        print('✅ User found in users collection');
-        // User is a reader - update and navigate to user home
-        await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
-          'lastLoginAt': FieldValue.serverTimestamp(),
-          'email': user.email,
-          'displayName': user.displayName,
-          'photoURL': user.photoURL,
-        });
+      if (userResponse != null) {
+        await supabase
+            .from('users')
+            .update({'last_login_at': DateTime.now().toIso8601String()})
+            .eq('id', user.id);
         
-        // Navigate to User Home
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => const UserHomePage()),
@@ -145,33 +165,22 @@ class _LoginState extends State<Login> {
         return;
       }
 
-      print('⚠️ User not found in any collection, creating as reader');
-      // If user doesn't exist in either collection, create as reader (default)
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-        'uid': user.uid,
-        'firstName': user.displayName?.split(' ').first ?? 'User',
-        'lastName': user.displayName?.split(' ').skip(1).join(' ') ?? '',
-        'email': user.email ?? '',
-        'photoURL': user.photoURL ?? '',
-        'displayName': user.displayName ?? 'User',
+      // Create as reader if doesn't exist
+      await supabase.from('users').insert({
+        'id': user.id,
+        'email': user.email,
+        'first_name': user.userMetadata?['name']?.split(' ').first ?? 'User',
+        'last_name': user.userMetadata?['name']?.split(' ').skip(1).join(' ') ?? '',
+        'photo_url': user.userMetadata?['avatar_url'] ?? '',
         'role': 'reader',
-        'provider': user.providerData.isNotEmpty ? user.providerData.first.providerId : 'unknown',
-        'createdAt': FieldValue.serverTimestamp(),
-        'lastLoginAt': FieldValue.serverTimestamp(),
-        'isActive': true,
-        'booksRead': 0,
-        'favoriteGenres': 'Fiction, Science',
       });
 
-      // Navigate to User Home
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const UserHomePage()),
       );
-
     } catch (e) {
-      print('❌ Error checking user role: $e');
-      // Fallback navigation to user home if there's an error
+      print('Error checking user role: $e');
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const UserHomePage()),
@@ -179,31 +188,40 @@ class _LoginState extends State<Login> {
     }
   }
 
+  Future<void> _saveUserToSupabase(User user) async {
+    try {
+      final existingUser = await supabase
+          .from('users')
+          .select()
+          .eq('id', user.id)
+          .maybeSingle();
+
+      final existingAuthor = await supabase
+          .from('authors')
+          .select()
+          .eq('id', user.id)
+          .maybeSingle();
+
+      if (existingUser == null && existingAuthor == null) {
+        await supabase.from('users').insert({
+          'id': user.id,
+          'email': user.email,
+          'first_name': user.userMetadata?['name']?.split(' ').first ?? 'User',
+          'last_name': user.userMetadata?['name']?.split(' ').skip(1).join(' ') ?? '',
+          'photo_url': user.userMetadata?['avatar_url'] ?? '',
+          'role': 'reader',
+        });
+      }
+    } catch (e) {
+      print('Error saving user: $e');
+    }
+  }
+
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Row(
-          children: [
-            Icon(Icons.error_outline, color: Colors.white, size: 24),
-            SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                message,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: Colors.red[600],
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        margin: EdgeInsets.all(16),
-        duration: Duration(seconds: 4),
-        elevation: 8,
+        content: Text(message),
+        backgroundColor: Colors.red,
       ),
     );
   }
@@ -211,30 +229,40 @@ class _LoginState extends State<Login> {
   void _showSuccess(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Row(
-          children: [
-            Icon(Icons.check_circle_outline, color: Colors.white, size: 24),
-            SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                message,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: Colors.green[600],
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        margin: EdgeInsets.all(16),
-        duration: Duration(seconds: 3),
-        elevation: 8,
+        content: Text(message),
+        backgroundColor: Colors.green,
       ),
     );
+  }
+
+  // Alternative: Always sign out from Google before signing in (fast operation)
+  Future<User?> signInWithGoogleForceSelection() async {
+    try {
+      final GoogleSignIn googleSignIn = GoogleSignIn(
+        scopes: ['email', 'profile'],
+      );
+
+      // Quick Google sign out (this is fast, unlike disconnect)
+      await googleSignIn.signOut().timeout(const Duration(seconds: 1));
+
+      // Now sign in - this will show account selection
+      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
+
+      if (googleUser == null) return null;
+
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+
+      final response = await supabase.auth.signInWithIdToken(
+        provider: OAuthProvider.google,
+        idToken: googleAuth.idToken!,
+        accessToken: googleAuth.accessToken,
+      );
+
+      return response.user;
+    } catch (e) {
+      print('Google sign-in error: $e');
+      return null;
+    }
   }
 
   @override

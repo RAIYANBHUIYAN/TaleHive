@@ -2,17 +2,14 @@ import 'dart:convert';
 import 'dart:math' show log, pow;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
+import 'package:talehive/pages/pdf_preview/pdf_preview_page.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
-import 'dart:io';
-import 'package:path_provider/path_provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../user_authentication/login.dart';
-import '../pdf_preview/pdf_preview_screen.dart';
-import '../pdf_preview/pdf_web_view_screen.dart';
+import '../pdf_viewer_page.dart';
 import '../../admin_authentication/admin_login.dart';
 
 
@@ -29,30 +26,19 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
 
-  // Firebase instance
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-
-  // Cache for thumbnails to prevent reloading
-  final Map<String, String> _thumbnailCache = {};
+  // Supabase instance
+  final supabase = Supabase.instance.client;
 
   String _selectedCategory = 'All';
-  List<String> _categories = ['All']; // Will be populated from Firestore data
+  List<String> _categories = ['All'];
 
-  // Google Drive setup for thumbnails only
-  GoogleSignInAccount? _account;
-  List<Map<String, dynamic>> _firestoreBooks = []; // Changed from _drivePdfBooks
+  // Supabase books data
+  List<Map<String, dynamic>> _supabaseBooks = [];
   bool _isLoadingBooks = false;
-
-  final GoogleSignIn _googleSignIn = GoogleSignIn(
-    scopes: [
-      'https://www.googleapis.com/auth/drive.readonly',
-      'https://www.googleapis.com/auth/drive.file',
-    ],
-  );
 
   // Filtered books based on search and category
   List<Map<String, dynamic>> get _filteredBooks {
-    List<Map<String, dynamic>> filtered = _firestoreBooks;
+    List<Map<String, dynamic>> filtered = _supabaseBooks;
 
     // Filter by category
     if (_selectedCategory != 'All') {
@@ -85,9 +71,8 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
     );
     _animationController.forward();
 
-    // Load books from Firestore and initialize Google Sign-In for thumbnails
-    _loadBooksFromFirestore();
-    _initializeGoogleSignIn();
+    // Load books from Supabase
+    _loadBooksFromSupabase();
   }
 
   @override
@@ -98,22 +83,8 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
     super.dispose();
   }
 
-  // Initialize Google Sign-In for thumbnail generation
-  Future<void> _initializeGoogleSignIn() async {
-    try {
-      _account = await _googleSignIn.signInSilently();
-      if (_account == null) {
-        print('Google Sign-In not available for thumbnails');
-      } else {
-        print('Signed in as: ${_account!.email} for thumbnails');
-      }
-    } catch (e) {
-      print('Google Sign-In initialization failed: $e');
-    }
-  }
-
-  // Load books from Firestore instead of Google Drive
-  Future<void> _loadBooksFromFirestore() async {
+  // Load books from Supabase
+  Future<void> _loadBooksFromSupabase() async {
     if (_isLoadingBooks) return;
 
     setState(() {
@@ -121,44 +92,65 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
     });
 
     try {
-      print('Loading books from Firestore...');
+      print('Loading books from Supabase...');
 
-      QuerySnapshot querySnapshot = await _firestore
-          .collection('Books')
-          .orderBy('publishedAt', descending: true)
-          .get();
+      // Query books from Supabase
+      final response = await supabase
+          .from('books')
+          .select()
+          .eq('is_active', true)
+          .order('created_at', ascending: false)
+          .timeout(const Duration(seconds: 10));
+
+      print('Supabase response: $response');
 
       List<Map<String, dynamic>> loadedBooks = [];
       Set<String> categories = {'All'};
 
-      for (var doc in querySnapshot.docs) {
-        Map<String, dynamic> bookData = doc.data() as Map<String, dynamic>;
-        bookData['id'] = doc.id;
-        
-        // Process the book data for display
-        Map<String, dynamic> processedBook = _processBookForDisplay(bookData);
-        loadedBooks.add(processedBook);
-        
-        // Collect categories
-        if (processedBook['category'] != null && processedBook['category'].toString().trim().isNotEmpty) {
-          categories.add(processedBook['category']);
+      if (response is List) {
+        for (var bookData in response) {
+          if (bookData is Map<String, dynamic>) {
+            // Process the book data for display
+            Map<String, dynamic> processedBook = _processBookForDisplay(bookData);
+            loadedBooks.add(processedBook);
+            
+            // Collect categories
+            if (processedBook['category'] != null && 
+                processedBook['category'].toString().trim().isNotEmpty) {
+              categories.add(processedBook['category']);
+            }
+          }
         }
       }
 
       setState(() {
-        _firestoreBooks = loadedBooks;
+        _supabaseBooks = loadedBooks;
         _categories = categories.toList()..sort();
       });
 
-      print('Loaded ${_firestoreBooks.length} books from Firestore');
+      print('Loaded ${_supabaseBooks.length} books from Supabase');
 
     } catch (error) {
-      print('Error loading books from Firestore: $error');
-      _showSnackBar('Error loading books: ${error.toString()}');
+      print('Error loading books from Supabase: $error');
+      
+      String errorMessage = 'Unknown error occurred';
+      if (error.toString().contains('timeout')) {
+        errorMessage = 'Connection timeout. Please check your internet connection.';
+      } else if (error.toString().contains('network')) {
+        errorMessage = 'Network error. Please try again.';
+      } else {
+        errorMessage = 'Error loading books: ${error.toString()}';
+      }
+      
+      if (mounted) {
+        _showSnackBar(errorMessage);
+      }
     } finally {
-      setState(() {
-        _isLoadingBooks = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoadingBooks = false;
+        });
+      }
     }
   }
 
@@ -167,24 +159,30 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
     return {
       'id': bookData['id'],
       'title': bookData['title'] ?? 'No Title',
-      'author': bookData['author'] ?? bookData['authorName'] ?? '',
-      'category': bookData['bookType'] ?? bookData['category'] ?? 'General',
-      'rating': bookData['rating']?.toDouble() ?? _generateRating(),
-      'price': bookData['price']?.toDouble() ?? 0.0,
+      'author': bookData['author_name'] ?? bookData['author'] ?? '',
+      'category': bookData['category'] ?? 'General',
+      'rating': _parseDouble(bookData['rating']) ?? _generateRating(),
+      'price': _parseDouble(bookData['price']) ?? 0.0,
       'summary': bookData['summary'] ?? '',
       'language': bookData['language'] ?? 'English',
-      'pdfUrl': bookData['pdfUrl'],
-      'googleDriveFileId': bookData['googleDriveFileId'],
-      'publishedAt': bookData['publishedAt'],
-      'authorEmail': bookData['authorEmail'],
-      'isAvailable': bookData['isAvailable'] ?? true,
+      'pdfUrl': bookData['pdf_url'],
+      'coverImageUrl': bookData['cover_image_url'],
+      'createdAt': bookData['created_at'],
+      'authorEmail': bookData['author_email'],
+      'isAvailable': bookData['is_active'] ?? true,
       'views': bookData['views'] ?? 0,
       'downloads': bookData['downloads'] ?? 0,
-      'reviewCount': bookData['reviewCount'] ?? 0,
       'fileName': bookData['title'] ?? 'Book',
-      'size': '2.5MB', // Default size since we don't store file size
-      'modifiedTime': bookData['publishedAt']?.toDate()?.toIso8601String() ?? DateTime.now().toIso8601String(),
+      'size': '2.5MB', // Default size
     };
+  }
+
+  double? _parseDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
   }
 
   double _generateRating() {
@@ -207,7 +205,7 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
                   _buildHeroSection(),
                   _buildCategoriesSection(),
                   if (_isLoadingBooks) _buildLoadingSection(),
-                  if (_firestoreBooks.isNotEmpty) ...[
+                  if (_supabaseBooks.isNotEmpty) ...[
                     _buildFeaturedBooksSection(),
                     _buildPopularBooksSection(),
                     _buildNewArrivalsSection(),
@@ -220,7 +218,7 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
         ),
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _loadBooksFromFirestore,
+        onPressed: _loadBooksFromSupabase,
         backgroundColor: const Color(0xFF0096C7),
         child: _isLoadingBooks
             ? const SizedBox(
@@ -254,7 +252,7 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
           ),
           const SizedBox(height: 8),
           Text(
-            'Fetching books from Firestore database',
+            'Fetching books from Supabase database',
             style: GoogleFonts.montserrat(
               fontSize: 12,
               color: Colors.grey[500],
@@ -373,7 +371,7 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
                           ),
                         ),
                         Text(
-                          'Digital Community ',
+                          'Digital Community',
                           style: GoogleFonts.montserrat(
                             fontSize: 14,
                             color: Colors.grey[600],
@@ -385,7 +383,7 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
                     ),
                   ),
                   GestureDetector(
-                    onTap: () => _showLoginOptionsPopup(), // Change this from _navigateToLogin()
+                    onTap: () => _showLoginOptionsPopup(),
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       decoration: BoxDecoration(
@@ -457,7 +455,7 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
       child: TextField(
         controller: _searchController,
         decoration: InputDecoration(
-          hintText: 'Search  books by title, author...',
+          hintText: 'Search books by title, author...',
           hintStyle: GoogleFonts.montserrat(
             color: Colors.grey[500],
             fontSize: 16,
@@ -626,7 +624,7 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
                 ),
                 if (showViewAll)
                   GestureDetector(
-                    onTap: () => _showLoginOptionsPopup(), // Change this from _navigateToLogin()
+                    onTap: () => _showLoginOptionsPopup(),
                     child: Text(
                       'View All',
                       style: GoogleFonts.montserrat(
@@ -636,6 +634,7 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
                       ),
                     ),
                   ),
+
               ],
             ),
           ),
@@ -686,9 +685,9 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
                     topRight: Radius.circular(16),
                   ),
                 ),
-                child: _buildThumbnailWidget(book),
+                child: _buildBookCover(book),
               ),
-              Expanded( // Add Expanded to prevent overflow
+              Expanded(
                 child: Padding(
                   padding: const EdgeInsets.all(12),
                   child: Column(
@@ -705,7 +704,6 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
                         overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 4),
-                      // Only show author if it exists and is not empty
                       if (book['author'] != null && book['author'].toString().trim().isNotEmpty)
                         Text(
                           book['author'],
@@ -716,26 +714,24 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                      const Spacer(), // Push the bottom row to the bottom
-                      // Fixed the overflow issue in this Row
+                      const Spacer(),
                       Row(
                         children: [
-                          // Category badge with flexible width
                           Expanded(
                             flex: 3,
                             child: Container(
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 6, // Reduced padding
+                                horizontal: 6,
                                 vertical: 2,
                               ),
                               decoration: BoxDecoration(
                                 color: const Color(0xFF0096C7).withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(10), // Smaller radius
+                                borderRadius: BorderRadius.circular(10),
                               ),
                               child: Text(
                                 book['category'] ?? 'General',
                                 style: GoogleFonts.montserrat(
-                                  fontSize: 9, // Smaller font
+                                  fontSize: 9,
                                   fontWeight: FontWeight.w500,
                                   color: const Color(0xFF0096C7),
                                 ),
@@ -745,8 +741,7 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
                               ),
                             ),
                           ),
-                          const SizedBox(width: 4), // Reduced spacing
-                          // Rating with flexible width
+                          const SizedBox(width: 4),
                           Expanded(
                             flex: 2,
                             child: Row(
@@ -755,7 +750,7 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
                               children: [
                                 Icon(
                                   Icons.star,
-                                  size: 14, // Smaller icon
+                                  size: 14,
                                   color: Colors.amber[600],
                                 ),
                                 const SizedBox(width: 2),
@@ -763,7 +758,7 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
                                   child: Text(
                                     book['rating'].toStringAsFixed(1),
                                     style: GoogleFonts.montserrat(
-                                      fontSize: 11, // Smaller font
+                                      fontSize: 11,
                                       fontWeight: FontWeight.w600,
                                       color: const Color(0xFF4A5568),
                                     ),
@@ -785,73 +780,39 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
       ));
   }
 
-  // Build thumbnail widget for Firestore books
-  Widget _buildThumbnailWidget(Map<String, dynamic> book) {
-    final fileId = book['googleDriveFileId'];
+  // Build book cover from Supabase
+  Widget _buildBookCover(Map<String, dynamic> book) {
+    final coverUrl = book['coverImageUrl'];
     
-    if (fileId != null && fileId.toString().isNotEmpty && _account != null) {
-      // Check cache first
-      if (_thumbnailCache.containsKey(fileId)) {
-        return ClipRRect(
-          borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(16),
-            topRight: Radius.circular(16),
-          ),
-          child: Image.network(
-            _thumbnailCache[fileId]!,
-            fit: BoxFit.cover,
-            width: double.infinity,
-            height: double.infinity,
-            errorBuilder: (context, error, stackTrace) => _buildDefaultThumbnail(),
-          ),
-        );
-      }
-
-      // Use FutureBuilder for non-cached thumbnails
-      return _CachedFutureBuilder(
-        fileId: fileId,
-        thumbnailCache: _thumbnailCache,
-        getPdfThumbnail: _getPdfThumbnail,
-        buildDefaultThumbnail: _buildDefaultThumbnail,
-      );
-    }
-    
-    // Fallback to default thumbnail
-    return _buildDefaultThumbnail();
-  }
-
-  Widget _buildDetailsThumbnailWidget(Map<String, dynamic> book) {
-    final fileId = book['googleDriveFileId'];
-    
-    if (fileId != null && fileId.toString().isNotEmpty && _account != null) {
-      // Check cache first
-      if (_thumbnailCache.containsKey(fileId)) {
-        return Image.network(
-          _thumbnailCache[fileId]!,
+    if (coverUrl != null && coverUrl.toString().isNotEmpty) {
+      return ClipRRect(
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(16),
+          topRight: Radius.circular(16),
+        ),
+        child: Image.network(
+          coverUrl.toString(),
           fit: BoxFit.cover,
           width: double.infinity,
           height: double.infinity,
-          errorBuilder: (context, error, stackTrace) => Container(
-            color: const Color(0xFFF8FAFC),
-            child: _buildDefaultThumbnail(),
-          ),
-        );
-      }
-
-      // Use FutureBuilder if not cached
-      return _CachedDetailsFutureBuilder(
-        fileId: fileId,
-        thumbnailCache: _thumbnailCache,
-        getPdfThumbnail: _getPdfThumbnail,
-        buildDefaultThumbnail: _buildDefaultThumbnail,
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            return Container(
+              color: const Color(0xFFF8FAFC),
+              child: Center(
+                child: CircularProgressIndicator(
+                  color: const Color(0xFF0096C7).withOpacity(0.5),
+                  strokeWidth: 2,
+                ),
+              ),
+            );
+          },
+          errorBuilder: (context, error, stackTrace) => _buildDefaultThumbnail(),
+        ),
       );
     }
     
-    // Fallback to default thumbnail
-    return Container(
-      color: const Color(0xFFF8FAFC),
-      child: _buildDefaultThumbnail(),
-    );
+    return _buildDefaultThumbnail();
   }
 
   Widget _buildFooter() {
@@ -872,7 +833,7 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
       child: Column(
         children: [
           Text(
-            'TaleHive Digital Communitiy',
+            'TaleHive Digital Community',
             style: GoogleFonts.montserrat(
               fontSize: 16,
               color: Colors.white,
@@ -882,7 +843,7 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
           ),
           const SizedBox(height: 8),
           Text(
-            'Discover, Read, Share • ${_firestoreBooks.length} Books Available',
+            'Discover, Read, Share • ${_supabaseBooks.length} Books Available',
             style: GoogleFonts.montserrat(
               fontSize: 14,
               color: Colors.white70,
@@ -905,12 +866,6 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
     );
   }
 
-  // Remove this method from main_page.dart:
-  void _navigateToAuthorLogin() {
-    // DELETE THIS ENTIRE METHOD
-  }
-
-  // Add this method to show the login options popup
   void _showLoginOptionsPopup() {
     showDialog(
       context: context,
@@ -935,7 +890,6 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Header with close button
                 Container(
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
@@ -989,12 +943,10 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
                   ),
                 ),
                 
-                // Login options
                 Padding(
                   padding: const EdgeInsets.all(24),
                   child: Column(
                     children: [
-                      // Readers option
                       _buildLoginOptionCard(
                         icon: Icons.book_outlined,
                         title: 'Readers',
@@ -1002,7 +954,7 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
                         gradient: [const Color(0xFF6366F1), const Color(0xFF8B5CF6)],
                         onTap: () {
                           Navigator.pop(context);
-                          Navigator.push(  // Add direct navigation here
+                          Navigator.push(
                             context,
                             PageRouteBuilder(
                               pageBuilder: (context, animation, secondaryAnimation) => const Login(),
@@ -1024,7 +976,6 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
                       
                       const SizedBox(height: 16),
                       
-                      // Authors option
                       _buildLoginOptionCard(
                         icon: Icons.edit_outlined,
                         title: 'Authors',
@@ -1032,7 +983,7 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
                         gradient: [const Color(0xFF10B981), const Color(0xFF059669)],
                         onTap: () {
                           Navigator.pop(context);
-                          Navigator.push(  // Use the same login page
+                          Navigator.push(
                             context,
                             PageRouteBuilder(
                               pageBuilder: (context, animation, secondaryAnimation) => const Login(),
@@ -1054,7 +1005,6 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
                       
                       const SizedBox(height: 16),
                       
-                      // TaleHive Admin option
                       _buildLoginOptionCard(
                         icon: Icons.admin_panel_settings_outlined,
                         title: 'TaleHive',
@@ -1069,7 +1019,6 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
                   ),
                 ),
                 
-                // Footer
                 Container(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   child: Text(
@@ -1088,7 +1037,6 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
     );
   }
 
-  // Helper method to build login option cards
   Widget _buildLoginOptionCard({
     required IconData icon,
     required String title,
@@ -1118,7 +1066,6 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
         ),
         child: Row(
           children: [
-            // Icon with gradient background
             Container(
               width: 60,
               height: 60,
@@ -1146,7 +1093,6 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
             
             const SizedBox(width: 16),
             
-            // Text content
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1171,7 +1117,6 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
               ),
             ),
             
-            // Arrow icon
             Icon(
               Icons.arrow_forward_ios,
               color: Colors.grey[400],
@@ -1183,7 +1128,6 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
     );
   }
 
-  // Navigation methods
   void _navigateToAdminLogin() {
     Navigator.push(
       context,
@@ -1208,7 +1152,6 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
     setState(() {
       _selectedCategory = category;
     });
-
   }
 
   void _performSearch() {
@@ -1273,22 +1216,11 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
     );
   }
 
-  String _formatFileSize(String sizeString) {
-    try {
-      final size = int.parse(sizeString);
-      if (size < 1024) return '${size}B';
-      if (size < 1024 * 1024) return '${(size / 1024).toStringAsFixed(1)}KB';
-      if (size < 1024 * 1024 * 1024) return '${(size / (1024 * 1024)).toStringAsFixed(1)}MB';
-      return '${(size / (1024 * 1024 * 1024)).toStringAsFixed(1)}GB';
-    } catch (e) {
-      return 'Unknown size';
-    }
-  }
-
-  String _formatDate(String dateString) {
+  String _formatDate(String? dateString) {
+    if (dateString == null) return 'Unknown date';
     try {
       final date = DateTime.parse(dateString);
-      return '${_getMonthName(date.month)} ${date.day}, ${date.year} at ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+      return '${_getMonthName(date.month)} ${date.day}, ${date.year}';
     } catch (e) {
       return 'Unknown date';
     }
@@ -1327,21 +1259,44 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
   }
 
   void _showPdfPreview(Map<String, dynamic> book) async {
-    Navigator.pop(context); // Close the book details modal
+    Navigator.pop(context); // Close book details modal
 
     // Show loading dialog
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const CircularProgressIndicator(color: Color(0xFF0096C7)),
-            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0096C7).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const CircularProgressIndicator(
+                color: Color(0xFF0096C7),
+                strokeWidth: 3,
+              ),
+            ),
+            const SizedBox(height: 20),
             Text(
-              'Loading PDF preview...',
-              style: GoogleFonts.montserrat(),
+              'Preparing Preview',
+              style: GoogleFonts.montserrat(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF1F2937),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Loading first 10 pages...',
+              style: GoogleFonts.montserrat(
+                fontSize: 14,
+                color: const Color(0xFF6B7280),
+              ),
             ),
           ],
         ),
@@ -1349,32 +1304,9 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
     );
 
     try {
-      // Get the book ID to fetch fresh data from Firestore
-      String bookId = book['id'] ?? '';
+      String? pdfLink = book['pdfUrl'];
       
-      if (bookId.isEmpty) {
-        Navigator.pop(context);
-        _showSnackBar('Book ID not found');
-        return;
-      }
-
-      print('Fetching book data for ID: $bookId'); // Debug log
-
-      // Fetch fresh data from Firestore to get the pdfLink
-      DocumentSnapshot docSnapshot = await _firestore.collection('Books').doc(bookId).get();
-      
-      if (!docSnapshot.exists) {
-        Navigator.pop(context);
-        _showSnackBar('Book not found in database');
-        return;
-      }
-
-      Map<String, dynamic> freshBookData = docSnapshot.data() as Map<String, dynamic>;
-      
-      // Get the PDF link from Firestore
-      String? pdfLink = freshBookData['pdfLink'] ?? freshBookData['pdfUrl'];
-      
-      print('PDF Link from Firestore: $pdfLink'); // Debug log
+      print('PDF Link from Supabase: $pdfLink');
 
       if (pdfLink == null || pdfLink.isEmpty) {
         Navigator.pop(context);
@@ -1382,63 +1314,48 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
         return;
       }
 
+      // Small delay for smooth transition
+      await Future.delayed(const Duration(milliseconds: 800));
+
       Navigator.pop(context); // Close loading dialog
 
-      // Check if it's a Google Drive link
-      if (pdfLink.contains('drive.google.com')) {
-        // Extract file ID from Google Drive URL
-        String fileId = '';
-        
-        if (pdfLink.contains('/file/d/')) {
-          fileId = pdfLink.split('/file/d/')[1].split('/')[0];
-        } else if (pdfLink.contains('id=')) {
-          fileId = pdfLink.split('id=')[1].split('&')[0];
-        }
-        
-        if (fileId.isNotEmpty) {
-          // Use WebView for Google Drive PDFs (more reliable)
-          final embedUrl = 'https://drive.google.com/file/d/$fileId/preview';
-          print('Using WebView for Google Drive PDF: $embedUrl');
-          
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => PdfWebViewScreen(
-                pdfUrl: embedUrl,
-                bookTitle: book['title'] ?? 'Book Preview',
-                author: book['author'] ?? '',
-                isPreview: true,
-                maxPages: 10, // Add this parameter
-              ),
-            ),
-          );
-          return;
-        }
-      }
-      
-      // For direct PDF URLs, try using SfPdfViewer
-      print('Using SfPdfViewer for direct PDF: $pdfLink');
+      // Navigate to preview page
       Navigator.push(
         context,
-        MaterialPageRoute(
-          builder: (context) => PdfPreviewScreen(
+        PageRouteBuilder(
+          pageBuilder: (context, animation, secondaryAnimation) => PdfPreviewPage(
             pdfUrl: pdfLink,
             bookTitle: book['title'] ?? 'Book Preview',
-            author: book['author'] ?? '',
-            maxPages: 10,
-            isPreview: true,
+            bookData: book,
           ),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            const begin = Offset(1.0, 0.0);
+            const end = Offset.zero;
+            const curve = Curves.easeInOutCubic;
+            
+            var tween = Tween(begin: begin, end: end).chain(
+              CurveTween(curve: curve),
+            );
+            
+            return SlideTransition(
+              position: animation.drive(tween),
+              child: FadeTransition(
+                opacity: animation,
+                child: child,
+              ),
+            );
+          },
+          transitionDuration: const Duration(milliseconds: 400),
         ),
       );
 
     } catch (e) {
-      Navigator.pop(context); // Close loading dialog
-      print('Error loading PDF: $e'); // Debug log
-      _showSnackBar('Error loading PDF: ${e.toString()}');
+      Navigator.pop(context);
+      print('Error loading PDF: $e');
+      _showSnackBar('Error loading PDF preview: ${e.toString()}');
     }
   }
 
-  // Show snackbar with message
   void _showSnackBar(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1455,36 +1372,6 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
     );
   }
 
-  // Get PDF thumbnail from Google Drive using file ID
-  Future<String> _getPdfThumbnail(String fileId) async {
-    // Check cache first
-    if (_thumbnailCache.containsKey(fileId)) {
-      return _thumbnailCache[fileId]!;
-    }
-
-    try {
-      if (_account == null) {
-        throw Exception('Not authenticated with Google Drive');
-      }
-      
-      // Get the thumbnail URL from Google Drive
-      final thumbnailUrl = 'https://drive.google.com/thumbnail?id=$fileId&sz=w400-h500';
-      
-      // Verify the thumbnail is accessible
-      final response = await http.head(Uri.parse(thumbnailUrl));
-      if (response.statusCode == 200) {
-        // Cache the successful URL
-        _thumbnailCache[fileId] = thumbnailUrl;
-        return thumbnailUrl;
-      }
-      
-      throw Exception('Thumbnail not available');
-    } catch (e) {
-      throw Exception('Failed to load thumbnail');
-    }
-  }
-
-  // Show book details with Firestore data
   void _showBookDetails(Map<String, dynamic> book) {
     final screenHeight = MediaQuery.of(context).size.height;
     
@@ -1500,7 +1387,6 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
         ),
         child: Column(
           children: [
-            // Drag handle
             Container(
               padding: const EdgeInsets.only(top: 12, bottom: 4),
               child: Center(
@@ -1515,14 +1401,12 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
               ),
             ),
             
-            // Scrollable content
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Book Cover Image
                     Center(
                       child: Container(
                         width: 200,
@@ -1540,12 +1424,11 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
                         ),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(12),
-                          child: _buildDetailsThumbnailWidget(book),
+                          child: _buildBookCover(book),
                         ),
                       ),
                     ),
                     
-                    // Book Title and Author
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 8.0),
                       child: Column(
@@ -1576,18 +1459,21 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
                       ),
                     ),
                     
-                    // Rating, Category, and Price
-                    Container(
-                      margin: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
-                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
-                      ),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
                       child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
+                      children: [
+                        Container(
+                        margin: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
                           _buildMetadataItem(
                             icon: Icons.star,
                             label: '${book['rating']?.toStringAsFixed(1) ?? '4.5'}/5.0',
@@ -1609,21 +1495,24 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
                           ),
                           if (book['price'] != null && book['price'] > 0)
                             _buildMetadataItem(
-                              icon: Icons.attach_money,
-                              label: '\$${book['price']?.toStringAsFixed(2)}',
-                              iconColor: Colors.green,
+                            icon: Icons.attach_money,
+                            label: '\$${book['price']?.toStringAsFixed(2)}',
+                            iconColor: Colors.green,
                             )
                           else
                             _buildMetadataItem(
-                              icon: Icons.free_breakfast,
-                              label: 'Free',
-                              iconColor: Colors.green,
+                            icon: Icons.free_breakfast,
+                            label: 'Free',
+                            iconColor: Colors.green,
                             ),
-                        ],
+                          ],
+                        ),
+                        ),
+                      ],
                       ),
                     ),
                     
-                    // Summary Section
+                    
                     if (book['summary'] != null && book['summary'].toString().trim().isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 8.0),
@@ -1652,7 +1541,6 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
                         ),
                       ),
                     
-                    // Book Information
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 8.0),
                       child: Column(
@@ -1668,8 +1556,8 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
                           ),
                           const SizedBox(height: 12),
                           _buildInfoRow('Language', book['language'] ?? 'English'),
-                          if (book['publishedAt'] != null)
-                            _buildInfoRow('Published', _formatDate(book['modifiedTime'])),
+                          if (book['createdAt'] != null)
+                            _buildInfoRow('Published', _formatDate(book['createdAt'])),
                           _buildInfoRow('Availability', book['isAvailable'] == true ? 'Available' : 'Not Available'),
                           if (book['views'] != null)
                             _buildInfoRow('Views', '${book['views']}'),
@@ -1683,7 +1571,6 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
               ),
             ),
             
-            // Fixed bottom buttons
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -1723,8 +1610,8 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
                     flex: 2,
                     child: ElevatedButton(
                       onPressed: () {
-                        Navigator.pop(context); // Close book details first
-                        _showLoginOptionsPopup(); // Then show login options
+                        Navigator.pop(context);
+                        _showLoginOptionsPopup();
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF0096C7),
@@ -1748,133 +1635,6 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
           ],
         ),
       ),
-    );
-  }
-}
-
-// Cached future builder for thumbnails - same as before
-class _CachedFutureBuilder extends StatefulWidget {
-  final String fileId;
-  final Map<String, String> thumbnailCache;
-  final Future<String> Function(String) getPdfThumbnail;
-  final Widget Function() buildDefaultThumbnail;
-
-  const _CachedFutureBuilder({
-    required this.fileId,
-    required this.thumbnailCache,
-    required this.getPdfThumbnail,
-    required this.buildDefaultThumbnail,
-  });
-
-  @override
-  __CachedFutureBuilderState createState() => __CachedFutureBuilderState();
-}
-
-class __CachedFutureBuilderState extends State<_CachedFutureBuilder> {
-  late Future<String> _thumbnailFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    _thumbnailFuture = widget.getPdfThumbnail(widget.fileId);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<String>(
-      future: _thumbnailFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Center(
-            child: CircularProgressIndicator(
-              color: const Color(0xFF0096C7).withOpacity(0.5),
-            ),
-          );
-        } else if (snapshot.hasError || !snapshot.hasData) {
-          return widget.buildDefaultThumbnail();
-        }
-        // Cache the thumbnail URL
-        widget.thumbnailCache[widget.fileId] = snapshot.data!;
-        return ClipRRect(
-          borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(16),
-            topRight: Radius.circular(16),
-          ),
-          child: Image.network(
-            snapshot.data!,
-            fit: BoxFit.cover,
-            width: double.infinity,
-            height: double.infinity,
-            errorBuilder: (context, error, stackTrace) => widget.buildDefaultThumbnail(),
-          ),
-        );
-      },
-    );
-  }
-}
-
-// Cached future builder for details thumbnail - same as before
-class _CachedDetailsFutureBuilder extends StatefulWidget {
-  final String fileId;
-  final Map<String, String> thumbnailCache;
-  final Future<String> Function(String) getPdfThumbnail;
-  final Widget Function() buildDefaultThumbnail;
-
-  const _CachedDetailsFutureBuilder({
-    required this.fileId,
-    required this.thumbnailCache,
-    required this.getPdfThumbnail,
-    required this.buildDefaultThumbnail,
-  });
-
-  @override
-  __CachedDetailsFutureBuilderState createState() => __CachedDetailsFutureBuilderState();
-}
-
-class __CachedDetailsFutureBuilderState extends State<_CachedDetailsFutureBuilder> {
-  late Future<String> _thumbnailFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    _thumbnailFuture = widget.getPdfThumbnail(widget.fileId);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<String>(
-      future: _thumbnailFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Container(
-            color: const Color(0xFFF8FAFC),
-            child: const Center(
-              child: CircularProgressIndicator(
-                color: Color(0xFF0096C7),
-                strokeWidth: 2,
-              ),
-            ),
-          );
-        }
-        if (snapshot.hasError || !snapshot.hasData) {
-          return Container(
-            color: const Color(0xFFF8FAFC),
-            child: widget.buildDefaultThumbnail(),
-          );
-        }
-        // Cache the thumbnail URL
-        widget.thumbnailCache[widget.fileId] = snapshot.data!;
-        return Image.network(
-          snapshot.data!,
-          fit: BoxFit.cover,
-          width: double.infinity,
-          height: double.infinity,
-          errorBuilder: (context, error, stackTrace) => Container(
-            color: const Color(0xFFF8FAFC),
-            child: widget.buildDefaultThumbnail(),
-          ),
-        );
-      },
     );
   }
 }

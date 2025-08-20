@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../pages/user/author_dashboard.dart';
+import '../pages/user/user_home.dart';
 
 class Signup extends StatefulWidget {
   const Signup({super.key});
@@ -20,96 +21,171 @@ class _SignupState extends State<Signup> {
   bool _isPasswordVisible = false;
   bool isLoading = false;
   
-  // Add role selection
-  String selectedRole = 'Reader'; // Default role
+  String selectedRole = 'Reader';
   final List<String> roles = ['Reader', 'Author'];
+  final supabase = Supabase.instance.client;
 
   Future<void> _registerUser() async {
     if (_formKey.currentState!.validate()) {
       try {
         setState(() => isLoading = true);
 
-        // Create user in Firebase Auth
-        UserCredential userCredential = await FirebaseAuth.instance
-            .createUserWithEmailAndPassword(
-              email: emailController.text.trim(),
-              password: passwordController.text.trim(),
-            );
-
-        // Determine collection based on role
-        String collection = selectedRole == 'Author' ? 'authors' : 'users';
+        // First check if email already exists in our tables
+        final existingUser = await supabase
+            .from('users')
+            .select('email')
+            .eq('email', emailController.text.trim())
+            .maybeSingle();
         
-        // Prepare common data
-        Map<String, dynamic> userData = {
-          'firstName': firstNameController.text.trim(),
-          'lastName': lastNameController.text.trim(),
-          'contactNo': contactController.text.trim(),
-          'email': emailController.text.trim(),
-          'username': usernameController.text.trim(),
-          'uid': userCredential.user!.uid,
-          'role': selectedRole.toLowerCase(),
-          'createdAt': Timestamp.now(),
-          'lastLoginAt': Timestamp.now(),
-          'isActive': true,
-        };
+        final existingAuthor = await supabase
+            .from('authors')
+            .select('email')
+            .eq('email', emailController.text.trim())
+            .maybeSingle();
 
-        // Add role-specific fields
-        if (selectedRole == 'Author') {
-          userData.addAll({
-            'displayName': '${firstNameController.text.trim()} ${lastNameController.text.trim()}',
-            'photoURL': '',
-            'booksPublished': 0,
-            'totalViews': 0,
-            'totalDownloads': 0,
-            'bio': 'Passionate storyteller ready to share amazing stories.',
-            'specialization': [],
-            'socialLinks': {
-              'website': '',
-              'twitter': '',
-              'linkedin': '',
-            },
-            'verificationStatus': 'pending',
-          });
+        if (existingUser != null || existingAuthor != null) {
+          _showError('This email is already registered. Please login instead.');
+          return;
+        }
+
+        // Check if username already exists (for readers only)
+        if (selectedRole == 'Reader') {
+          final existingUsername = await supabase
+              .from('users')
+              .select('username')
+              .eq('username', usernameController.text.trim())
+              .maybeSingle();
+          
+          if (existingUsername != null) {
+            _showError('Username already exists. Please choose a different username.');
+            return;
+          }
+        }
+
+        final AuthResponse response = await supabase.auth.signUp(
+          email: emailController.text.trim(),
+          password: passwordController.text.trim(),
+          data: {
+            'role': selectedRole.toLowerCase(),
+            'first_name': firstNameController.text.trim(),
+            'last_name': lastNameController.text.trim(),
+            'contact_no': contactController.text.trim(),
+            'username': usernameController.text.trim(),
+            'display_name': '${firstNameController.text.trim()} ${lastNameController.text.trim()}',
+          },
+        );
+
+        if (response.user != null) {
+          try {
+            String table = selectedRole == 'Author' ? 'authors' : 'users';
+            
+            // Base data that both tables have
+            Map<String, dynamic> userData = {
+              'id': response.user!.id,
+              'email': emailController.text.trim(),
+              'first_name': firstNameController.text.trim(),
+              'last_name': lastNameController.text.trim(),
+              'contact_no': contactController.text.trim(),
+              'role': selectedRole.toLowerCase(),
+            };
+
+            // Add table-specific fields
+            if (selectedRole == 'Author') {
+              userData.addAll({
+                'display_name': '${firstNameController.text.trim()} ${lastNameController.text.trim()}',
+                'bio': 'Passionate storyteller ready to share amazing stories.',
+                'books_published': 0,
+                'total_views': 0,
+                'total_downloads': 0,
+                'verification_status': 'pending',
+                'is_active': true,
+              });
+            } else {
+              userData.addAll({
+                'username': usernameController.text.trim(),
+                'favorite_genres': 'Fiction, Science',
+                'books_read': 0,
+                'is_active': true,
+              });
+            }
+
+            // Insert user data into custom table
+            await supabase.from(table).insert(userData);
+
+            // Show success message and navigate to appropriate dashboard
+            _showSuccess('Account created successfully! Please check your email to verify.');
+            
+            // Clear form
+            _clearForm();
+            
+            // Navigate to appropriate dashboard based on role
+            Future.delayed(const Duration(seconds: 2), () {
+              if (mounted) {
+                if (selectedRole == 'Author') {
+                  // Navigate to author dashboard
+                  Navigator.pushAndRemoveUntil(
+                    context,
+                    MaterialPageRoute(builder: (context) => const AuthorDashboardPage()),
+                    (route) => false,
+                  );
+                } else {
+                  // Navigate to user home for readers
+                  Navigator.pushAndRemoveUntil(
+                    context,
+                    MaterialPageRoute(builder: (context) => const UserHomePage()),
+                    (route) => false,
+                  );
+                }
+              }
+            });
+
+          } catch (dbError) {
+            print('Database error: $dbError');
+            
+            // Show specific error messages
+            String errorMessage = 'Failed to create profile';
+            
+            if (dbError.toString().contains('duplicate key value violates unique constraint')) {
+              if (dbError.toString().contains('username')) {
+                errorMessage = 'Username already exists. Please choose a different username.';
+              } else if (dbError.toString().contains('email')) {
+                errorMessage = 'Email already exists. Please use a different email.';
+              } else {
+                errorMessage = 'This account already exists. Please login instead.';
+              }
+            } else if (dbError.toString().contains('violates not-null constraint')) {
+              errorMessage = 'Please fill in all required fields.';
+            } else if (dbError.toString().contains('invalid input syntax')) {
+              errorMessage = 'Please check your input and try again.';
+            } else {
+              errorMessage = 'Profile creation failed. The account was created but profile setup incomplete.';
+            }
+            
+            _showError(errorMessage);
+          }
         } else {
-          userData.addAll({
-            'booksRead': 0,
-            'favoriteGenres': 'Fiction, Science',
-            'photoURL': '',
-          });
+          _showError('Failed to create account. Please try again.');
         }
-
-        // Save user info in appropriate Firestore collection
-        await FirebaseFirestore.instance
-            .collection(collection)
-            .doc(userCredential.user!.uid)
-            .set(userData);
-
-        // Show success message based on role
-        String successMessage = selectedRole == 'Author' 
-            ? 'Author account created successfully! Please login to start publishing'
-            : 'Reader account created successfully! Please login to start reading';
+      } on AuthException catch (e) {
+        print('Auth error: $e');
+        String errorMessage = 'Signup failed';
         
-        _showSuccess(successMessage);
-
-        // Navigate back to login
-        Navigator.pop(context);
-      } on FirebaseAuthException catch (e) {
-        String errorMessage = 'An error occurred';
-        if (e.code == 'email-already-in-use') {
-          errorMessage = 'This email is already registered. Please use a different email or try logging in instead.';
-        } else if (e.code == 'weak-password') {
-          errorMessage = 'Password is too weak. Please use at least 6 characters with a mix of letters and numbers.';
-        } else if (e.code == 'invalid-email') {
+        if (e.message.contains('rate limit') || e.message.contains('too many')) {
+          errorMessage = 'Too many signup attempts. Please wait a few minutes and try again.';
+        } else if (e.message.contains('already registered') || e.message.contains('already exists')) {
+          errorMessage = 'This email is already registered. Please login instead.';
+        } else if (e.message.contains('invalid email')) {
           errorMessage = 'Please enter a valid email address.';
-        } else if (e.code == 'operation-not-allowed') {
-          errorMessage = 'Email/password accounts are not enabled. Please contact support.';
-        } else if (e.code == 'too-many-requests') {
-          errorMessage = 'Too many attempts. Please try again later.';
+        } else if (e.message.contains('weak password')) {
+          errorMessage = 'Password is too weak. Please use at least 6 characters.';
+        } else {
+          errorMessage = e.message;
         }
-
+        
         _showError(errorMessage);
       } catch (e) {
-        _showError('Error: $e');
+        print('General error: $e');
+        _showError('Network error. Please check your connection and try again.');
       } finally {
         setState(() => isLoading = false);
       }
@@ -176,6 +252,18 @@ class _SignupState extends State<Signup> {
         elevation: 8,
       ),
     );
+  }
+
+  void _clearForm() {
+    firstNameController.clear();
+    lastNameController.clear();
+    contactController.clear();
+    emailController.clear();
+    usernameController.clear();
+    passwordController.clear();
+    setState(() {
+      selectedRole = 'Reader';
+    });
   }
 
   @override
