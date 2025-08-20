@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:supabase_flutter/supabase_flutter.dart'; // Replace Firebase import
 
 class AdminResetPasswordConfirmation extends StatefulWidget {
   final String email;
@@ -15,26 +14,22 @@ class AdminResetPasswordConfirmation extends StatefulWidget {
 }
 
 class _AdminResetPasswordConfirmationState extends State<AdminResetPasswordConfirmation> {
-  bool isResending = false;
+  final supabase = Supabase.instance.client;
+  bool isLoading = false;
 
-  Future<void> _resendAdminResetEmail() async {
-    setState(() => isResending = true);
+  Future<void> _resendResetEmail() async {
+    setState(() => isLoading = true);
     try {
-      // Resend password reset email directly through Firebase Auth
-      await FirebaseAuth.instance.sendPasswordResetEmail(
-        email: widget.email,
+      await supabase.auth.resetPasswordForEmail(
+        widget.email,
+        redirectTo: 'your-app://reset-password',
       );
-      _showSuccess('Admin password reset email sent again! Please check your inbox.');
-    } on FirebaseAuthException catch (e) {
-      String errorMessage = 'Failed to resend email';
-      if (e.code == 'too-many-requests') {
-        errorMessage = 'Too many requests. Please wait before trying again.';
-      }
-      _showError(errorMessage);
-    } catch (e) {
-      _showError('Error: $e');
+      
+      _showSuccess('Reset email sent again! Please check your inbox.');
+    } on AuthException catch (e) {
+      _showError('Error: ${e.message}');
     } finally {
-      setState(() => isResending = false);
+      setState(() => isLoading = false);
     }
   }
 
@@ -228,8 +223,8 @@ class _AdminResetPasswordConfirmationState extends State<AdminResetPasswordConfi
               
               // Resend email button
               TextButton.icon(
-                onPressed: isResending ? null : _resendAdminResetEmail,
-                icon: isResending 
+                onPressed: isLoading ? null : _resendResetEmail,
+                icon: isLoading 
                     ? SizedBox(
                         width: 16,
                         height: 16,
@@ -240,7 +235,7 @@ class _AdminResetPasswordConfirmationState extends State<AdminResetPasswordConfi
                       )
                     : Icon(Icons.refresh, color: Colors.lightGreen),
                 label: Text(
-                  isResending ? 'Sending...' : 'Didn\'t receive email? Resend',
+                  isLoading ? 'Sending...' : 'Didn\'t receive email? Resend',
                   style: TextStyle(
                     color: Colors.lightGreen,
                     fontSize: 16,

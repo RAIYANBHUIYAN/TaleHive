@@ -1,13 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'dart:convert';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:url_launcher/url_launcher.dart';
 import 'package:http/http.dart' as http;
-import 'package:google_sign_in/google_sign_in.dart';
-// Add these imports at the top of the file:
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path/path.dart' as path;
+import 'package:mime/mime.dart';
+
 import '../main_home_page/main_page.dart';
+import '../pdf_viewer_page.dart';
 
 class AuthorDashboardPage extends StatefulWidget {
   const AuthorDashboardPage({Key? key}) : super(key: key);
@@ -17,20 +23,8 @@ class AuthorDashboardPage extends StatefulWidget {
 }
 
 class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
-  // Firebase instances
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-
-  // Google Drive setup - EXACTLY like main_page.dart
-  final GoogleSignIn _googleSignIn = GoogleSignIn(
-    scopes: [
-      'https://www.googleapis.com/auth/drive.readonly',
-      'https://www.googleapis.com/auth/drive.file',
-    ],
-  );
-  GoogleSignInAccount? _account;
-
-  // Cache for thumbnails to prevent reloading - EXACTLY like main_page.dart
-  final Map<String, String> _thumbnailCache = {};
+  final supabase = Supabase.instance.client;
+  final ImagePicker _imagePicker = ImagePicker();
 
   final author = {
     'name': 'Md Raiyan Buhiyan',
@@ -41,54 +35,57 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
 
   List<Map<String, dynamic>> books = [];
   bool _isLoadingBooks = false;
-
   String search = '';
+  Map<String, dynamic>? authorData;
 
   @override
   void initState() {
     super.initState();
-    _loadBooksFromFirebase();
-    _initializeGoogleSignIn();
+    _loadAuthorData();
+    _loadBooksFromSupabase();
   }
 
-  // Initialize Google Sign-In - EXACTLY like main_page.dart
-  Future<void> _initializeGoogleSignIn() async {
+  Future<void> _loadAuthorData() async {
     try {
-      // Sign out first to ensure fresh sign-in
-      await _googleSignIn.signOut();
-      _account = await _googleSignIn.signIn();
-      if (_account == null) {
-        print('Google Sign-In was cancelled');
-      } else {
-        print('Signed in as: ${_account!.email}');
+      final user = supabase.auth.currentUser;
+      if (user != null) {
+        final response = await supabase
+            .from('authors')
+            .select()
+            .eq('id', user.id)
+            .single();
+        
+        setState(() {
+          authorData = response;
+        });
       }
     } catch (e) {
-      print('Google Sign-In initialization failed: $e');
+      print('Error loading author data: $e');
     }
   }
 
-  // Load books from Firebase
-  Future<void> _loadBooksFromFirebase() async {
+  Future<void> _loadBooksFromSupabase() async {
     setState(() {
       _isLoadingBooks = true;
     });
 
     try {
-      QuerySnapshot querySnapshot = await _firestore.collection('Books').get();
-      List<Map<String, dynamic>> loadedBooks = [];
+      final user = supabase.auth.currentUser;
+      if (user != null) {
+        final response = await supabase
+            .from('books')
+            .select()
+            .eq('author_id', user.id)
+            .order('created_at', ascending: false);
 
-      for (var doc in querySnapshot.docs) {
-        Map<String, dynamic> bookData = doc.data() as Map<String, dynamic>;
-        bookData['id'] = doc.id;
-        loadedBooks.add(bookData);
+        setState(() {
+          books = response.map((book) => Map<String, dynamic>.from(book)).toList();
+        });
       }
-
-      setState(() {
-        books = loadedBooks;
-      });
     } catch (e) {
+      print('Error loading books: $e');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error loading books: $e')),
+        SnackBar(content: Text('Error loading books: $e'), backgroundColor: Colors.red),
       );
     } finally {
       setState(() {
@@ -97,209 +94,301 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
     }
   }
 
-  // Validate URL format
-  bool _isValidUrl(String url) {
+  // Upload PDF file to Supabase Storage
+  Future<String?> _uploadPdfFile() async {
     try {
-      final uri = Uri.parse(url);
-      return uri.hasScheme && (uri.scheme == 'http' || uri.scheme == 'https');
-    } catch (e) {
-      return false;
-    }
-  }
+      // Show file picker
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf'],
+        allowMultiple: false,
+      );
 
-  // Extract Google Drive file ID from URL
-  String? _extractGoogleDriveFileId(String originalLink) {
-    String? fileId;
-    
-    if (originalLink.contains('/file/d/')) {
-      // Format: https://drive.google.com/file/d/FILE_ID/view
-      final match = RegExp(r'/file/d/([a-zA-Z0-9_-]+)').firstMatch(originalLink);
-      fileId = match?.group(1);
-    } else if (originalLink.contains('id=')) {
-      // Format: https://drive.google.com/open?id=FILE_ID
-      final match = RegExp(r'id=([a-zA-Z0-9_-]+)').firstMatch(originalLink);
-      fileId = match?.group(1);
-    }
-    
-    return fileId;
-  }
-
-  // Convert Google Drive link to direct download link
-  String _convertGoogleDriveLink(String originalLink) {
-    // If it's already a direct link, return as is
-    if (originalLink.contains('drive.google.com/uc?')) {
-      return originalLink;
-    }
-    
-    String? fileId = _extractGoogleDriveFileId(originalLink);
-    
-    if (fileId != null) {
-      // Convert to direct download link
-      return 'https://drive.google.com/uc?export=download&id=$fileId';
-    }
-    
-    // If we can't extract file ID, return original link
-    return originalLink;
-  }
-
-  // SINGLE getPdfThumbnail method with caching - EXACTLY like main_page.dart
-  Future<String> _getPdfThumbnail(String fileId) async {
-    // Check cache first
-    if (_thumbnailCache.containsKey(fileId)) {
-      return _thumbnailCache[fileId]!;
-    }
-
-    try {
-      if (_account == null) {
-        throw Exception('Not authenticated');
-      }
-      
-      // Get the thumbnail URL from Google Drive - SAME AS MAIN_PAGE.DART
-      final thumbnailUrl = 'https://drive.google.com/thumbnail?id=$fileId&sz=w400-h500';
-      
-      // Verify the thumbnail is accessible
-      final response = await http.head(Uri.parse(thumbnailUrl));
-      if (response.statusCode == 200) {
-        // Cache the successful URL
-        _thumbnailCache[fileId] = thumbnailUrl;
-        return thumbnailUrl;
-      }
-      
-      throw Exception('Thumbnail not available');
-    } catch (e) {
-      // If we can't get the thumbnail, throw an exception to trigger the error builder
-      throw Exception('Failed to load thumbnail');
-    }
-  }
-
-  // Save book to Firebase with PDF link and file ID
-  Future<bool> _saveBookToFirebase(Map<String, dynamic> bookData) async {
-    try {
-      print('📚 Starting book save process...');
-      
-      // Process PDF link
-      if (bookData['pdfLink'] != null && bookData['pdfLink'].toString().isNotEmpty) {
-        String pdfLink = bookData['pdfLink'].toString().trim();
+      if (result != null) {
+        final file = result.files.single;
         
-        // Validate URL
-        if (!_isValidUrl(pdfLink)) {
-          throw Exception('Invalid PDF link format. Please enter a valid URL.');
+        // Check if we have file bytes (for web) or path (for mobile)
+        Uint8List? fileBytes;
+        
+        if (file.bytes != null) {
+          // Web platform - use bytes directly
+          fileBytes = file.bytes!;
+        } else if (file.path != null) {
+          // Mobile platform - read from file path
+          final fileFromPath = File(file.path!);
+          fileBytes = await fileFromPath.readAsBytes();
+        } else {
+          throw Exception('No file data available');
         }
+
+        final user = supabase.auth.currentUser;
+        if (user == null) throw Exception('User not authenticated');
         
-        // Extract Google Drive file ID
-        String? fileId = _extractGoogleDriveFileId(pdfLink);
-        if (fileId == null) {
-          throw Exception('Could not extract Google Drive file ID from the link.');
+        // Create unique filename
+        final timestamp = DateTime.now().millisecondsSinceEpoch;
+        final originalName = file.name.replaceAll(RegExp(r'[^\w\-_\.]'), '_');
+        final fileName = 'pdf_${user.id}_${timestamp}_$originalName';
+        
+        print('Uploading file: $fileName (${fileBytes.length} bytes)');
+        
+        // Show progress dialog
+        _showUploadProgress('Uploading PDF...');
+
+        try {
+          // Upload to Supabase Storage
+          await supabase.storage
+              .from('book-pdfs')
+              .uploadBinary(fileName, fileBytes, 
+                fileOptions: const FileOptions(
+                  cacheControl: '3600',
+                  upsert: false,
+                ),
+              );
+
+          // Close progress dialog
+          if (mounted) Navigator.pop(context);
+
+          // Get public URL
+          final publicUrl = supabase.storage
+              .from('book-pdfs')
+              .getPublicUrl(fileName);
+
+          print('PDF uploaded successfully: $publicUrl');
+          
+          return publicUrl;
+          
+        } catch (uploadError) {
+          // Close progress dialog
+          if (mounted) Navigator.pop(context);
+          throw Exception('Upload failed: $uploadError');
         }
-        
-        // Convert Google Drive link if needed
-        String processedLink = _convertGoogleDriveLink(pdfLink);
-        
-        bookData['pdfUrl'] = processedLink;
-        bookData['originalPdfLink'] = pdfLink;
-        bookData['googleDriveFileId'] = fileId; // Store file ID for thumbnail generation
-        bookData['pdfType'] = 'google_drive_link';
-        bookData['pdfStatus'] = 'link_provided';
-        bookData['pdfMessage'] = 'PDF available via Google Drive link';
-        bookData['hasThumbnail'] = true; // We can generate thumbnails from Google Drive
-        
-        print('✅ PDF link processed: $processedLink');
-        print('✅ Google Drive File ID: $fileId');
+      } else {
+        print('No file selected');
+        return null;
       }
-
-      // Remove cover image path since we're not using it anymore
-      bookData.remove('coverImagePath');
-
-      // Add metadata
-      bookData['publishedAt'] = FieldValue.serverTimestamp();
-      bookData['authorId'] = author['email'];
-      bookData['authorName'] = author['name'];
-      bookData['authorEmail'] = author['email'];
-      bookData['createdBy'] = author['email'];
-      bookData['lastModified'] = FieldValue.serverTimestamp();
-      bookData['status'] = 'published';
-      bookData['isAvailable'] = true;
-      bookData['views'] = 0;
-      bookData['downloads'] = 0;
-      bookData['storageMethod'] = 'google_drive_with_thumbnails';
-
-      print('💾 Saving book data to Firestore...');
-      
-      // Save to Firestore
-      DocumentReference docRef = await _firestore.collection('Books').add(bookData);
-      bookData['id'] = docRef.id;
-
-      print('✅ Book saved successfully with ID: ${docRef.id}');
-
-      // Update local books list
-      setState(() {
-        books = [bookData, ...books];
-      });
-
-      return true;
     } catch (e) {
-      print('❌ Error saving book: $e');
+      print('Error in _uploadPdfFile: $e');
+      
+      // Close progress dialog if open
+      if (mounted && Navigator.canPop(context)) {
+        Navigator.pop(context);
+      }
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error uploading PDF: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+      return null;
+    }
+  }
+
+  // Upload cover image to Supabase Storage
+  Future<String?> _uploadCoverImage() async {
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 800,
+        maxHeight: 1200,
+        imageQuality: 85,
+      );
+
+      if (image != null) {
+        final bytes = await image.readAsBytes();
+        final user = supabase.auth.currentUser;
+        if (user == null) throw Exception('User not authenticated');
+        
+        final timestamp = DateTime.now().millisecondsSinceEpoch;
+        final extension = path.extension(image.path).toLowerCase();
+        final fileName = 'cover_${user.id}_${timestamp}$extension';
+        
+        print('Uploading cover: $fileName (${bytes.length} bytes)');
+        
+        _showUploadProgress('Uploading cover image...');
+
+        try {
+          await supabase.storage
+              .from('book-covers')
+              .uploadBinary(fileName, bytes,
+                fileOptions: const FileOptions(
+                  cacheControl: '3600',
+                  upsert: false,
+                ),
+              );
+
+          if (mounted) Navigator.pop(context);
+
+          final publicUrl = supabase.storage
+              .from('book-covers')
+              .getPublicUrl(fileName);
+
+          print('Cover uploaded successfully: $publicUrl');
+          return publicUrl;
+        
+        } catch (uploadError) {
+          if (mounted) Navigator.pop(context);
+          throw Exception('Upload failed: $uploadError');
+        }
+      }
+    } catch (e) {
+      Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error saving book: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return false;
-    }
-  }
-
-  // Build book cover from Google Drive thumbnail - EXACTLY like main_page.dart
-  Widget _buildBookCover(Map<String, dynamic> book, double width, double height) {
-    final fileId = book['googleDriveFileId'];
-    
-    if (fileId != null && fileId.toString().isNotEmpty) {
-      return _buildThumbnailWidget(fileId, width, height);
-    }
-    
-    // Fallback to placeholder
-    return _buildDefaultThumbnail(width, height);
-  }
-
-  // Build thumbnail widget with caching - EXACTLY like main_page.dart
-  Widget _buildThumbnailWidget(String fileId, double width, double height) {
-    // Always check cache first and return immediately if found
-    if (_thumbnailCache.containsKey(fileId)) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: Image.network(
-          _thumbnailCache[fileId]!,
-          width: width,
-          height: height,
-          fit: BoxFit.cover,
-          loadingBuilder: (context, child, loadingProgress) {
-            if (loadingProgress == null) return child;
-            return Center(
-              child: CircularProgressIndicator(
-                color: const Color(0xFF6C63FF).withOpacity(0.5),
-                value: loadingProgress.expectedTotalBytes != null
-                    ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
-                    : null,
-              ),
-            );
-          },
-          errorBuilder: (context, error, stackTrace) => _buildDefaultThumbnail(width, height),
-        ),
+        SnackBar(content: Text('Error uploading cover: $e'), backgroundColor: Colors.red),
       );
     }
+    return null;
+  }
 
-    // Use FutureBuilder if not cached - EXACTLY like main_page.dart
-    return _CachedFutureBuilder(
-      fileId: fileId,
-      width: width,
-      height: height,
-      thumbnailCache: _thumbnailCache,
-      getPdfThumbnail: _getPdfThumbnail,
-      buildDefaultThumbnail: () => _buildDefaultThumbnail(width, height),
+  // Show upload progress dialog
+  void _showUploadProgress(String message) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+            Text(message),
+          ],
+        ),
+      ),
     );
   }
 
-  // Build default thumbnail placeholder - EXACTLY like main_page.dart
+  // Save book to Supabase database
+  Future<bool> _saveBookToSupabase(Map<String, dynamic> bookData) async {
+    try {
+      final user = supabase.auth.currentUser;
+      if (user == null) {
+        throw Exception('User not authenticated');
+      }
+
+      // Add metadata
+      bookData['author_id'] = user.id;
+      bookData['author_name'] = authorData?['name'] ?? author['name'];
+      bookData['is_active'] = true;
+      bookData['created_at'] = DateTime.now().toIso8601String();
+      bookData['updated_at'] = DateTime.now().toIso8601String();
+
+      // Save to Supabase
+      final response = await supabase
+          .from('books')
+          .insert(bookData)
+          .select()
+          .single();
+
+      // Update local books list
+      setState(() {
+        books = [response, ...books];
+      });
+
+      print('📚 Book saved with data:');
+      print('   Title: ${bookData['title']}');
+      print('   Cover URL: ${bookData['cover_image_url']}');
+      print('   PDF URL: ${bookData['pdf_url']}');
+      
+      // Test the cover URL if it exists
+      if (bookData['cover_image_url'] != null) {
+        await _testCoverUrl(bookData['cover_image_url']);
+      }
+
+      return true;
+    } catch (e) {
+      print('Error saving book: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error saving book: $e'), backgroundColor: Colors.red),
+      );
+      return false;
+    }
+  }
+
+  // Build book cover from Supabase URL or placeholder
+  Widget _buildBookCover(Map<String, dynamic> book, double width, double height) {
+    final coverUrl = book['cover_image_url'];
+    
+    print('=== DEBUG COVER IMAGE ===');
+    print('Book ID: ${book['id']}');
+    print('Cover URL: $coverUrl');
+    print('URL Type: ${coverUrl.runtimeType}');
+    print('URL Length: ${coverUrl?.toString().length}');
+    print('========================');
+    
+    if (coverUrl != null && coverUrl.toString().isNotEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.network(
+          coverUrl.toString(), // Ensure it's a string
+          width: width,
+          height: height,
+          fit: BoxFit.cover,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+          },
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) {
+              print('✅ Image loaded successfully: $coverUrl');
+              return child;
+            }
+            
+            final progress = loadingProgress.expectedTotalBytes != null
+                ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                : null;
+            
+            print('📥 Loading image: ${(progress ?? 0) * 100}%');
+            
+            return Container(
+              width: width,
+              height: height,
+              decoration: BoxDecoration(
+                color: Colors.grey[200],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(
+                      value: progress,
+                      strokeWidth: 2,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Loading...',
+                      style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+                    ),
+                    if (progress != null)
+                      Text(
+                        '${(progress * 100).round()}%',
+                        style: TextStyle(fontSize: 8, color: Colors.grey[500]),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          },
+          errorBuilder: (context, error, stackTrace) {
+            print('❌ Error loading image: $error');
+            print('❌ Stack trace: $stackTrace');
+            print('❌ Image URL was: $coverUrl');
+            print('❌ Error type: ${error.runtimeType}');
+            return _buildDefaultThumbnail(width, height);
+          },
+        ),
+      );
+    }
+    
+    print('🔍 No cover URL found, using default thumbnail');
+    return _buildDefaultThumbnail(width, height);
+  }
+
+  // Build default thumbnail placeholder
   Widget _buildDefaultThumbnail(double width, double height) {
     return Container(
       width: width,
@@ -312,13 +401,13 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            Icons.picture_as_pdf,
+            Icons.book,
             size: width * 0.3,
             color: const Color(0xFF6C63FF).withOpacity(0.5),
           ),
           const SizedBox(height: 4),
           Text(
-            'PDF',
+            'Book',
             style: TextStyle(
               fontSize: width * 0.08,
               fontWeight: FontWeight.w600,
@@ -330,95 +419,50 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
     );
   }
 
-  // Handle PDF viewing from link
+  // Handle PDF viewing from Supabase URL
   Future<void> _handlePdfView(Map<String, dynamic> book) async {
-    if (book['pdfUrl'] != null && book['pdfUrl'].toString().isNotEmpty) {
-      try {
-        final url = book['pdfUrl'].toString();
-        final uri = Uri.parse(url);
-        
-        if (await canLaunchUrl(uri)) {
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
-        } else {
-          // Show PDF details with copy option
-          _showPdfDetailsDialog(book);
-        }
-      } catch (e) {
-        print('Error opening PDF: $e');
-        _showPdfDetailsDialog(book);
-      }
+    final pdfUrl = book['pdf_url'];
+    final bookTitle = book['title'] ?? 'Unknown Book';
+    
+    if (pdfUrl != null && pdfUrl.toString().isNotEmpty) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => PdfViewerPage(
+            pdfUrl: pdfUrl,
+            bookTitle: bookTitle,
+          ),
+        ),
+      );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No PDF link available')),
+        const SnackBar(content: Text('No PDF file available')),
       );
     }
   }
 
-  void _showPdfDetailsDialog(Map<String, dynamic> book) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('PDF Details - ${book['title'] ?? 'Book'}'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('📄 Type: ${book['pdfType'] ?? 'Unknown'}'),
-            const SizedBox(height: 8),
-            Text('✅ Status: ${book['pdfStatus'] ?? 'Unknown'}'),
-            const SizedBox(height: 8),
-            if (book['googleDriveFileId'] != null)
-              Text('🆔 File ID: ${book['googleDriveFileId']}'),
-            const SizedBox(height: 8),
-            if (book['pdfUrl'] != null)
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('🔗 PDF Link:', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 4),
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.grey[100],
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: SelectableText(
-                      book['pdfUrl'],
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ),
-                ],
-              ),
-            const SizedBox(height: 16),
-            const Text(
-              'Cover image is automatically generated from the PDF\'s first page via Google Drive.',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              if (book['pdfUrl'] != null) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('PDF link displayed above')),
-                );
-              }
-            },
-            child: const Text('Copy Link'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
   // Get unique categories
   Set<String> _getUniqueCategories() {
-    return books.map((book) => book['bookType']?.toString() ?? 'Unknown').toSet();
+    return books.map((book) => book['category']?.toString() ?? 'Unknown').toSet();
+  }
+
+  // Add this method to test URLs:
+  Future<void> _testCoverUrl(String url) async {
+    try {
+      print('🧪 Testing cover URL: $url');
+      
+      final response = await http.head(Uri.parse(url));
+      print('🧪 Response status: ${response.statusCode}');
+      print('🧪 Response headers: ${response.headers}');
+      
+      if (response.statusCode == 200) {
+        print('✅ URL is accessible');
+      } else {
+        print('❌ URL returned status: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('❌ URL test failed: $e');
+    }
   }
 
   @override
@@ -426,7 +470,6 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
     final filteredBooks = books
         .where((b) => (b['title'] ?? '').toLowerCase().contains(search.toLowerCase()))
         .toList();
-    final isMobile = MediaQuery.of(context).size.width < 600;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7FAFC),
@@ -437,38 +480,16 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              'Author',
-              style: TextStyle(
-                fontWeight: FontWeight.bold, 
-                color: Colors.white,
-                fontSize: 18,
-              ),
-            ),
-            Text(
-              'Dashboard',
-              style: TextStyle(
-                fontWeight: FontWeight.bold, 
-                color: Colors.white,
-                fontSize: 18,
-              ),
-            ),
+            Text('Author', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 18)),
+            Text('Dashboard', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 18)),
           ],
         ),
-        centerTitle: false, // Keep it aligned to the left
+        centerTitle: false,
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white),
             tooltip: 'Refresh Books',
-            onPressed: _loadBooksFromFirebase,
-          ),
-          IconButton(
-            icon: Icon(
-              _account != null ? Icons.account_circle : Icons.account_circle_outlined,
-              color: _account != null ? Colors.green : Colors.white,
-            ),
-            tooltip: _account != null ? 'Signed in: ${_account!.email}' : 'Sign in to Google Drive',
-            onPressed: _initializeGoogleSignIn,
+            onPressed: _loadBooksFromSupabase,
           ),
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.white),
@@ -511,19 +532,13 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  author['name']!,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 24,
-                                  ),
+                                  authorData?['name'] ?? author['name']!,
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 24),
                                 ),
                                 const SizedBox(height: 6),
                                 Text(
-                                  author['bio']!,
-                                  style: const TextStyle(
-                                    color: Colors.blueGrey,
-                                    fontSize: 15,
-                                  ),
+                                  authorData?['bio'] ?? author['bio']!,
+                                  style: const TextStyle(color: Colors.blueGrey, fontSize: 15),
                                 ),
                                 const SizedBox(height: 8),
                                 Row(
@@ -532,11 +547,8 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                                     const SizedBox(width: 6),
                                     Flexible(
                                       child: Text(
-                                        author['email']!,
-                                        style: const TextStyle(
-                                          color: Colors.blueGrey,
-                                          fontSize: 14,
-                                        ),
+                                        supabase.auth.currentUser?.email ?? author['email']!,
+                                        style: const TextStyle(color: Colors.blueGrey, fontSize: 14),
                                       ),
                                     ),
                                   ],
@@ -544,12 +556,8 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                               ],
                             ),
                           ),
-                          // Add edit button here
                           IconButton(
-                            icon: const Icon(
-                              Icons.edit,
-                              color: Color(0xFF6C63FF),
-                            ),
+                            icon: const Icon(Icons.edit, color: Color(0xFF6C63FF)),
                             tooltip: 'Edit Profile',
                             onPressed: () => _showEditProfileDialog(context),
                           ),
@@ -559,32 +567,22 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                   ),
                   const SizedBox(height: 24),
 
-                  // Google Drive Status Info
+                  // Supabase Storage Status
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: _account != null ? Colors.green[50] : Colors.orange[50],
+                      color: Colors.green[50],
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: _account != null ? Colors.green[200]! : Colors.orange[200]!,
-                      ),
+                      border: Border.all(color: Colors.green[200]!),
                     ),
                     child: Row(
                       children: [
-                        Icon(
-                          _account != null ? Icons.cloud_done : Icons.cloud_off,
-                          color: _account != null ? Colors.green[700] : Colors.orange[700],
-                        ),
+                        Icon(Icons.cloud_done, color: Colors.green[700]),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            _account != null
-                                ? 'Google Drive connected: ${_account!.email}.'
-                                : 'Google Drive not connected.',
-                            style: TextStyle(
-                              color: _account != null ? Colors.green[700] : Colors.orange[700],
-                              fontSize: 13,
-                            ),
+                            'Supabase Storage connected. Upload PDFs and cover images directly.',
+                            style: TextStyle(color: Colors.green[700], fontSize: 13),
                           ),
                         ),
                       ],
@@ -609,11 +607,7 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                   // Analytics
                   Text(
                     'Analytics Overview',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 20,
-                      color: Colors.grey[800],
-                    ),
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: Colors.grey[800]),
                   ),
                   const SizedBox(height: 16),
 
@@ -633,10 +627,7 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text(
-                        'Published Books',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
-                      ),
+                      const Text('Published Books', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
                       SizedBox(
                         width: 200,
                         child: TextField(
@@ -662,15 +653,9 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                           children: [
                             Icon(Icons.library_books, size: 64, color: Colors.grey[400]),
                             const SizedBox(height: 16),
-                            Text(
-                              'No books found',
-                              style: TextStyle(fontSize: 18, color: Colors.grey[600], fontWeight: FontWeight.bold),
-                            ),
+                            Text('No books found', style: TextStyle(fontSize: 18, color: Colors.grey[600], fontWeight: FontWeight.bold)),
                             const SizedBox(height: 8),
-                            Text(
-                              'Start by publishing your first book!',
-                              style: TextStyle(fontSize: 14, color: Colors.grey[500]),
-                            ),
+                            Text('Start by publishing your first book!', style: TextStyle(fontSize: 14, color: Colors.grey[500])),
                           ],
                         ),
                       ),
@@ -685,43 +670,27 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                         itemBuilder: (context, i) {
                           final book = filteredBooks[i];
                           return Container(
-                            padding: const EdgeInsets.all(12), // Add padding around each book item
+                            padding: const EdgeInsets.all(12),
                             child: Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                // Larger book cover with better proportions
-                                _buildBookCover(book, 80, 120), // Increased from 48x64 to 80x120
-                                const SizedBox(width: 16), // More spacing
-                                
-                                // Book details - taking up remaining space
+                                _buildBookCover(book, 80, 120),
+                                const SizedBox(width: 16),
                                 Expanded(
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      // Book title
                                       Text(
                                         book['title'] ?? 'No Title',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 16,
-                                        ),
+                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                                         maxLines: 2,
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                       const SizedBox(height: 8),
-                                      
-                                      // Author and details
-                                      if (book['author'] != null)
-                                        Text(
-                                          'Author: ${book['author']}',
-                                          style: const TextStyle(
-                                            color: Colors.grey,
-                                            fontSize: 14,
-                                          ),
-                                        ),
+                                      if (book['author_name'] != null)
+                                        Text('Author: ${book['author_name']}', style: const TextStyle(color: Colors.grey, fontSize: 14)),
                                       const SizedBox(height: 4),
-                                      
-                                      if (book['bookType'] != null)
+                                      if (book['category'] != null)
                                         Container(
                                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                           decoration: BoxDecoration(
@@ -729,17 +698,11 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                                             borderRadius: BorderRadius.circular(12),
                                           ),
                                           child: Text(
-                                            book['bookType'],
-                                            style: TextStyle(
-                                              color: Colors.blue[800],
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w500,
-                                            ),
+                                            book['category'],
+                                            style: TextStyle(color: Colors.blue[800], fontSize: 12, fontWeight: FontWeight.w500),
                                           ),
                                         ),
                                       const SizedBox(height: 8),
-                                      
-                                      // Price and status row
                                       Row(
                                         children: [
                                           if (book['price'] != null)
@@ -751,16 +714,11 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                                               ),
                                               child: Text(
                                                 '\$${book['price']}',
-                                                style: TextStyle(
-                                                  color: Colors.green[800],
-                                                  fontSize: 14,
-                                                  fontWeight: FontWeight.bold,
-                                                ),
+                                                style: TextStyle(color: Colors.green[800], fontSize: 14, fontWeight: FontWeight.bold),
                                               ),
                                             ),
                                           const SizedBox(width: 8),
-                                          
-                                          if (book['pdfUrl'] != null)
+                                          if (book['pdf_url'] != null)
                                             Container(
                                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                               decoration: BoxDecoration(
@@ -771,41 +729,24 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                                               child: Row(
                                                 mainAxisSize: MainAxisSize.min,
                                                 children: [
-                                                  Icon(Icons.link, size: 12, color: Colors.green[700]),
+                                                  Icon(Icons.picture_as_pdf, size: 12, color: Colors.green[700]),
                                                   const SizedBox(width: 2),
                                                   Text(
                                                     'PDF',
-                                                    style: TextStyle(
-                                                      color: Colors.green[700],
-                                                      fontSize: 10,
-                                                      fontWeight: FontWeight.w500,
-                                                    ),
+                                                    style: TextStyle(color: Colors.green[700], fontSize: 10, fontWeight: FontWeight.w500),
                                                   ),
                                                 ],
                                               ),
                                             ),
                                         ],
                                       ),
-                                      const SizedBox(height: 8),
-                                      
-                                      // Thumbnail status
-                                      if (book['googleDriveFileId'] != null)
-                                        Text(
-                                          '🖼️ Cover: ${_thumbnailCache.containsKey(book['googleDriveFileId']) ? 'Loaded' : 'Loading...'}',
-                                          style: const TextStyle(
-                                            color: Colors.blue,
-                                            fontSize: 12,
-                                          ),
-                                        ),
                                     ],
                                   ),
                                 ),
-                                
-                                // Action buttons column
                                 Column(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    if (book['pdfUrl'] != null)
+                                    if (book['pdf_url'] != null)
                                       IconButton(
                                         icon: const Icon(Icons.launch, color: Colors.green),
                                         tooltip: 'Open PDF',
@@ -853,53 +794,281 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
   }
 
   void _editBook(Map<String, dynamic> book) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Edit functionality to be implemented')),
-    );
-  }
+    final titleController = TextEditingController(text: book['title']);
+    final authorNameController = TextEditingController(text: book['author_name']);
+    final priceController = TextEditingController(text: book['price']?.toString() ?? '');
+    final summaryController = TextEditingController(text: book['summary'] ?? '');
+    final languageController = TextEditingController(text: book['language'] ?? 'English');
 
-  Future<void> _deleteBook(String bookId) async {
-    bool? confirmed = await showDialog<bool>(
+    String selectedCategory = book['category'] ?? 'Fiction';
+    bool isUpdating = false;
+    String? pdfUrl = book['pdf_url'];
+    String? coverImageUrl = book['cover_image_url'];
+    
+    final List<String> categories = [
+      'Fiction', 'Non-Fiction', 'Politics & Public Affairs', 'Business', 'Classic',
+      'Philosophy', 'Thriller', 'Religion & Spirituality', 'Horror', 
+      'Historical Fiction/Novels/Poetry', 'Science', 'IT & Computers', 'Other'
+    ];
+
+    showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Book'),
-        content: const Text('Are you sure you want to delete this book?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Delete', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: const Text('Edit Book'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Current Info
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.orange[50],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.orange[200]!),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.edit, color: Colors.orange[700], size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Editing: ${book['title']}',
+                            style: TextStyle(fontSize: 12, color: Colors.orange[700], fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
 
-    if (confirmed == true) {
-      try {
-        await _firestore.collection('Books').doc(bookId).delete();
-        await _loadBooksFromFirebase();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Book deleted successfully'), backgroundColor: Colors.green),
-        );
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error deleting book: $e'), backgroundColor: Colors.red),
-        );
-      }
-    }
+                  // PDF Update Section
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey[300]!),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.picture_as_pdf, color: Colors.red[600]),
+                            const SizedBox(width: 8),
+                            const Text('PDF File', style: TextStyle(fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        if (pdfUrl != null)
+                          Column(
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(Icons.check_circle, color: Colors.green[600]),
+                                  const SizedBox(width: 8),
+                                  const Expanded(child: Text('Current PDF file')),
+                                  TextButton(
+                                    onPressed: () async {
+                                      final url = await _uploadPdfFile();
+                                      if (url != null) {
+                                        setDialogState(() => pdfUrl = url);
+                                      }
+                                    },
+                                    child: const Text('Replace'),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          )
+                        else
+                          ElevatedButton.icon(
+                            onPressed: () async {
+                              final url = await _uploadPdfFile();
+                              if (url != null) {
+                                setDialogState(() => pdfUrl = url);
+                              }
+                            },
+                            icon: const Icon(Icons.upload_file),
+                            label: const Text('Upload PDF'),
+                            style: ElevatedButton.styleFrom(backgroundColor: Colors.red[600]),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Cover Image Update Section
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey[300]!),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.image, color: Colors.blue[600]),
+                            const SizedBox(width: 8),
+                            const Text('Cover Image', style: TextStyle(fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        if (coverImageUrl != null)
+                          Column(
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(Icons.check_circle, color: Colors.green[600]),
+                                  const SizedBox(width: 8),
+                                  const Expanded(child: Text('Current cover image')),
+                                  TextButton(
+                                    onPressed: () async {
+                                      final url = await _uploadCoverImage();
+                                      if (url != null) {
+                                        setDialogState(() => coverImageUrl = url);
+                                      }
+                                    },
+                                    child: const Text('Replace'),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Image.network(
+                                  coverImageUrl!,
+                                  width: 80,
+                                  height: 110,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) {
+                                    return Container(
+                                      width: 80,
+                                      height: 110,
+                                      color: Colors.grey[300],
+                                      child: const Icon(Icons.image_not_supported),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ],
+                          )
+                        else
+                          ElevatedButton.icon(
+                            onPressed: () async {
+                              final url = await _uploadCoverImage();
+                              if (url != null) {
+                                setDialogState(() => coverImageUrl = url);
+                              }
+                            },
+                            icon: const Icon(Icons.image),
+                            label: const Text('Upload Cover'),
+                            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue[600]),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Form fields
+                  TextField(controller: titleController, decoration: const InputDecoration(labelText: 'Book Title*')),
+                  const SizedBox(height: 8),
+                  TextField(controller: authorNameController, decoration: const InputDecoration(labelText: 'Author Name')),
+                  const SizedBox(height: 8),
+                  TextField(controller: priceController, decoration: const InputDecoration(labelText: 'Price (\$)'), keyboardType: TextInputType.number),
+                  const SizedBox(height: 8),
+                  TextField(controller: languageController, decoration: const InputDecoration(labelText: 'Language')),
+                  const SizedBox(height: 8),
+                  TextField(controller: summaryController, decoration: const InputDecoration(labelText: 'Summary'), maxLines: 3),
+                  const SizedBox(height: 8),
+
+                  DropdownButtonFormField<String>(
+                    value: selectedCategory,
+                    decoration: const InputDecoration(labelText: 'Category'),
+                    items: categories.map((type) => DropdownMenuItem(value: type, child: Text(type))).toList(),
+                    onChanged: (value) => setDialogState(() => selectedCategory = value!),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: isUpdating ? null : () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: isUpdating ? null : () async {
+                  // Validation
+                  if (titleController.text.trim().isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Please enter a book title')),
+                    );
+                    return;
+                  }
+
+                  setDialogState(() => isUpdating = true);
+
+                  try {
+                    final updatedData = {
+                      'title': titleController.text.trim(),
+                      'author_name': authorNameController.text.trim(),
+                      'price': double.tryParse(priceController.text) ?? 0.0,
+                      'language': languageController.text.trim(),
+                      'summary': summaryController.text.trim(),
+                      'category': selectedCategory,
+                      'pdf_url': pdfUrl,
+                      'cover_image_url': coverImageUrl,
+                      'updated_at': DateTime.now().toIso8601String(),
+                    };
+
+                    // Update in Supabase
+                    await supabase
+                        .from('books')
+                        .update(updatedData)
+                        .eq('id', book['id']);
+
+                    // Refresh books list
+                    await _loadBooksFromSupabase();
+
+                    if (mounted) {
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('📚 Book updated successfully!'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                    }
+                  } catch (e) {
+                    setDialogState(() => isUpdating = false);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Error updating book: $e'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                },
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.orange[600]),
+                child: isUpdating
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Text('Update Book', style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          );
+        },
+      ));
   }
 
   void _showEditProfileDialog(BuildContext context) {
     showDialog(
       context: context,
       builder: (context) {
-        final nameController = TextEditingController(text: author['name']);
-        final bioController = TextEditingController(text: author['bio']);
-        final emailController = TextEditingController(text: author['email']);
+        final nameController = TextEditingController(text: authorData?['name'] ?? author['name']);
+        final bioController = TextEditingController(text: authorData?['bio'] ?? author['bio']);
         return AlertDialog(
           title: const Text('Edit Profile'),
           content: Column(
@@ -907,19 +1076,29 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
             children: [
               TextField(controller: nameController, decoration: const InputDecoration(labelText: 'Name')),
               TextField(controller: bioController, decoration: const InputDecoration(labelText: 'Bio')),
-              TextField(controller: emailController, decoration: const InputDecoration(labelText: 'Email')),
             ],
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
             ElevatedButton(
-              onPressed: () {
-                setState(() {
-                  author['name'] = nameController.text;
-                  author['bio'] = bioController.text;
-                  author['email'] = emailController.text;
-                });
-                Navigator.pop(context);
+              onPressed: () async {
+                try {
+                  final user = supabase.auth.currentUser;
+                  if (user != null) {
+                    await supabase.from('authors').upsert({
+                      'id': user.id,
+                      'name': nameController.text,
+                      'bio': bioController.text,
+                      'email': user.email,
+                    });
+                    await _loadAuthorData();
+                  }
+                  Navigator.pop(context);
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Error updating profile: $e')),
+                  );
+                }
               },
               child: const Text('Save'),
             ),
@@ -931,20 +1110,20 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
 
   void _showPublishBookDialog() {
     final titleController = TextEditingController();
-    // Removed descriptionController
-    final authorNameController = TextEditingController(text: author['name']);
+    final authorNameController = TextEditingController(text: authorData?['name'] ?? author['name']);
     final priceController = TextEditingController();
-    final aboutAuthorController = TextEditingController(text: author['bio']);
-    final languageController = TextEditingController(text: 'English');
     final summaryController = TextEditingController();
-    final pdfLinkController = TextEditingController();
+    final languageController = TextEditingController(text: 'English');
 
-    String selectedBookType = 'Fiction';
+    String selectedCategory = 'Fiction';
     bool isPublishing = false;
+    String? pdfUrl;
+    String? coverImageUrl;
     
-    final List<String> bookTypes = [
+    final List<String> categories = [
       'Fiction', 'Non-Fiction', 'Politics & Public Affairs', 'Business', 'Classic',
-      'Philosophy', 'Thriller', 'Religion & Spirituality' , 'Horror', 'Historical Friction/Novels/Poetry', 'Science', 'IT & Comps', 'Other'
+      'Philosophy', 'Thriller', 'Religion & Spirituality', 'Horror', 
+      'Historical Fiction/Novels/Poetry', 'Science', 'IT & Computers', 'Other'
     ];
 
     showDialog(
@@ -972,7 +1151,7 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            'Upload your book to Google Drive and paste the sharing link below. Cover image will be auto-generated from PDF first page.',
+                            'Upload your PDF and cover image directly to Supabase Storage.',
                             style: TextStyle(fontSize: 12, color: Colors.blue[700]),
                           ),
                         ),
@@ -981,80 +1160,133 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                   ),
                   const SizedBox(height: 16),
 
-                  // Google Drive Auth Status
+                  // PDF Upload Section
                   Container(
-                    padding: const EdgeInsets.all(8),
+                    padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: _account != null ? Colors.green[50] : Colors.red[50],
+                      border: Border.all(color: Colors.grey[300]!),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: _account != null ? Colors.green[200]! : Colors.red[200]!,
-                      ),
                     ),
-                    child: Row(
+                    child: Column(
                       children: [
-                        Icon(
-                          _account != null ? Icons.check_circle : Icons.warning,
-                          color: _account != null ? Colors.green[700] : Colors.red[700],
-                          size: 20,
+                        Row(
+                          children: [
+                            Icon(Icons.picture_as_pdf, color: Colors.red[600]),
+                            const SizedBox(width: 8),
+                            const Text('PDF File', style: TextStyle(fontWeight: FontWeight.bold)),
+                          ],
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            _account != null
-                                ? 'Google Drive connected. Thumbnails will be generated.'
-                                : 'Google Drive not connected. Sign in for thumbnails.',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: _account != null ? Colors.green[700] : Colors.red[700],
-                            ),
-                          ),
-                        ),
-                        if (_account == null)
-                          TextButton(
+                        const SizedBox(height: 8),
+                        if (pdfUrl == null)
+                          ElevatedButton.icon(
                             onPressed: () async {
-                              await _initializeGoogleSignIn();
-                              setDialogState(() {});
+                              final url = await _uploadPdfFile();
+                              if (url != null) {
+                                setDialogState(() => pdfUrl = url);
+                              }
                             },
-                            child: const Text('Sign In'),
+                            icon: const Icon(Icons.upload_file),
+                            label: const Text('Upload PDF'),
+                            style: ElevatedButton.styleFrom(backgroundColor: Colors.red[600]),
+                          )
+                        else
+                          Column(
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(Icons.check_circle, color: Colors.green[600]),
+                                  const SizedBox(width: 8),
+                                  const Expanded(child: Text('PDF uploaded successfully')),
+                                  IconButton(
+                                    icon: const Icon(Icons.close, color: Colors.red),
+                                    onPressed: () => setDialogState(() => pdfUrl = null),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ),
                       ],
                     ),
                   ),
                   const SizedBox(height: 16),
 
-                  // PDF Link Input
-                  TextField(
-                    controller: pdfLinkController,
-                    decoration: InputDecoration(
-                      labelText: 'Google Drive PDF Link',
-                      hintText: 'https://drive.google.com/file/d/.../view',
-                      prefixIcon: const Icon(Icons.link),
-                      border: const OutlineInputBorder(),
-                      helperText: 'Paste your Google Drive PDF link here',
+                  // Cover Image Upload Section
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey[300]!),
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                    maxLines: 2,
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.image, color: Colors.blue[600]),
+                            const SizedBox(width: 8),
+                            const Text('Cover Image', style: TextStyle(fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        if (coverImageUrl == null)
+                          ElevatedButton.icon(
+                            onPressed: () async {
+                              final url = await _uploadCoverImage();
+                              if (url != null) {
+                                setDialogState(() => coverImageUrl = url);
+                              }
+                            },
+                            icon: const Icon(Icons.image),
+                            label: const Text('Upload Cover'),
+                            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue[600]),
+                          )
+                        else
+                          Column(
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(Icons.check_circle, color: Colors.green[600]),
+                                  const SizedBox(width: 8),
+                                  const Expanded(child: Text('Cover uploaded successfully')),
+                                  IconButton(
+                                    icon: const Icon(Icons.close, color: Colors.red),
+                                    onPressed: () => setDialogState(() => coverImageUrl = null),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Image.network(
+                                  coverImageUrl!,
+                                  width: 100,
+                                  height: 140,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 16),
 
-                  // Form fields - REMOVED DESCRIPTION FIELD
-                  TextField(controller: titleController, decoration: const InputDecoration(labelText: 'Book Title')),
+                  // Form fields
+                  TextField(controller: titleController, decoration: const InputDecoration(labelText: 'Book Title*')),
                   const SizedBox(height: 8),
                   TextField(controller: authorNameController, decoration: const InputDecoration(labelText: 'Author Name')),
                   const SizedBox(height: 8),
-                  // Description field REMOVED completely
                   TextField(controller: priceController, decoration: const InputDecoration(labelText: 'Price (\$)'), keyboardType: TextInputType.number),
                   const SizedBox(height: 8),
                   TextField(controller: languageController, decoration: const InputDecoration(labelText: 'Language')),
                   const SizedBox(height: 8),
-                  TextField(controller: summaryController, decoration: const InputDecoration(labelText: 'Summary'), maxLines: 2),
+                  TextField(controller: summaryController, decoration: const InputDecoration(labelText: 'Summary'), maxLines: 3),
                   const SizedBox(height: 8),
 
                   DropdownButtonFormField<String>(
-                    value: selectedBookType,
-                    decoration: const InputDecoration(labelText: 'Book Type'),
-                    items: bookTypes.map((type) => DropdownMenuItem(value: type, child: Text(type))).toList(),
-                    onChanged: (value) => setDialogState(() => selectedBookType = value!),
+                    value: selectedCategory,
+                    decoration: const InputDecoration(labelText: 'Category'),
+                    items: categories.map((type) => DropdownMenuItem(value: type, child: Text(type))).toList(),
+                    onChanged: (value) => setDialogState(() => selectedCategory = value!),
                   ),
                 ],
               ),
@@ -1074,18 +1306,9 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                     return;
                   }
 
-                  if (pdfLinkController.text.trim().isEmpty) {
+                  if (pdfUrl == null) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Please enter a Google Drive PDF link')),
-                    );
-                    return;
-                  }
-
-                  // Validate if it's a Google Drive link
-                  final pdfLink = pdfLinkController.text.trim();
-                  if (!pdfLink.contains('drive.google.com')) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Please enter a valid Google Drive link')),
+                      const SnackBar(content: Text('Please upload a PDF file')),
                     );
                     return;
                   }
@@ -1094,26 +1317,23 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
 
                   final bookData = {
                     'title': titleController.text.trim(),
-                    'author': authorNameController.text.trim(),
-                    // REMOVED 'description' field completely
+                    'author_name': authorNameController.text.trim(),
                     'price': double.tryParse(priceController.text) ?? 0.0,
-                    'aboutAuthor': aboutAuthorController.text.trim(),
                     'language': languageController.text.trim(),
                     'summary': summaryController.text.trim(),
-                    'bookType': selectedBookType,
-                    'pdfLink': pdfLink,
-                    'rating': 0.0,
-                    'reviewCount': 0,
+                    'category': selectedCategory,
+                    'pdf_url': pdfUrl,
+                    'cover_image_url': coverImageUrl,
                   };
 
-                  final success = await _saveBookToFirebase(bookData);
+                  final success = await _saveBookToSupabase(bookData);
 
                   if (mounted) {
                     Navigator.pop(context);
                     if (success) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
-                          content: Text('📚 Book published successfully! Cover will be auto-generated from PDF first page.'),
+                          content: Text('📚 Book published successfully!'),
                           backgroundColor: Colors.green,
                         ),
                       );
@@ -1128,8 +1348,7 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
             ],
           );
         },
-      ),
-    );
+      ));
   }
 
   void _showLogoutDialog() {
@@ -1146,10 +1365,7 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
             ),
             ElevatedButton(
               onPressed: _performLogout,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                foregroundColor: Colors.white,
-              ),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
               child: const Text('Logout'),
             ),
           ],
@@ -1160,117 +1376,224 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
 
   Future<void> _performLogout() async {
     try {
+      await supabase.auth.signOut();
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => const MainPage()),
+        (Route<dynamic> route) => false,
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  // Replace the _deleteBook method - handle UUID strings properly:
+
+  Future<void> _deleteBook(dynamic bookId) async {
+    // Convert bookId to string for UUID handling
+    String id = bookId.toString();
+    
+    print('Deleting book with ID: $id'); // Debug log
+    
+    // Find the book to get its details
+    final bookToDelete = books.firstWhere(
+      (book) => book['id'].toString() == id,
+      orElse: () => <String, dynamic>{},
+    );
+    
+    if (bookToDelete.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Book not found'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+    
+    bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.warning, color: Colors.red[600]),
+            const SizedBox(width: 8),
+            const Text('Delete Book'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Are you sure you want to delete this book?',
+              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red[800]),
+            ),
+            const SizedBox(height: 8),
+            Text('Title: ${bookToDelete['title'] ?? 'Unknown'}'),
+            const SizedBox(height: 4),
+            Text('Category: ${bookToDelete['category'] ?? 'Unknown'}'),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.red[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.red[200]!),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info, color: Colors.red[700], size: 16),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'This will permanently delete the book, PDF file, and cover image.',
+                      style: TextStyle(fontSize: 12, color: Colors.red[700]),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
       // Show loading dialog
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const AlertDialog(
-          content: Row(
+        builder: (context) => AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              CircularProgressIndicator(),
-              SizedBox(width: 16),
-              Text('Logging out...'),
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              Text('Deleting "${bookToDelete['title'] ?? 'Book'}"...'),
             ],
           ),
         ),
       );
 
-      // Sign out from Firebase Auth
-      await FirebaseAuth.instance.signOut();
-      
-      // DON'T sign out from Google Sign-In - keep it for thumbnails
-      // await _googleSignIn.signOut(); // REMOVE THIS LINE
+      try {
+        // Delete storage files first
+        List<String> deletionErrors = [];
 
-      // Navigate to main page and clear all previous routes
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (context) => const MainPage()),
-        (Route<dynamic> route) => false,
-      );
+        // Delete PDF file if exists
+        if (bookToDelete['pdf_url'] != null && bookToDelete['pdf_url'].toString().isNotEmpty) {
+          try {
+            final pdfFileName = _extractFileNameFromUrl(bookToDelete['pdf_url']);
+            if (pdfFileName != null) {
+              await supabase.storage
+                  .from('book-pdfs')
+                  .remove([pdfFileName]);
+              print('✅ PDF file deleted: $pdfFileName');
+            }
+          } catch (e) {
+            print('❌ Error deleting PDF: $e');
+            deletionErrors.add('PDF file');
+          }
+        }
 
-    } catch (e) {
-      // Close loading dialog
-      Navigator.pop(context);
-      
-      // Show error
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error logging out: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
-}
+        // Delete cover image if exists
+        if (bookToDelete['cover_image_url'] != null && bookToDelete['cover_image_url'].toString().isNotEmpty) {
+          try {
+            final coverFileName = _extractFileNameFromUrl(bookToDelete['cover_image_url']);
+            if (coverFileName != null) {
+              await supabase.storage
+                  .from('book-covers')
+                  .remove([coverFileName]);
+              print('✅ Cover image deleted: $coverFileName');
+            }
+          } catch (e) {
+            print('❌ Error deleting cover: $e');
+            deletionErrors.add('Cover image');
+          }
+        }
 
-// Cached future builder for thumbnails - EXACTLY like main_page.dart
-class _CachedFutureBuilder extends StatefulWidget {
-  final String fileId;
-  final double width;
-  final double height;
-  final Map<String, String> thumbnailCache;
-  final Future<String> Function(String) getPdfThumbnail;
-  final Widget Function() buildDefaultThumbnail;
-
-  const _CachedFutureBuilder({
-    required this.fileId,
-    required this.width,
-    required this.height,
-    required this.thumbnailCache,
-    required this.getPdfThumbnail,
-    required this.buildDefaultThumbnail,
-  });
-
-  @override
-  __CachedFutureBuilderState createState() => __CachedFutureBuilderState();
-}
-
-class __CachedFutureBuilderState extends State<_CachedFutureBuilder> {
-  late Future<String> _thumbnailFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    _thumbnailFuture = widget.getPdfThumbnail(widget.fileId);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<String>(
-      future: _thumbnailFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Container(
-            width: widget.width,
-            height: widget.height,
-            decoration: BoxDecoration(
-              color: Colors.grey[200],
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Center(
-              child: CircularProgressIndicator(
-                color: const Color(0xFF6C63FF).withOpacity(0.5),
-              ),
+        // Delete from database - use the string ID directly (works with UUIDs)
+        await supabase.from('books').delete().eq('id', id);
+        
+        // Close loading dialog
+        if (mounted) Navigator.pop(context);
+        
+        // Refresh books list
+        await _loadBooksFromSupabase();
+        
+        if (mounted) {
+          String message = '✅ Book deleted successfully!';
+          if (deletionErrors.isNotEmpty) {
+            message += '\n⚠️ Note: ${deletionErrors.join(', ')} could not be deleted from storage.';
+          }
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(message),
+              backgroundColor: deletionErrors.isEmpty ? Colors.green : Colors.orange,
+              duration: const Duration(seconds: 4),
             ),
           );
-        } else if (snapshot.hasError || !snapshot.hasData) {
-          return widget.buildDefaultThumbnail();
         }
+      } catch (e) {
+        // Close loading dialog
+        if (mounted) Navigator.pop(context);
         
-        // Cache the thumbnail URL
-        widget.thumbnailCache[widget.fileId] = snapshot.data!;
-        
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: Image.network(
-            snapshot.data!,
-            width: widget.width,
-            height: widget.height,
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) => widget.buildDefaultThumbnail(),
-          ),
-        );
-      },
-    );
+        print('❌ Error deleting book: $e');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('❌ Error deleting book: $e'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  // Helper method to extract filename from Supabase URL
+  String? _extractFileNameFromUrl(String url) {
+    try {
+      if (url.isEmpty) return null;
+      
+      final uri = Uri.parse(url);
+      final pathSegments = uri.pathSegments;
+      
+      print('Extracting filename from URL: $url'); // Debug log
+      print('Path segments: $pathSegments'); // Debug log
+      
+      // For Supabase storage URLs: /storage/v1/object/public/bucket-name/filename
+      if (pathSegments.length >= 5 && pathSegments.contains('storage')) {
+        final filename = pathSegments.last;
+        print('Extracted filename: $filename'); // Debug log
+        return filename;
+      }
+      
+      // Fallback: get last segment
+      final filename = pathSegments.isNotEmpty ? pathSegments.last : null;
+      print('Fallback filename: $filename'); // Debug log
+      return filename;
+    } catch (e) {
+      print('❌ Error extracting filename from URL: $e');
+      return null;
+    }
   }
 }
 

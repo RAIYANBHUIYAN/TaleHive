@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'reset_password_confirmation.dart'; // We'll create this page
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class ForgotPassword extends StatefulWidget {
   const ForgotPassword({super.key});
@@ -12,39 +11,22 @@ class ForgotPassword extends StatefulWidget {
 class _ForgotPasswordState extends State<ForgotPassword> {
   final _formKey = GlobalKey<FormState>();
   final emailController = TextEditingController();
+  final supabase = Supabase.instance.client;
   bool isLoading = false;
 
   Future<void> _sendPasswordResetEmail() async {
     if (_formKey.currentState!.validate()) {
       setState(() => isLoading = true);
       try {
-        await FirebaseAuth.instance.sendPasswordResetEmail(
-          email: emailController.text.trim(),
-        );
-
-        // Navigate to confirmation page
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ResetPasswordConfirmation(
-              email: emailController.text.trim(),
-            ),
-          ),
+        await supabase.auth.resetPasswordForEmail(
+          emailController.text.trim(),
+          redirectTo: 'your-app://reset-password',
         );
 
         _showSuccess('Password reset email sent! Please check your inbox.');
-      } on FirebaseAuthException catch (e) {
-        String errorMessage = 'Something went wrong';
-        if (e.code == 'user-not-found') {
-          errorMessage = 'No account found with this email address.';
-        } else if (e.code == 'invalid-email') {
-          errorMessage = 'Please enter a valid email address.';
-        } else if (e.code == 'too-many-requests') {
-          errorMessage = 'Too many requests. Please try again later.';
-        }
-        _showError(errorMessage);
-      } catch (e) {
-        _showError('Error: $e');
+        Navigator.pop(context);
+      } on AuthException catch (e) {
+        _showError('Error: ${e.message}');
       } finally {
         setState(() => isLoading = false);
       }
@@ -54,30 +36,8 @@ class _ForgotPasswordState extends State<ForgotPassword> {
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Row(
-          children: [
-            Icon(Icons.error_outline, color: Colors.white, size: 24),
-            SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                message,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: Colors.red[600],
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-        margin: EdgeInsets.all(16),
-        duration: Duration(seconds: 4),
-        elevation: 8,
+        content: Text(message),
+        backgroundColor: Colors.red,
       ),
     );
   }
@@ -85,30 +45,8 @@ class _ForgotPasswordState extends State<ForgotPassword> {
   void _showSuccess(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Row(
-          children: [
-            Icon(Icons.check_circle_outline, color: Colors.white, size: 24),
-            SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                message,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: Colors.green[600],
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-        margin: EdgeInsets.all(16),
-        duration: Duration(seconds: 3),
-        elevation: 8,
+        content: Text(message),
+        backgroundColor: Colors.green,
       ),
     );
   }
