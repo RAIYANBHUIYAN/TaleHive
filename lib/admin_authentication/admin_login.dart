@@ -22,40 +22,20 @@ class _AdminLoginState extends State<AdminLogin> {
   Future<void> _loginWithEmail() async {
     if (_formKey.currentState!.validate()) {
       setState(() => isLoading = true);
-      try {
-        final AuthResponse response = await supabase.auth.signInWithPassword(
-          email: emailController.text.trim(),
-          password: passwordController.text.trim(),
+      final fixedEmail = 'admintalehive@gmail.com';
+      final fixedPassword = '123456';
+      final inputEmail = emailController.text.trim();
+      final inputPassword = passwordController.text.trim();
+      if (inputEmail == fixedEmail && inputPassword == fixedPassword) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const AdminDashboardPage()),
         );
-
-        if (response.user != null) {
-          final adminResponse = await supabase
-              .from('admins')
-              .select()
-              .eq('id', response.user!.id)
-              .maybeSingle();
-
-          if (adminResponse != null) {
-            await supabase
-                .from('admins')
-                .update({'last_login_at': DateTime.now().toIso8601String()})
-                .eq('id', response.user!.id);
-            
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (context) => const AdminDashboardPage()),
-            );
-            _showSuccess('Welcome Admin! Login successful');
-          } else {
-            await supabase.auth.signOut();
-            _showError('Access denied. Admin privileges required.');
-          }
-        }
-      } on AuthException catch (e) {
-        _showError('Login failed: ${e.message}');
-      } finally {
-        setState(() => isLoading = false);
+        _showSuccess('Welcome Admin! Login successful');
+      } else {
+        _showError('Access denied. Invalid admin credentials.');
       }
+      setState(() => isLoading = false);
     }
   }
 

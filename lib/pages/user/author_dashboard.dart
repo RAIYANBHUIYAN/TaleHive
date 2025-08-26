@@ -13,7 +13,7 @@ import 'package:path/path.dart' as path;
 import 'package:mime/mime.dart';
 
 import '../main_home_page/main_page.dart';
-import '../pdf_viewer_page.dart';
+import '../pdf_preview/pdf_viewer_page.dart';
 
 class AuthorDashboardPage extends StatefulWidget {
   const AuthorDashboardPage({Key? key}) : super(key: key);
@@ -27,7 +27,8 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
   final ImagePicker _imagePicker = ImagePicker();
 
   final author = {
-    'name': 'Md Raiyan Buhiyan',
+  'first_name': 'Md Raiyan',
+  'last_name': 'Buhiyan',
     'bio': 'Award-winning author of modern fiction. Passionate about storytelling and inspiring readers.',
     'avatar': 'Asset/images/loren.jpg',
     'email': 'loreen@email.com',
@@ -54,7 +55,6 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
             .select()
             .eq('id', user.id)
             .single();
-        
         setState(() {
           authorData = response;
         });
@@ -428,9 +428,10 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => PdfViewerPage(
+          builder: (context) => PDFViewerPage(
             pdfUrl: pdfUrl,
             bookTitle: bookTitle,
+            bookId: book['id'], // Pass the required bookId argument
           ),
         ),
       );
@@ -480,8 +481,8 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Author', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 18)),
-            Text('Dashboard', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 18)),
+            Text('Author Dashboard', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 18)),
+          //  Text('Dashboard', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 18)),
           ],
         ),
         centerTitle: false,
@@ -519,82 +520,120 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                     elevation: 4,
                     child: Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Row(
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          CircleAvatar(
-                            radius: 44,
-                            backgroundImage: AssetImage(author['avatar']!),
-                          ),
-                          const SizedBox(width: 24),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  authorData?['name'] ?? author['name']!,
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 24),
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  authorData?['bio'] ?? author['bio']!,
-                                  style: const TextStyle(color: Colors.blueGrey, fontSize: 15),
-                                ),
-                                const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    const Icon(Icons.email, size: 16, color: Colors.blueGrey),
-                                    const SizedBox(width: 6),
-                                    Flexible(
-                                      child: Text(
-                                        supabase.auth.currentUser?.email ?? author['email']!,
-                                        style: const TextStyle(color: Colors.blueGrey, fontSize: 14),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
+                          // Author Name
+                          Row(
+                          children: [
+                            Expanded(
+                            child: Text(
+                              '${authorData?['first_name'] ?? author['first_name']} ${authorData?['last_name'] ?? author['last_name']}',
+                              style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 24,
+                              color: Color(0xFF6C63FF),
+                              ),
                             ),
-                          ),
-                          IconButton(
+                            ),
+                            IconButton(
                             icon: const Icon(Icons.edit, color: Color(0xFF6C63FF)),
                             tooltip: 'Edit Profile',
                             onPressed: () => _showEditProfileDialog(context),
+                            ),
+                          ],
+                          ),
+                          const SizedBox(height: 12),
+                          // Avatar + Info Row
+                          Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            CircleAvatar(
+                            radius: 44,
+                            backgroundImage: (authorData?['photo_url'] != null && authorData!['photo_url'].toString().isNotEmpty)
+                              ? NetworkImage(authorData!['photo_url'])
+                              : AssetImage(author['avatar']!) as ImageProvider,
+                            backgroundColor: Colors.grey[200],
+                            ),
+                            const SizedBox(width: 24),
+                            Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                              // Bio
+                              Text(
+                                authorData?['bio'] ?? author['bio'],
+                                style: const TextStyle(
+                                color: Colors.blueGrey,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              // Email
+                              Row(
+                                children: [
+                                const Icon(Icons.email, size: 16, color: Colors.blueGrey),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: GestureDetector(
+                                    onTap: () {
+                                      final email = (supabase.auth.currentUser?.email ?? author['email']) ?? '';
+                                      showDialog(
+                                        context: context,
+                                        builder: (context) => AlertDialog(
+                                          title: const Text('Email'),
+                                          content: SingleChildScrollView(
+                                            scrollDirection: Axis.horizontal,
+                                            child: SelectableText(
+                                              email,
+                                              style: const TextStyle(fontSize: 16),
+                                            ),
+                                          ),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () => Navigator.pop(context),
+                                              child: const Text('Close'),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                    child: SingleChildScrollView(
+                                      scrollDirection: Axis.horizontal,
+                                      child: Text(
+                                        (supabase.auth.currentUser?.email ?? author['email']) ?? '',
+                                        style: const TextStyle(
+                                          color: Colors.blueGrey,
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w400,
+                                        ),
+                                        overflow: TextOverflow.visible,
+                                      ),
+                                    ),
+                                  ),
+                                )
+                                ],
+                              ),
+                              ],
+                            ),
+                            ),
+                          ],
                           ),
                         ],
-                      ),
-                    ),
-                  ),
+                        ),
+                  )),
                   const SizedBox(height: 24),
 
                   // Supabase Storage Status
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.green[50],
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.green[200]!),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.cloud_done, color: Colors.green[700]),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Supabase Storage connected. Upload PDFs and cover images directly.',
-                            style: TextStyle(color: Colors.green[700], fontSize: 13),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
+               
 
                   // Publish Book Button
                   ElevatedButton.icon(
-                    onPressed: _showPublishBookDialog,
+                    onPressed: _showPublishBookDialog, 
                     icon: const Icon(Icons.add_box_rounded),
-                    label: const Text('Publish Book'),
+                    label: const Text('Upload Book'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF6C63FF),
                       foregroundColor: Colors.white,
@@ -645,129 +684,128 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                   const SizedBox(height: 16),
 
                   // Books List
-                  if (filteredBooks.isEmpty)
-                    Card(
-                      child: Container(
-                        padding: const EdgeInsets.all(40),
-                        child: Column(
-                          children: [
-                            Icon(Icons.library_books, size: 64, color: Colors.grey[400]),
-                            const SizedBox(height: 16),
-                            Text('No books found', style: TextStyle(fontSize: 18, color: Colors.grey[600], fontWeight: FontWeight.bold)),
-                            const SizedBox(height: 8),
-                            Text('Start by publishing your first book!', style: TextStyle(fontSize: 14, color: Colors.grey[500])),
-                          ],
-                        ),
-                      ),
-                    )
-                  else
-                    Card(
-                      child: ListView.separated(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: filteredBooks.length,
-                        separatorBuilder: (context, i) => const Divider(height: 1),
-                        itemBuilder: (context, i) {
-                          final book = filteredBooks[i];
-                          return Container(
-                            padding: const EdgeInsets.all(12),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                  (filteredBooks.isEmpty)
+                      ? Card(
+                          child: Container(
+                            padding: const EdgeInsets.all(40),
+                            child: Column(
                               children: [
-                                _buildBookCover(book, 80, 120),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        book['title'] ?? 'No Title',
-                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      const SizedBox(height: 8),
-                                      if (book['author_name'] != null)
-                                        Text('Author: ${book['author_name']}', style: const TextStyle(color: Colors.grey, fontSize: 14)),
-                                      const SizedBox(height: 4),
-                                      if (book['category'] != null)
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                          decoration: BoxDecoration(
-                                            color: Colors.blue[100],
-                                            borderRadius: BorderRadius.circular(12),
-                                          ),
-                                          child: Text(
-                                            book['category'],
-                                            style: TextStyle(color: Colors.blue[800], fontSize: 12, fontWeight: FontWeight.w500),
-                                          ),
-                                        ),
-                                      const SizedBox(height: 8),
-                                      Row(
+                                Icon(Icons.library_books, size: 64, color: Colors.grey[400]),
+                                const SizedBox(height: 16),
+                                Text('No books found', style: TextStyle(fontSize: 18, color: Colors.grey[600], fontWeight: FontWeight.bold)),
+                                const SizedBox(height: 8),
+                                Text('Start by publishing your first book!', style: TextStyle(fontSize: 14, color: Colors.grey[500])),
+                              ],
+                            ),
+                          ),
+                        )
+                      : Card(
+                          child: ListView.separated(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: filteredBooks.length,
+                            separatorBuilder: (context, i) => const Divider(height: 1),
+                            itemBuilder: (context, i) {
+                              final book = filteredBooks[i];
+                              return Container(
+                                padding: const EdgeInsets.all(12),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _buildBookCover(book, 80, 120),
+                                    const SizedBox(width: 16),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
-                                          if (book['price'] != null)
+                                          Text(
+                                            book['title'] ?? 'No Title',
+                                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          const SizedBox(height: 8),
+                                          if (book['author_name'] != null)
+                                            Text('Author: ${book['author_name']}', style: const TextStyle(color: Colors.grey, fontSize: 14)),
+                                          const SizedBox(height: 4),
+                                          if (book['category'] != null)
                                             Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                               decoration: BoxDecoration(
-                                                color: Colors.green[100],
-                                                borderRadius: BorderRadius.circular(8),
+                                                color: Colors.blue[100],
+                                                borderRadius: BorderRadius.circular(12),
                                               ),
                                               child: Text(
-                                                '\$${book['price']}',
-                                                style: TextStyle(color: Colors.green[800], fontSize: 14, fontWeight: FontWeight.bold),
+                                                book['category'],
+                                                style: TextStyle(color: Colors.blue[800], fontSize: 12, fontWeight: FontWeight.w500),
                                               ),
                                             ),
-                                          const SizedBox(width: 8),
-                                          if (book['pdf_url'] != null)
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                              decoration: BoxDecoration(
-                                                color: Colors.green[50],
-                                                borderRadius: BorderRadius.circular(6),
-                                                border: Border.all(color: Colors.green[200]!),
-                                              ),
-                                              child: Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  Icon(Icons.picture_as_pdf, size: 12, color: Colors.green[700]),
-                                                  const SizedBox(width: 2),
-                                                  Text(
-                                                    'PDF',
-                                                    style: TextStyle(color: Colors.green[700], fontSize: 10, fontWeight: FontWeight.w500),
+                                          const SizedBox(height: 8),
+                                          Row(
+                                            children: [
+                                              if (book['price'] != null)
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.green[100],
+                                                    borderRadius: BorderRadius.circular(8),
                                                   ),
-                                                ],
-                                              ),
-                                            ),
+                                                  child: Text(
+                                                    '\$${book['price']}',
+                                                    style: TextStyle(color: Colors.green[800], fontSize: 14, fontWeight: FontWeight.bold),
+                                                  ),
+                                                ),
+                                              const SizedBox(width: 8),
+                                              if (book['pdf_url'] != null)
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.green[50],
+                                                    borderRadius: BorderRadius.circular(6),
+                                                    border: Border.all(color: Colors.green[200]!),
+                                                  ),
+                                                  child: Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      Icon(Icons.picture_as_pdf, size: 12, color: Colors.green[700]),
+                                                      const SizedBox(width: 2),
+                                                      Text(
+                                                        'PDF',
+                                                        style: TextStyle(color: Colors.green[700], fontSize: 10, fontWeight: FontWeight.w500),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
                                         ],
                                       ),
-                                    ],
-                                  ),
-                                ),
-                                Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    if (book['pdf_url'] != null)
-                                      IconButton(
-                                        icon: const Icon(Icons.launch, color: Colors.green),
-                                        tooltip: 'Open PDF',
-                                        onPressed: () => _handlePdfView(book),
-                                      ),
-                                    IconButton(
-                                      icon: const Icon(Icons.edit, color: Colors.blue),
-                                      onPressed: () => _editBook(book),
                                     ),
-                                    IconButton(
-                                      icon: const Icon(Icons.delete, color: Colors.red),
-                                      onPressed: () => _deleteBook(book['id']),
+                                    Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (book['pdf_url'] != null)
+                                          IconButton(
+                                            icon: const Icon(Icons.launch, color: Colors.green),
+                                            tooltip: 'Open PDF',
+                                            onPressed: () => _handlePdfView(book),
+                                          ),
+                                        IconButton(
+                                          icon: const Icon(Icons.edit, color: Colors.blue),
+                                          onPressed: () => _editBook(book),
+                                        ),
+                                        IconButton(
+                                          icon: const Icon(Icons.delete, color: Colors.red),
+                                          onPressed: () => _deleteBook(book['id']),
+                                        ),
+                                      ],
                                     ),
                                   ],
                                 ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                    ),
+                              );
+                            },
+                          ),
+                        ),
                 ],
               ),
             ),
@@ -1067,42 +1105,124 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
     showDialog(
       context: context,
       builder: (context) {
-        final nameController = TextEditingController(text: authorData?['name'] ?? author['name']);
+  final firstNameController = TextEditingController(text: authorData?['first_name'] ?? author['first_name']);
+  final lastNameController = TextEditingController(text: authorData?['last_name'] ?? author['last_name']);
         final bioController = TextEditingController(text: authorData?['bio'] ?? author['bio']);
-        return AlertDialog(
-          title: const Text('Edit Profile'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(controller: nameController, decoration: const InputDecoration(labelText: 'Name')),
-              TextField(controller: bioController, decoration: const InputDecoration(labelText: 'Bio')),
-            ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-            ElevatedButton(
-              onPressed: () async {
-                try {
-                  final user = supabase.auth.currentUser;
-                  if (user != null) {
-                    await supabase.from('authors').upsert({
-                      'id': user.id,
-                      'name': nameController.text,
-                      'bio': bioController.text,
-                      'email': user.email,
-                    });
-                    await _loadAuthorData();
-                  }
-                  Navigator.pop(context);
-                } catch (e) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Error updating profile: $e')),
-                  );
-                }
-              },
-              child: const Text('Save'),
-            ),
-          ],
+        String? avatarUrl = authorData?['photo_url'];
+        bool isUploading = false;
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Edit Profile'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Stack(
+                    children: [
+                      CircleAvatar(
+                        radius: 38,
+                        backgroundImage: (avatarUrl != null && avatarUrl?.isNotEmpty == true)
+                            ? NetworkImage(avatarUrl!)
+                            : AssetImage(author['avatar']!) as ImageProvider,
+                      ),
+                      Positioned(
+                        bottom: 0,
+                        right: 0,
+                        child: GestureDetector(
+                          onTap: () async {
+                            setState(() => isUploading = true);
+                            try {
+                              final XFile? image = await _imagePicker.pickImage(
+                                source: ImageSource.gallery,
+                                maxWidth: 400,
+                                maxHeight: 400,
+                                imageQuality: 85,
+                              );
+                              if (image != null) {
+                                final bytes = await image.readAsBytes();
+                                final user = supabase.auth.currentUser;
+                                if (user == null) throw Exception('User not authenticated');
+                                final timestamp = DateTime.now().millisecondsSinceEpoch;
+                                final extension = path.extension(image.path).toLowerCase();
+                                final fileName = 'avatar_${user.id}_$timestamp$extension';
+                                // Show progress indicator
+                                showDialog(
+                                  context: context,
+                                  barrierDismissible: false,
+                                  builder: (context) => const AlertDialog(
+                                    content: SizedBox(height: 60, child: Center(child: CircularProgressIndicator())),
+                                  ),
+                                );
+                                await supabase.storage
+                                    .from('avatars')
+                                    .uploadBinary(fileName, bytes,
+                                      fileOptions: const FileOptions(upsert: false),
+                                    );
+                                Navigator.pop(context); // Close progress dialog
+                                final publicUrl = supabase.storage
+                                    .from('avatars')
+                                    .getPublicUrl(fileName);
+                                setState(() => avatarUrl = publicUrl);
+                              }
+                            } catch (e) {
+                              Navigator.pop(context);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Error uploading photo: $e'), backgroundColor: Colors.red),
+                              );
+                            } finally {
+                              setState(() => isUploading = false);
+                            }
+                          },
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                              boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 2)],
+                            ),
+                            padding: const EdgeInsets.all(4),
+                            child: isUploading
+                                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                                : const Icon(Icons.edit, size: 20, color: Color(0xFF6C63FF)),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(controller: firstNameController, decoration: const InputDecoration(labelText: 'First Name')),
+                  TextField(controller: lastNameController, decoration: const InputDecoration(labelText: 'Last Name')),
+                  TextField(controller: bioController, decoration: const InputDecoration(labelText: 'Bio')),
+                ],
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+                ElevatedButton(
+                  onPressed: () async {
+                    try {
+                      final user = supabase.auth.currentUser;
+                      if (user != null) {
+                        await supabase.from('authors').upsert({
+                          'id': user.id,
+                          'first_name': firstNameController.text,
+                          'last_name': lastNameController.text,
+                          'bio': bioController.text,
+                          'email': user.email,
+                          'photo_url': avatarUrl,
+                        });
+                        await _loadAuthorData();
+                      }
+                      Navigator.pop(context);
+                    } catch (e) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Error updating profile: $e')),
+                      );
+                    }
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
         );
       },
     );
@@ -1138,28 +1258,28 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   // Instructions
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.blue[50],
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.blue[200]!),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.info, color: Colors.blue[700], size: 20),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Upload your PDF and cover image directly to Supabase Storage.',
-                            style: TextStyle(fontSize: 12, color: Colors.blue[700]),
-                          ),
-                        ),
-                      ],
-                    ),
+                  Text(
+                    '${authorData?['first_name'] ?? author['first_name']} ${authorData?['last_name'] ?? author['last_name']}',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 24),
                   ),
-                  const SizedBox(height: 16),
-
+                  const SizedBox(height: 6),
+                  Text(
+                    authorData?['bio'] ?? author['bio'],
+                    style: const TextStyle(color: Colors.blueGrey, fontSize: 15),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Icon(Icons.email, size: 16, color: Colors.blueGrey),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          (supabase.auth.currentUser?.email ?? author['email']) ?? '',
+                          style: const TextStyle(color: Colors.blueGrey, fontSize: 14),
+                        ),
+                      ),
+                    ],
+                  ),
                   // PDF Upload Section
                   Container(
                     padding: const EdgeInsets.all(12),

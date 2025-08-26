@@ -1,78 +1,441 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:google_fonts/google_fonts.dart';
-import 'user_dashboard.dart';
 import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../pdf_preview/pdf_viewer_page.dart';
+import '../pdf_preview/pdf_service.dart';
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:intl/intl.dart';
+// Helper to fetch related books for BookDetails
 
+
+Future<List<BookRecommendation>> fetchRelatedBooks(String bookId, String? category) async {
+  try {
+    if (category == null || category.isEmpty) {
+      return [];
+    }
+
+    final response = await supabase
+        .from('books')
+        .select('id, title, author_name, cover_image_url')
+            .eq('category', category)
+        .neq('id', bookId) // Exclude current book
+        .eq('is_active', true)
+        .limit(10);
+
+    // Defensive: If response is null, return empty list
+    if (response == null || response is! List) return [];
+    return response.map((book) => BookRecommendation.fromJson(book)).toList();
+  } catch (e) {
+    print('Error fetching related books: $e');
+    return [];
+  }
+}
+// --- DownloadProgressDialog Widget ---
+class DownloadProgressDialog extends StatefulWidget {
+  final String pdfUrl;
+  final String fileName;
+
+  const DownloadProgressDialog({
+    Key? key,
+    required this.pdfUrl,
+    required this.fileName,
+  }) : super(key: key);
+
+  @override
+  _DownloadProgressDialogState createState() => _DownloadProgressDialogState();
+}
+
+class _DownloadProgressDialogState extends State<DownloadProgressDialog> {
+  double progress = 0.0;
+  bool isCompleted = false;
+  bool hasError = false;
+  String? errorMessage;
+  String? filePath;
+  int downloadedBytes = 0;
+  int totalBytes = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _startDownload();
+  }
+
+  Future<void> _startDownload() async {
+    try {
+      setState(() {
+        hasError = false;
+        isCompleted = false;
+        progress = 0.0;
+      });
+
+      print('Starting download: ${widget.pdfUrl}');
+
+      // Replace with your actual PDFService implementation
+      final downloadedPath = await PDFService.downloadPDF(
+        url: widget.pdfUrl,
+        fileName: widget.fileName,
+        onProgress: (received, total) {
+          if (mounted) {
+            setState(() {
+              downloadedBytes = received;
+              totalBytes = total;
+              progress = total > 0 ? received / total : 0.0;
+            });
+            print('Download progress: ${(progress * 100).toStringAsFixed(1)}%');
+          }
+        },
+      );
+
+      if (downloadedPath != null && mounted) {
+        setState(() {
+          isCompleted = true;
+          filePath = downloadedPath;
+        });
+        print('Download completed: $downloadedPath');
+      } else {
+        setState(() {
+          hasError = true;
+          errorMessage = 'Download failed - file not created';
+        });
+      }
+    } catch (e) {
+      print('Download error: $e');
+      if (mounted) {
+        setState(() {
+          hasError = true;
+          errorMessage = e.toString();
+        });
+      }
+    }
+  }
+
+  String _formatBytes(int bytes) {
+    if (bytes <= 0) return "0 B";
+    const suffixes = ["B", "KB", "MB", "GB"];
+    int i = (bytes.bitLength - 1) ~/ 10;
+    return '${(bytes / (1 << (i * 10))).toStringAsFixed(1)} ${suffixes[i]}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(
+        hasError ? 'Download Failed' : isCompleted ? 'Download Complete' : 'Downloading PDF',
+        style: GoogleFonts.montserrat(fontWeight: FontWeight.bold),
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (!isCompleted && !hasError) ...[
+            CircularProgressIndicator(
+              value: progress,
+              color: const Color(0xFF0096C7),
+              strokeWidth: 3,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              '${(progress * 100).toStringAsFixed(1)}%',
+              style: GoogleFonts.montserrat(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: const Color(0xFF0096C7),
+              ),
+            ),
+            const SizedBox(height: 8),
+            if (totalBytes > 0)
+              Text(
+                '${_formatBytes(downloadedBytes)} / ${_formatBytes(totalBytes)}',
+                style: GoogleFonts.montserrat(
+                  fontSize: 12,
+                  color: Colors.grey[600],
+                ),
+              ),
+            const SizedBox(height: 8),
+            Text(
+              'Downloading "${widget.fileName}.pdf"',
+              style: GoogleFonts.montserrat(fontSize: 14),
+              textAlign: TextAlign.center,
+            ),
+          ] else if (isCompleted) ...[
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.green.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.check_circle,
+                color: Colors.green,
+                size: 48,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'PDF downloaded successfully!',
+              style: GoogleFonts.montserrat(
+                fontWeight: FontWeight.w600,
+                color: Colors.green,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'File saved to app documents',
+              style: GoogleFonts.montserrat(
+                fontSize: 12,
+                color: Colors.grey[600],
+              ),
+            ),
+            if (filePath != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  'Path: $filePath',
+                  style: GoogleFonts.montserrat(
+                    fontSize: 10,
+                    color: Colors.grey[500],
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+          ] else if (hasError) ...[
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.error,
+                color: Colors.red,
+                size: 48,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Download Failed',
+              style: GoogleFonts.montserrat(
+                fontWeight: FontWeight.w600,
+                color: Colors.red,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              errorMessage ?? 'Unknown error occurred',
+              style: GoogleFonts.montserrat(
+                fontSize: 12,
+                color: Colors.grey[600],
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ],
+      ),
+      actions: [
+        if (isCompleted) ...[
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Close',
+              style: GoogleFonts.montserrat(color: Colors.grey[600]),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('File saved to: $filePath'),
+                  backgroundColor: const Color(0xFF0096C7),
+                  duration: const Duration(seconds: 5),
+                ),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF0096C7),
+            ),
+            child: Text(
+              'Show Location',
+              style: GoogleFonts.montserrat(color: Colors.white),
+            ),
+          ),
+        ] else if (hasError) ...[
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Close',
+              style: GoogleFonts.montserrat(color: Colors.grey[600]),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: _startDownload,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF0096C7),
+            ),
+            child: Text(
+              'Retry',
+              style: GoogleFonts.montserrat(color: Colors.white),
+            ),
+          ),
+        ] else ...[
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.montserrat(color: Colors.grey[600]),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+// Review Model for the new reviews table
+class ReviewModel {
+  final String id;
+  final String bookId;
+  final String userId;
+  final int rating;
+  final String reviewText;
+  final DateTime createdAt;
+
+  ReviewModel({
+    required this.id,
+    required this.bookId,
+    required this.userId,
+    required this.rating,
+    required this.reviewText,
+    required this.createdAt,
+  });
+
+  factory ReviewModel.fromJson(Map<String, dynamic> json) {
+    return ReviewModel(
+      id: json['id']?.toString() ?? '',
+      bookId: json['book_id']?.toString() ?? '',
+      userId: json['user_id']?.toString() ?? '',
+      rating: (json['rating'] as num?)?.toInt() ?? 0,
+      reviewText: json['review']?.toString() ?? '',
+      createdAt: json['created_at'] != null 
+          ? DateTime.parse(json['created_at'])
+          : DateTime.now(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'book_id': bookId,
+      'user_id': userId,
+      'rating': rating,
+      'review': reviewText,
+      'created_at': createdAt.toIso8601String(),
+    };
+  }
+}
 // --- Data Models ---
 class BookDetails {
+  final String id; // <-- Add id field
   final String title;
   final String author;
   final String cover;
-  final double rating;
-  final int ratingsCount;
+  final double averageRating;
   final int reviewsCount;
   final String description;
   final List<String> genres;
-  final int pages;
+  final String summary;
   final String language;
-  final String isbn;
-  final String publication;
+  final String category;
+  final int price;
+  final DateTime created_at;
   final List<String> formats;
   final List<Edition> editions;
   final int currentlyReading;
   final int wantToRead;
   final Author authorDetails;
-  final List<Review> reviews;
+  final List<Review> review;
   final List<BookRecommendation> alsoEnjoyed;
   final List<ReviewBreakdown> reviewBreakdown;
+  
 
   BookDetails({
+    required this.id, // <-- Add id to constructor
     required this.title,
     required this.author,
     required this.cover,
-    required this.rating,
-    required this.ratingsCount,
-    required this.reviewsCount,
+  required this.averageRating,
+  required this.reviewsCount,
     required this.description,
     required this.genres,
-    required this.pages,
+    required this.summary,
     required this.language,
-    required this.isbn,
-    required this.publication,
+    required this.category,
+    required this.created_at,
+    required this.price,
     required this.formats,
     required this.editions,
     required this.currentlyReading,
     required this.wantToRead,
     required this.authorDetails,
-    required this.reviews,
+    required this.review,
     required this.alsoEnjoyed,
     required this.reviewBreakdown,
   });
 
   factory BookDetails.fromJson(Map<String, dynamic> json) {
     return BookDetails(
+      id: json['id'].toString(),
       title: json['title'],
       author: json['author'],
       cover: json['cover'],
-      rating: (json['rating'] as num).toDouble(),
-      ratingsCount: json['ratingsCount'],
-      reviewsCount: json['reviewsCount'],
+      averageRating: 0.0, // Will be calculated from reviews table
+      reviewsCount: 0, // Will be calculated from reviews table
       description: json['description'],
       genres: List<String>.from(json['genres'] ?? []),
-      pages: json['pages'],
-      language: json['language'],
-      isbn: json['isbn'],
-      publication: json['publication'],
+      summary: json['summary'] ?? 'No summary available.',
+      language: json['language'] ?? 'English',
+      category: json['category'] ?? 'General',
+      created_at: DateTime.parse(json['created_at']),
+      price: json['price'] ?? 0,
       formats: List<String>.from(json['formats'] ?? []),
       editions: (json['editions'] as List? ?? []).map((e) => Edition.fromJson(e)).toList(),
       currentlyReading: json['currentlyReading'],
       wantToRead: json['wantToRead'],
       authorDetails: Author.fromJson(json['authorDetails']),
-      reviews: (json['reviews'] as List? ?? []).map((e) => Review.fromJson(e)).toList(),
+      review: [], // Empty, will be populated from reviews table
       alsoEnjoyed: (json['alsoEnjoyed'] as List? ?? []).map((e) => BookRecommendation.fromJson(e)).toList(),
-      reviewBreakdown: (json['reviewBreakdown'] as List? ?? []).map((e) => ReviewBreakdown.fromJson(e)).toList(),
+      reviewBreakdown: [], // Empty, will be calculated from reviews table
+    );
+  }
+
+  BookDetails copyWith({
+    List<BookRecommendation>? alsoEnjoyed,
+  }) {
+    return BookDetails(
+      id: this.id,
+      title: this.title,
+      author: this.author,
+      cover: this.cover,
+      averageRating: this.averageRating,
+      reviewsCount: this.reviewsCount,
+      description: this.description,
+      genres: this.genres,
+      summary: this.summary,
+      language: this.language,
+      category: this.category,
+      created_at: this.created_at,
+      price: this.price,
+      formats: this.formats,
+      editions: this.editions,
+      currentlyReading: this.currentlyReading,
+      wantToRead: this.wantToRead,
+      authorDetails: this.authorDetails,
+      review: this.review,
+      alsoEnjoyed: alsoEnjoyed ?? this.alsoEnjoyed,
+      reviewBreakdown: this.reviewBreakdown,
     );
   }
 }
@@ -124,18 +487,27 @@ class Review {
 }
 
 class BookRecommendation {
+  final String id;
   final String title;
   final String author;
   final String cover;
   final double rating;
   final int reviews;
-  BookRecommendation({required this.title, required this.author, required this.cover, required this.rating, required this.reviews});
+  BookRecommendation({
+    required this.id,
+    required this.title,
+    required this.author,
+    required this.cover,
+    required this.rating,
+    required this.reviews,
+  });
   factory BookRecommendation.fromJson(Map<String, dynamic> json) => BookRecommendation(
+    id: json['id'].toString(),
     title: json['title'],
-    author: json['author'],
-    cover: json['cover'],
-    rating: (json['rating'] as num).toDouble(),
-    reviews: json['reviews'],
+    author: json['author_name'],
+    cover: json['cover_image_url'],
+    rating: (json['rating'] as num?)?.toDouble() ?? 0.0,
+    reviews: json['review'] ?? 0,
   );
 }
 
@@ -150,129 +522,401 @@ class ReviewBreakdown {
 }
 
 // --- API Service ---
+
+
+final supabase = Supabase.instance.client;
+
 Future<BookDetails> fetchBookDetails(String bookId) async {
-  // If bookId is 'mock', always return mock data
-  if (bookId == 'mock') {
-    await Future.delayed(const Duration(milliseconds: 500));
-    return BookDetails(
-      title: "There's a Million Books I Haven't Read, but Just You",
-      author: 'Author Name',
-      cover: 'https://covers.openlibrary.org/b/id/10523338-L.jpg',
-      rating: 4.5,
-      ratingsCount: 8564,
-      reviewsCount: 796,
-      description:
-      "This book was pure magic. The Night Circus is unlike anything I've ever read—ambition, forbidden love, and competition entwined. The story follows a secret competition between two young magicians, Celia and her father, who are bound by a black-and-white circus that only appears at night, enchanting visitors with its mysterious acts.",
-      genres: ['Fiction', 'Fantasy', 'Magic', 'Adventure', 'Romance'],
-      pages: 432,
-      language: 'English',
-      isbn: '1234567890',
-      publication: 'May 2023',
-      formats: ['eBook', 'Hardcover', 'Kindle'],
-      editions: [
-        Edition(cover: 'https://covers.openlibrary.org/b/id/10523338-L.jpg', type: 'eBook', year: '2023'),
-        Edition(cover: 'https://covers.openlibrary.org/b/id/10523338-L.jpg', type: 'Hardcover', year: '2022'),
-        Edition(cover: 'https://covers.openlibrary.org/b/id/10523338-L.jpg', type: 'Kindle', year: '2021'),
-      ],
-      currentlyReading: 481,
-      wantToRead: 1898,
-      authorDetails: Author(
-        name: 'Author Name',
-        photo: 'https://randomuser.me/api/portraits/men/32.jpg',
-        bio: 'Award-winning author of modern fiction. Passionate about storytelling and inspiring readers.',
-        books: 10,
-        followers: 1200,
-      ),
-      reviews: List.generate(
-        3,
-            (i) => Review(
-          user: 'User Name',
-          photo: 'https://randomuser.me/api/portraits/women/${30 + i}.jpg',
-          date: 'Month DD, YYYY',
-          text: 'Ut commodo velit adipiscing hendrerit non non elementum id id cursus non odio vel tincidunt quam at, ac sit Nam at, malesuada non placerat Nam ante, ac eget.',
-          likes: 54,
-          rating: 5 - i,
-        ),
-      ),
-      alsoEnjoyed: List.generate(
-        6,
-            (i) => BookRecommendation(
-          title: 'Book Name',
-          author: 'Author Name',
-          cover: 'https://covers.openlibrary.org/b/id/10523338-L.jpg',
-          rating: 4.5,
-          reviews: 3318,
-        ),
-      ),
-      reviewBreakdown: [
-        ReviewBreakdown(stars: 5, count: 500),
-        ReviewBreakdown(stars: 4, count: 200),
-        ReviewBreakdown(stars: 3, count: 60),
-        ReviewBreakdown(stars: 2, count: 20),
-        ReviewBreakdown(stars: 1, count: 16),
-      ],
-    );
-  }
-
-  // If bookId is empty or null, throw error
-  if (bookId.isEmpty) {
-    throw Exception('No bookId provided.');
-  }
-
-  // Replace with your real API endpoint
-  final url = Uri.parse('https://api.example.com/books/$bookId/details');
   try {
-    final response = await http.get(url);
-    if (response.statusCode == 200) {
-      return BookDetails.fromJson(jsonDecode(response.body));
-    } else {
-      // If API fails, fallback to mock data for development
-      return await fetchBookDetails('mock');
+    if (bookId.isEmpty) {
+      throw Exception('No bookId provided.');
     }
+
+    // Fetch book data from Supabase
+    final response = await supabase
+        .from('books')
+        .select('*')
+        .eq('id', bookId)
+        .eq('is_active', true)
+        .single();
+
+    // Fetch author data using author_id from books table
+    var authorName = 'Unknown Author';
+    var authorBio = 'Author biography not available.';
+    var authorPhoto = 'https://randomuser.me/api/portraits/men/32.jpg';
+    var authorBooks = 0;
+    var authorFollowers = 0;
+    try {
+      final authorId = response['author_id'];
+      if (authorId != null) {
+        // Fetch author info
+        final authorResponse = await supabase
+            .from('authors')
+            .select('id, first_name, last_name, bio, photo_url')
+            .eq('id', authorId)
+            .single();
+        if (authorResponse != null) {
+          authorName = authorResponse['first_name'] + ' ' + (authorResponse['last_name'] ?? '');
+          authorBio = authorResponse['bio'] ?? authorBio;
+          authorPhoto = authorResponse['photo_url'] ?? authorPhoto;
+        }
+        // Count number of books for this author
+        final booksCountResponse = await supabase
+            .from('books')
+            .select('id')
+            .eq('author_id', authorId)
+            .eq('is_active', true);
+        if (booksCountResponse is List) {
+          authorBooks = booksCountResponse.length;
+        }
+      }
+    } catch (e) {
+      print('Error fetching author info or books count: $e');
+    }
+
+    // Fetch reviews from the new reviews table with user information
+    final reviewsResponse = await supabase
+        .from('reviews')
+        .select('*, user:user_id(*)')
+        .eq('book_id', bookId);
+
+    // Convert reviews to Review objects
+    final reviewList = (reviewsResponse as List).map((reviewData) {
+      final userData = reviewData['user'];
+      final userName = userData != null && userData is Map 
+          ? ((userData['first_name'] ?? '') + ' ' + (userData['last_name'] ?? '')).trim().isEmpty
+              ? 'Reader'
+              : ((userData['first_name'] ?? '') + ' ' + (userData['last_name'] ?? '')).trim()
+          : 'Reader';
+      final userPhoto = userData != null && userData is Map && userData['photo_url'] != null
+          ? userData['photo_url']
+          : 'https://randomuser.me/api/portraits/women/30.jpg';
+      return Review(
+        user: userName,
+        photo: userPhoto,
+        date: reviewData['created_at'] != null 
+            ? DateFormat('yyyy-MM-dd').format(DateTime.parse(reviewData['created_at']))
+            : 'Recent',
+        text: reviewData['review']?.toString() ?? '',
+        likes: 0,
+        rating: (reviewData['rating'] as num?)?.toInt() ?? 0,
+      );
+    }).toList();
+
+    // Calculate average rating
+    final ratings = reviewList.where((r) => r.rating > 0).map((r) => r.rating).toList();
+    final averageRating = ratings.isNotEmpty ? ratings.reduce((a, b) => a + b) / ratings.length : 0.0;
+
+    // Calculate review breakdown
+    final reviewBreakdown = List.generate(5, (index) {
+      final star = 5 - index;
+      final count = reviewList.where((r) => r.rating == star).length;
+      return ReviewBreakdown(stars: star, count: count);
+    });
+
+    // Convert Supabase data to BookDetails
+    final bookDetails = BookDetails(
+      id: bookId,
+      title: response['title'] ?? 'Unknown Title',
+      author: authorName,
+      cover: response['cover_image_url'] ?? 'https://via.placeholder.com/180x240',
+      averageRating: averageRating,
+      reviewsCount: reviewList.length,
+      description: response['description'] ?? 'No description available.',
+      genres: response['genre'] != null ? [response['genre']] : ['General'],
+      summary: response['summary'] ?? 'No summary available.',
+      language: response['language'] ?? 'English',
+      category: response['category'] ?? 'General',
+      created_at: DateTime.parse(response['created_at']),
+      price: (response['price'] as num?)?.toInt() ?? 0,
+      formats: ['eBook', 'PDF'],
+      editions: [
+        Edition(
+          cover: response['cover_image_url'] ?? '',
+          type: 'Digital',
+          year: response['publication_date']?.substring(0, 4) ?? '2024',
+        ),
+      ],
+      currentlyReading: response['currentlyReading'] ?? 0,
+      wantToRead: response['wantToRead'] ?? 0,
+      authorDetails: Author(
+        name: authorName,
+        photo: authorPhoto,
+        bio: authorBio,
+        books: authorBooks,
+        followers: authorFollowers,
+      ),
+      review: reviewList,
+      alsoEnjoyed: [],
+      reviewBreakdown: reviewBreakdown,
+    );
+
+    // Fetch related books
+    final relatedBooks = await fetchRelatedBooks(bookId, response['category']);
+
+    print('Current book category: ${response['category']}');
+    print('Related books found: ${relatedBooks.length}');
+    for (var b in relatedBooks) {
+      print('Related book: ${b.title} (${b.id}) - category: ${response['category']}');
+    }
+
+    // Return book with related books
+    return bookDetails.copyWith(alsoEnjoyed: relatedBooks);
+
   } catch (e) {
-    // If API call throws, fallback to mock data for development
-    return await fetchBookDetails('mock');
+    print('Error fetching book details: $e');
+    
+    // Return a fallback with the bookId for debugging
+    return BookDetails(
+      id: bookId,
+      title: 'Book Not Found',
+      author: 'Unknown Author',
+      cover: 'https://via.placeholder.com/180x240',
+      averageRating: 0.0,
+      reviewsCount: 0,
+      description: 'Could not load book details. Book ID: $bookId',
+      genres: ['Unknown'],
+      summary: 'No summary available.',
+      language: 'Unknown',
+      category: 'General',
+      created_at: DateTime.now(),
+      price: 0,
+      formats: [],
+      editions: [],
+      currentlyReading: 0,
+      wantToRead: 0,
+      authorDetails: Author(
+        name: 'Unknown Author',
+        photo: 'https://via.placeholder.com/64x64',
+        bio: 'No information available.',
+        books: 0,
+        followers: 0,
+      ),
+      review: [],
+      alsoEnjoyed: [],
+      reviewBreakdown: [],
+    );
   }
 }
 
-class BookDetailsPage extends StatelessWidget {
+class BookDetailsPage extends StatefulWidget {
   final String bookId;
-  const BookDetailsPage({Key? key, required this.bookId}) : super(key: key);
+  final VoidCallback? onFavoriteChanged; // Add this callback
+  
+  const BookDetailsPage({
+    Key? key, 
+    required this.bookId,
+    this.onFavoriteChanged,
+  }) : super(key: key);
 
+  @override
+  State<BookDetailsPage> createState() => _BookDetailsPageState();
+}
+
+class _BookDetailsPageState extends State<BookDetailsPage> {
+  bool _isFavorite = false;
+  bool _isLoadingFavorite = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkFavoriteStatus();
+  }
+
+  // ✅ Check if the book is in the user's favorites
+  Future<void> _checkFavoriteStatus() async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    try {
+      final response = await supabase
+          .from('users')
+          .select('Favourites')
+          .eq('id', user.id)
+          .single();
+
+      final favorites = response['Favourites'];
+      Set<String> favoriteIds = {};
+      
+      if (favorites != null && favorites.isNotEmpty) {
+        if (favorites is String) {
+          favoriteIds = favorites.split(',').where((id) => id.isNotEmpty).toSet();
+        } else if (favorites is List) {
+          favoriteIds = favorites.map((id) => id.toString()).toSet();
+        }
+      }
+
+      setState(() {
+        _isFavorite = favoriteIds.contains(widget.bookId);
+      });
+    } catch (e) {
+      print('Error fetching favorite status: $e');
+    }
+  }
+
+  // ✅ Toggle favorite status
+  Future<void> _toggleFavorite() async {
+    setState(() => _isLoadingFavorite = true);
+    
+    try {
+      final user = supabase.auth.currentUser;
+      if (user == null) {
+        _showSnackBar('Please login to add favorites', backgroundColor: Colors.orange);
+        return;
+      }
+
+      // Get current favorites
+      final userResponse = await supabase
+          .from('users')
+          .select('Favourites')
+          .eq('id', user.id)
+          .single();
+
+      final favorites = userResponse['Favourites'];
+      Set<String> favoriteIds = {};
+      
+      if (favorites != null && favorites.isNotEmpty) {
+        if (favorites is String) {
+          favoriteIds = favorites.split(',').where((id) => id.isNotEmpty).toSet();
+        } else if (favorites is List) {
+          favoriteIds = favorites.map((id) => id.toString()).toSet();
+        }
+      }
+
+      // Toggle favorite
+      if (_isFavorite) {
+        favoriteIds.remove(widget.bookId);
+        _showSnackBar('Removed from favorites', backgroundColor: Colors.orange);
+      } else {
+        favoriteIds.add(widget.bookId);
+        _showSnackBar('Added to favorites', backgroundColor: Colors.green);
+      }
+
+      // Update database
+      final favoritesString = favoriteIds.join(',');
+      await supabase.from('users')
+          .update({'Favourites': favoritesString})
+          .eq('id', user.id);
+
+      setState(() {
+        _isFavorite = !_isFavorite;
+      });
+
+      // ✅ Notify parent about the change
+      if (widget.onFavoriteChanged != null) {
+        widget.onFavoriteChanged!();
+      }
+
+    } catch (e) {
+      print('Error toggling favorite: $e');
+      _showSnackBar('Failed to update favorites', backgroundColor: Colors.red);
+    } finally {
+      setState(() => _isLoadingFavorite = false);
+    }
+  }
+
+  // ✅ Add the missing _showSnackBar method
+  void _showSnackBar(String message, {Color? backgroundColor}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message, style: GoogleFonts.montserrat()),
+        backgroundColor: backgroundColor ?? const Color(0xFF0096C7),
+        behavior: SnackBarBehavior.floating,
+        margin: EdgeInsets.symmetric(
+          horizontal: MediaQuery.of(context).size.width * 0.05,
+          vertical: 16,
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  // ✅ Add the missing build method
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF4F8FB),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFFF4F8FB),
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Color(0xFF22223b)),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          'Book Details',
+          style: GoogleFonts.montserrat(
+            color: const Color(0xFF22223b),
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+          ),
+        ),
+        centerTitle: true,
+        actions: [
+          // ✅ Add favorite button to app bar
+          Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: _isLoadingFavorite
+                ? const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Color(0xFF0096C7),
+                    ),
+                  )
+                : IconButton(
+                    icon: Icon(
+                      _isFavorite ? Icons.favorite : Icons.favorite_border,
+                      color: _isFavorite ? Colors.red : const Color(0xFF22223b),
+                      size: 28,
+                    ),
+                    onPressed: _toggleFavorite,
+                  ),
+          ),
+        ],
+      ),
       body: SafeArea(
         child: FutureBuilder<BookDetails>(
-          future: fetchBookDetails(bookId),
+          future: fetchBookDetails(widget.bookId),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
+              return const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(color: Color(0xFF0096C7)),
+                    SizedBox(height: 16),
+                    Text('Loading book details...'),
+                  ],
+                ),
+              );
             } else if (snapshot.hasError) {
-              return Center(child: Text('Error: \\${snapshot.error}'));
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.error, size: 64, color: Colors.red),
+                    const SizedBox(height: 16),
+                    Text('Error: ${snapshot.error}'),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Go Back'),
+                    ),
+                  ],
+                ),
+              );
             } else if (!snapshot.hasData) {
-              return const Center(child: Text('No data found'));
+              return const Center(child: Text('No book data found'));
             }
+            
             final book = snapshot.data!;
             return ListView(
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
               children: [
-                // Search Bar
-                Card(
-                  elevation: 2,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    child: _BookSearchBar(),
-                  ),
-                ),
-                const SizedBox(height: 22),
                 // Book Main Info Row
                 LayoutBuilder(
                   builder: (context, constraints) {
@@ -289,7 +933,13 @@ class BookDetailsPage extends StatelessWidget {
                           direction: isWide ? Axis.horizontal : Axis.vertical,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _BookCoverActions(book: book),
+                            _BookCoverActions(
+                              book: book,
+                              bookId: widget.bookId,
+                              isFavorite: _isFavorite, // ✅ Pass favorite status
+                              onFavoriteToggle: _toggleFavorite, // ✅ Pass toggle function
+                              isLoadingFavorite: _isLoadingFavorite, // ✅ Pass loading state
+                            ),
                             const SizedBox(width: 32, height: 32),
                             if (isWide)
                               SizedBox(
@@ -304,24 +954,22 @@ class BookDetailsPage extends StatelessWidget {
                     );
                   },
                 ),
+                
                 const SizedBox(height: 18),
-                // Editions
-                Card(
-                  elevation: 2,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  color: Colors.white,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: _BookEditionsSection(book: book),
-                  ),
-                ),
+//                 Card(
+//                   elevation: 2,
+//                   shape: RoundedRectangleBorder(
+//                     borderRadius: BorderRadius.circular(14),
+//                   ),
+// color: Colors.white,
+//                   // child: Padding(
+//                   //   padding: const EdgeInsets.all(16),
+//                   //   child: _BookEditionsSection(book: book),
+//                   // ),
+//                 ),
+//                 const SizedBox(height: 18),
+                _BookStatsSection(currentlyReading: book.currentlyReading, bookId: widget.bookId),
                 const SizedBox(height: 18),
-                // Reading Stats & Engagement
-                _BookStatsSection(book: book),
-                const SizedBox(height: 18),
-                // About the Author
                 Card(
                   elevation: 2,
                   shape: RoundedRectangleBorder(
@@ -334,7 +982,6 @@ class BookDetailsPage extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 18),
-                // Rating & Reviews
                 Card(
                   elevation: 2,
                   shape: RoundedRectangleBorder(
@@ -346,12 +993,11 @@ class BookDetailsPage extends StatelessWidget {
                     child: _RatingReviewsSection(
                       book: book,
                       reviewBreakdown: book.reviewBreakdown,
-                      reviews: book.reviews,
+                      reviews: book.review,
                     ),
                   ),
                 ),
                 const SizedBox(height: 18),
-                // Readers Also Enjoyed
                 const _SectionHeader(
                   title: 'Readers also Enjoyed',
                   icon: Icons.recommend,
@@ -362,33 +1008,20 @@ class BookDetailsPage extends StatelessWidget {
                     borderRadius: BorderRadius.circular(14),
                   ),
                   color: Colors.white,
-                  child: Padding(
+                  child: Container(
+                    height: 280,
                     padding: const EdgeInsets.symmetric(
                       vertical: 12,
                       horizontal: 8,
                     ),
-                    child: _AlsoEnjoyedSection(books: book.alsoEnjoyed),
+                    child: book.alsoEnjoyed.isEmpty
+                        ? _buildEmptyRelatedBooks()
+                        : _AlsoEnjoyedSection(books: book.alsoEnjoyed),
                   ),
                 ),
                 const SizedBox(height: 28),
-                // Footer
                 _Footer(),
                 const SizedBox(height: 18),
-                // Navigation Button for testing
-                Center(
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => UserDashboardPage(
-                          onMyBooksTap: () {},
-                          onEditProfileTap: () {},
-                        )),
-                      );
-                    },
-                    child: const Text('Go to User Dashboard'),
-                  ),
-                ),
               ],
             );
           },
@@ -396,126 +1029,136 @@ class BookDetailsPage extends StatelessWidget {
       ),
     );
   }
-}
 
-// --- Components ---
-
-class _BookSearchBar extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: TextField(
-            decoration: InputDecoration(
-              hintText: 'Search Your Books',
-              filled: true,
-              fillColor: Colors.white,
-              prefixIcon: const Icon(Icons.search, color: Color(0xFF0096C7)),
-              contentPadding: const EdgeInsets.symmetric(
-                vertical: 0,
-                horizontal: 16,
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
-              ),
+  Widget _buildEmptyRelatedBooks() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.library_books_outlined,
+            size: 48,
+            color: Colors.grey[400],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'No related books found',
+            style: GoogleFonts.montserrat(
+              fontSize: 16,
+              color: Colors.grey[600],
+              fontWeight: FontWeight.w500,
             ),
           ),
-        ),
-        const SizedBox(width: 12),
-        SizedBox(
-          width: 180,
-          child: TextField(
-            decoration: InputDecoration(
-              hintText: 'Search by ID or Type',
-              filled: true,
-              fillColor: Colors.white,
-              contentPadding: const EdgeInsets.symmetric(
-                vertical: 0,
-                horizontal: 16,
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
-              ),
+          const SizedBox(height: 8),
+          Text(
+            'Try exploring other genres',
+            style: GoogleFonts.montserrat(
+              fontSize: 14,
+              color: Colors.grey[500],
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
 
+// --- Components ---
+
+
+
 class _BookCoverActions extends StatelessWidget {
   final BookDetails book;
-  const _BookCoverActions({required this.book});
+  final String bookId;
+  final bool isFavorite;
+  final VoidCallback onFavoriteToggle;
+  final bool isLoadingFavorite;
+  
+  const _BookCoverActions({
+    required this.book,
+    required this.bookId,
+    required this.isFavorite,
+    required this.onFavoriteToggle,
+    required this.isLoadingFavorite,
+  });
+  
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Stack(
-          children: [
-            Container(
-              width: 180,
-              height: 240,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Color(0xFF0096C7).withOpacity(0.1), Colors.white],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(16),
-              ),
+        // ✅ Clean book cover without love icon
+        Container(
+          width: 180,
+          height: 240,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF0096C7).withOpacity(0.1), Colors.white],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
             ),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: Hero(
-                tag: 'book_cover_${book.cover}',
-                child: Image.network(
-                  book.cover,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: Hero(
+              tag: 'book_cover_${book.cover}',
+              child: Image.network(
+                book.cover,
+                width: 180,
+                height: 240,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) => Container(
                   width: 180,
                   height: 240,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => Container(
-                    width: 90, // match width
-                    height: 120, // match height
+                  decoration: BoxDecoration(
                     color: Colors.grey[300],
-                    child: const Icon(Icons.book, size: 40, color: Colors.grey),
+                    borderRadius: BorderRadius.circular(16),
                   ),
+                  child: const Icon(Icons.book, size: 40, color: Colors.grey),
                 ),
               ),
             ),
-          ],
+          ),
         ),
+        
         const SizedBox(height: 18),
         Wrap(
           spacing: 16,
           runSpacing: 16,
           children: [
+            // Read Button - Updated with PDF functionality
             _ActionChipButton(
               icon: Icons.menu_book,
               label: 'Read',
-              color: Color(0xFF0096C7),
+              color: const Color(0xFF0096C7),
               minWidth: 140,
+              onPressed: () => _handleReadBook(context),
             ),
+            
+            // Abstract Button
             _ActionChipButton(
               icon: Icons.summarize,
               label: 'Abstract',
-              color: Color(0xFFB5179E),
+              color: const Color(0xFFB5179E),
               minWidth: 140,
+              onPressed: () => _showAbstract(context),
             ),
+            
+            // Download PDF Button - Updated with download functionality
             _ActionChipButton(
               icon: Icons.picture_as_pdf,
               label: 'Download PDF',
-              color: Color(0xFF43AA8B),
+              color: const Color(0xFF43AA8B),
               minWidth: 140,
+              onPressed: () => _handleDownloadPDF(context),
             ),
+            
+            // Borrow/Buy Button
             _ActionChipButton(
               icon: Icons.shopping_cart,
               label: 'Borrow/Buy',
-              color: Color(0xFFF3722C),
+              color: const Color(0xFFF3722C),
               minWidth: 140,
               onPressed: () {
                 showDialog(
@@ -532,20 +1175,172 @@ class _BookCoverActions extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 10),
-        ElevatedButton(
-          onPressed: () {},
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.white,
-            foregroundColor: const Color(0xFF0096C7),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-            side: const BorderSide(color: Color(0xFF0096C7)),
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-          ),
-          child: const Text('Book Status'),
-        ),
+      //   ElevatedButton(
+      //     onPressed: () {},
+      //     style: ElevatedButton.styleFrom(
+      //       backgroundColor: Colors.white,
+      //       foregroundColor: const Color(0xFF0096C7),
+      //       shape: RoundedRectangleBorder(
+      //         borderRadius: BorderRadius.circular(8),
+      //       ),
+      //       side: const BorderSide(color: Color(0xFF0096C7)),
+      //       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+      //     ),
+      //  //   child: const Text('Book Status'),
+      //   ),
       ],
+    );
+  }
+
+  // Handle Read Book functionality
+  void _handleReadBook(BuildContext context) async {
+    try {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(color: Color(0xFF0096C7)),
+              const SizedBox(height: 16),
+              Text('Loading PDF...', style: GoogleFonts.montserrat()),
+            ],
+          ),
+        ),
+      );
+
+      final bookId = (context.findAncestorWidgetOfExactType<BookDetailsPage>())?.bookId;
+      
+      if (bookId == null) {
+        Navigator.pop(context);
+        _showErrorDialog(context, 'Book ID not available');
+        return;
+      }
+
+      // Increment currently_reading using Supabase RPC (atomic)
+      await supabase.rpc(
+        'increment_currently_reading',
+        params: {'book_id': bookId},
+      );
+
+      final pdfUrl = await PDFService.getPDFUrl(bookId);
+      
+      Navigator.pop(context);
+
+      if (pdfUrl != null && pdfUrl.isNotEmpty) {
+        // Open PDF and decrement currently_reading when closed
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => PDFViewerPage(
+              pdfUrl: pdfUrl,
+              bookTitle: book.title,
+              bookId: bookId,
+            ),
+          ),
+        );
+        // Decrement currently_reading using Supabase RPC (atomic)
+        await supabase.rpc(
+          'decrement_currently_reading',
+          params: {'book_id': bookId},
+        );
+      } else {
+        _showErrorDialog(context, 'PDF not available for this book');
+      }
+    } catch (e) {
+      Navigator.pop(context);
+      _showErrorDialog(context, 'Failed to open PDF: ${e.toString()}');
+    }
+  }
+
+  // Handle Download PDF functionality
+  void _handleDownloadPDF(BuildContext context) async {
+    try {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(color: Color(0xFF0096C7)),
+              const SizedBox(height: 16),
+              Text('Preparing download...', style: GoogleFonts.montserrat()),
+            ],
+          ),
+        ),
+      );
+
+      final bookId = (context.findAncestorWidgetOfExactType<BookDetailsPage>())?.bookId;
+      
+      if (bookId == null) {
+        Navigator.pop(context);
+        _showErrorDialog(context, 'Book ID not available');
+        return;
+      }
+
+      final pdfUrl = await PDFService.getPDFUrl(bookId);
+      
+      if (pdfUrl == null || pdfUrl.isEmpty) {
+        Navigator.pop(context);
+        _showErrorDialog(context, 'PDF not available for this book');
+        return;
+      }
+
+      Navigator.pop(context);
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => DownloadProgressDialog(
+          pdfUrl: pdfUrl,
+          fileName: book.title.replaceAll(RegExp(r'[^\w\s-]'), ''),
+        ),
+      );
+
+    } catch (e) {
+      Navigator.pop(context);
+      _showErrorDialog(context, 'Failed to download PDF: ${e.toString()}');
+    }
+  }
+
+  // Show Abstract
+  void _showAbstract(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Abstract - ${book.title}'),
+        content: SingleChildScrollView(
+          child: Text(
+            book.description,
+            style: const TextStyle(fontSize: 16, height: 1.5),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Show error dialog
+  void _showErrorDialog(BuildContext context, String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Error'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -612,43 +1407,87 @@ class _BookInfoSection extends StatelessWidget {
           children: [
             const Icon(Icons.star, color: Colors.amber, size: 18),
             Text(
-              '${book.rating}',
+              book.averageRating > 0
+                ? book.averageRating.toStringAsFixed(1)
+                : 'No ratings',
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             const SizedBox(width: 6),
             Text(
-              '${book.ratingsCount} ratings, ${book.reviewsCount} reviews',
+              '${book.reviewsCount} reviews',
               style: const TextStyle(color: Colors.grey),
             ),
           ],
         ),
         const SizedBox(height: 12),
-        Text(book.description, style: const TextStyle(fontSize: 15)),
-        const SizedBox(height: 10),
-        Wrap(
-          spacing: 8,
-          runSpacing: 4,
-          children: [
-            ...book.genres.map<Widget>(
-                  (g) => Chip(
-                label: Text(g),
-                backgroundColor: const Color(0xFFE0EAFc),
-              ),
-            ),
-          ],
+        _ExpandableSummary(
+          summary: book.summary,
+          maxLines: 6, // Show 4-8 lines, you can adjust this value
         ),
         const SizedBox(height: 10),
+        // Wrap(
+        //   spacing: 8,
+        //   runSpacing: 4,
+        //   children: [
+        //     ...book.genres.map<Widget>(
+        //           (g) => Chip(
+        //         label: Text(g),
+        //         backgroundColor: const Color(0xFFE0EAFc),
+        //       ),
+        //     ),
+        //   ],
+        // ),
+        const SizedBox(height: 10),
+        _MetaItem(label: 'Category', value: book.category),
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: Row(
             children: [
-              _MetaItem(label: 'Pages', value: '${book.pages}'),
+              
               _MetaItem(label: 'Language', value: book.language),
-              _MetaItem(label: 'ISBN', value: book.isbn),
-              _MetaItem(label: 'Published', value: book.publication),
+                _MetaItem(label: 'Price', value: '${book.price}\$'),
+              _MetaItem(label: 'Published Date', value: DateFormat('yyyy-MM-dd').format(book.created_at)),
             ],
           ),
         ),
+      ],
+    );
+  }
+}
+
+// Add the missing _ExpandableSummary widget
+class _ExpandableSummary extends StatefulWidget {
+  final String summary;
+  final int maxLines;
+  const _ExpandableSummary({
+    required this.summary,
+    this.maxLines = 4,
+  });
+
+  @override
+  State<_ExpandableSummary> createState() => _ExpandableSummaryState();
+}
+
+class _ExpandableSummaryState extends State<_ExpandableSummary> {
+  bool expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = widget.summary;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          text,
+          maxLines: expanded ? null : widget.maxLines,
+          overflow: expanded ? TextOverflow.visible : TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 15, color: Colors.black87),
+        ),
+        if (text.length > 120)
+          TextButton(
+            onPressed: () => setState(() => expanded = !expanded),
+            child: Text(expanded ? 'Show less' : 'Show more'),
+          ),
       ],
     );
   }
@@ -672,135 +1511,268 @@ class _MetaItem extends StatelessWidget {
   }
 }
 
-class _BookEditionsSection extends StatelessWidget {
+// class _BookEditionsSection extends StatelessWidget {
+//   final BookDetails book;
+//   const _BookEditionsSection({required this.book});
+//   @override
+//   Widget build(BuildContext context) {
+//     final editions = (book.editions as List?) ?? [];
+//     if (editions.isEmpty) {
+//       return const SizedBox(height: 120);
+//     }
+//     return Column(
+//       crossAxisAlignment: CrossAxisAlignment.start,
+//       children: [
+//         const _SectionHeader(title: 'More Edition'),
+//         SizedBox(
+//           height: 120,
+//           child: ListView.separated(
+//             scrollDirection: Axis.horizontal,
+//             itemCount: editions.length,
+//             separatorBuilder: (context, i) => const SizedBox(width: 14),
+//             itemBuilder: (context, i) {
+//               final ed = editions[i];
+//               if (ed == null) {
+//                 return const SizedBox(width: 70, height: 120);
+//               }
+//               return SizedBox(
+//                 width: 70,
+//                 child: Column(
+//                   children: [
+//                     ClipRRect(
+//                       borderRadius: BorderRadius.circular(8),
+//                       child: Image.network(
+//                         ed.cover ?? '',
+//                         width: 60,
+//                         height: 80,
+//                         fit: BoxFit.cover,
+//                         errorBuilder: (context, error, stackTrace) => Container(
+//                           width: 60, // match width
+//                           height: 80, // match height
+//                           color: Colors.grey[300],
+//                           child: const Icon(Icons.book, size: 30, color: Colors.grey),
+//                         ),
+//                       ),
+//                     ),
+//                     const SizedBox(height: 4),
+//                     Text(
+//                       ed.type ?? '',
+//                       style: const TextStyle(
+//                         fontWeight: FontWeight.bold,
+//                         fontSize: 12,
+//                       ),
+//                     ),
+//                     Text(
+//                       ed.year ?? '',
+//                       style: const TextStyle(
+//                         color: Colors.blueGrey,
+//                         fontSize: 11,
+//                       ),
+//                     ),
+//                   ],
+//                 ),
+//               );
+//             },
+//           ),
+//         ),
+//         const SizedBox(height: 6),
+//         TextButton(onPressed: () {}, child: const Text('Show all Editions')),
+//       ],
+//     );
+//   }
+// }
+
+
+
+class _RatingReviewsSection extends StatefulWidget {
   final BookDetails book;
-  const _BookEditionsSection({required this.book});
+  final List<ReviewBreakdown> reviewBreakdown;
+  final List<Review> reviews;
+
+  const _RatingReviewsSection({
+    required this.book,
+    required this.reviewBreakdown,
+    required this.reviews,
+  });
+
+  @override
+  State<_RatingReviewsSection> createState() => _RatingReviewsSectionState();
+}
+
+class _RatingReviewsSectionState extends State<_RatingReviewsSection> {
+  bool expanded = false;
+
   @override
   Widget build(BuildContext context) {
-    final editions = (book.editions as List?) ?? [];
-    if (editions.isEmpty) {
-      return const SizedBox(height: 120);
-    }
+    final reviews = widget.reviews;
+    final reviewsToShow = expanded ? reviews : (reviews.isNotEmpty ? [reviews.first] : []);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const _SectionHeader(title: 'More Edition'),
-        SizedBox(
-          height: 120,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: editions.length,
-            separatorBuilder: (context, i) => const SizedBox(width: 14),
-            itemBuilder: (context, i) {
-              final ed = editions[i];
-              if (ed == null) {
-                return const SizedBox(width: 70, height: 120);
-              }
-              return SizedBox(
-                width: 70,
+        const _SectionHeader(title: 'Rating & Reviews', icon: Icons.star),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Review Submission
+              Container(
+                width: 260,
+                margin: const EdgeInsets.only(right: 18),
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.network(
-                        ed.cover ?? '',
-                        width: 60,
-                        height: 80,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) => Container(
-                          width: 60, // match width
-                          height: 80, // match height
-                          color: Colors.grey[300],
-                          child: const Icon(Icons.book, size: 30, color: Colors.grey),
+                    Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 18,
+                          backgroundImage: NetworkImage(
+                            supabase.auth.currentUser?.userMetadata?['avatar_url'] ?? 'https://randomuser.me/api/portraits/men/31.jpg',
+                          ),
                         ),
+                        const SizedBox(width: 10),
+                        Text(
+                          'What do you think?',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: List.generate(
+                        5,
+                        (i) => const Icon(Icons.star_border, color: Colors.amber),
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      ed.type ?? '',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
+                    const SizedBox(height: 8),
+                    ElevatedButton.icon(
+                      icon: const Icon(Icons.rate_review, size: 18),
+                      label: const Text('Write a Review'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF0096C7),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                       ),
-                    ),
-                    Text(
-                      ed.year ?? '',
-                      style: const TextStyle(
-                        color: Colors.blueGrey,
-                        fontSize: 11,
-                      ),
+                      onPressed: () {
+                        showDialog(
+                          context: context,
+                          barrierDismissible: true,
+                          builder: (context) => WriteReviewDialog(
+                            bookCover: widget.book.cover,
+                            bookName: widget.book.title,
+                            authorName: widget.book.author,
+                            bookId: widget.book.id,
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ),
-              );
-            },
-          ),
-        ),
-        const SizedBox(height: 6),
-        TextButton(onPressed: () {}, child: const Text('Show all Editions')),
-      ],
-    );
-  }
-}
-
-class _BookStatsSection extends StatelessWidget {
-  final BookDetails book;
-
-  const _BookStatsSection({required this.book});
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-      ),
-      color: Colors.white,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.people, color: Colors.blueGrey[400]),
-                  const SizedBox(width: 6),
-                  SizedBox(
-                    width: 200,
-                    child: Text(
-                      '${book.currentlyReading} people are currently reading',
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 14),
-                    ),
-                  ),
-                ],
               ),
-              const SizedBox(width: 18),
-              Row(
-                children: [
-                  Icon(Icons.bookmark, color: Colors.orange[400]),
-                  const SizedBox(width: 6),
-                  SizedBox(
-                    width: 180,
-                    child: Text(
-                      '${book.wantToRead} want to Read',
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 14),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(width: 18),
-              TextButton(
-                onPressed: () {},
-                child: const Text('More Information'),
+              // Statistics Chart
+              SizedBox(
+                width: 320,
+                child: _CommunityReviewsChart(
+                  rating: widget.book.averageRating,
+                  count: widget.book.reviewsCount,
+                  breakdown: widget.reviewBreakdown,
+                ),
               ),
             ],
           ),
         ),
-      ),
+        const SizedBox(height: 18),
+        const Text(
+          'Readers Reviews',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        ),
+        const SizedBox(height: 8),
+        if (reviewsToShow.isEmpty)
+          Center(child: Text('No reviews available', style: TextStyle(color: Colors.grey))),
+        ...reviewsToShow.map((r) => _ReviewItem(review: r)),
+        if (reviews.length > 1)
+          TextButton(
+            onPressed: () => setState(() => expanded = !expanded),
+            child: Text(expanded ? 'Show Less Reviews' : 'Show More Reviews'),
+          ),
+      ],
     );
+  }
+}
+Widget _BookStatsSection({required int currentlyReading, required String bookId}) {
+  return FutureBuilder<int>(
+    future: _fetchWantToReadCount(bookId),
+    builder: (context, wantToReadSnapshot) {
+      final wantToRead = wantToReadSnapshot.data ?? 0;
+      return Card(
+        elevation: 2,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+        ),
+        color: Colors.white,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.people, color: Colors.blueGrey[400]),
+                    const SizedBox(width: 6),
+                    Text(
+                      '$currentlyReading people are currently reading',
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                  ],
+                ),
+                const SizedBox(width: 18),
+                Row(
+                  children: [
+                    Icon(Icons.bookmark, color: Colors.orange[400]),
+                    const SizedBox(width: 6),
+                    Text(
+                      '$wantToRead want to Read',
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    },
+  );
+}
+
+// Add this function somewhere above in your file (for example, after supabase definition)
+Future<int> _fetchWantToReadCount(String bookId) async {
+  try {
+    // Fetch all users whose Favourites contains this bookId
+    final response = await supabase
+        .from('users')
+        .select('Favourites');
+
+    if (response is! List) return 0;
+
+    int count = 0;
+    for (var user in response) {
+      final favs = user['Favourites'];
+      if (favs == null) continue;
+      if (favs is String) {
+        final ids = favs.split(',').map((id) => id.trim()).toSet();
+        if (ids.contains(bookId)) count++;
+      } else if (favs is List) {
+        final ids = favs.map((id) => id.toString()).toSet();
+        if (ids.contains(bookId)) count++;
+      }
+    }
+    return count;
+  } catch (e) {
+    print('Error fetching wantToRead count: $e');
+    return 0;
   }
 }
 
@@ -844,7 +1816,7 @@ class _AboutAuthorSection extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    '${author.books} Books   ${author.followers} Followers',
+                    '${author.books} Books ',
                     style: const TextStyle(
                       color: Colors.blueGrey,
                       fontSize: 13,
@@ -862,179 +1834,80 @@ class _AboutAuthorSection extends StatelessWidget {
   }
 }
 
-class _RatingReviewsSection extends StatelessWidget {
-  final BookDetails book;
-  final List<ReviewBreakdown> reviewBreakdown;
-  final List<Review> reviews;
-
-  const _RatingReviewsSection({
-    required this.book,
-    required this.reviewBreakdown,
-    required this.reviews,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const _SectionHeader(title: 'Rating & Reviews', icon: Icons.star),
-
-        // ✅ Fix: Wrap the Row in a SingleChildScrollView to avoid overflow
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // User Rating Input
-              SizedBox(
-                width: 250, // 👈 Adjust width as needed
-                child: Column(
-                  children: [
-                    Row(
-                      children: [
-                        const CircleAvatar(
-                          radius: 18,
-                          backgroundImage: NetworkImage(
-                            'https://randomuser.me/api/portraits/men/31.jpg',
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        const Text(
-                          'What Do You Think ?',
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: List.generate(
-                        5,
-                            (i) => const Icon(Icons.star_border, color: Colors.amber),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        ElevatedButton(
-                          onPressed: () {
-                            showDialog(
-                              context: context,
-                              barrierDismissible: true,
-                              builder: (context) => WriteReviewDialog(
-                                bookCover: book.cover,
-                                bookName: book.title,
-                                authorName: book.author,
-                              ),
-                            );
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF0096C7),
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          child: const Text('Write a review'),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 24),
-              // Community Reviews Chart
-              SizedBox(
-                width: 300, // 👈 Adjust width as needed
-                child: _CommunityReviewsChart(
-                  rating: book.rating,
-                  count: book.reviewsCount,
-                  breakdown: reviewBreakdown,
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 18),
-
-        // Reader Reviews List
-        const Text(
-          'Readers Reviews',
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-        ),
-        const SizedBox(height: 8),
-        ...reviews.map((r) => _ReviewItem(review: r)),
-        const SizedBox(height: 8),
-        Center(
-          child: OutlinedButton(
-            onPressed: () {},
-            child: const Text('More Reviews'),
-          ),
-        ),
-      ],
-    );
-  }
-}
 
 
 class _CommunityReviewsChart extends StatelessWidget {
   final double rating;
   final int count;
   final List<ReviewBreakdown> breakdown;
+  
   const _CommunityReviewsChart({
     required this.rating,
     required this.count,
     required this.breakdown,
   });
+
   @override
   Widget build(BuildContext context) {
-    final maxCount = breakdown
-        .map((b) => b.count as int)
-        .reduce((a, b) => a > b ? a : b);
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      elevation: 1,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '$rating',
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 22),
-            ),
-            Text(
-              '$count Reviews',
-              style: const TextStyle(color: Colors.blueGrey, fontSize: 12),
-            ),
-            const SizedBox(height: 8),
-            ...breakdown.map(
-                  (b) => SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    Text(
-                      '${b.stars} stars',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                    const SizedBox(width: 6),
-                    SizedBox(
-                      width: 60,
-                      child: LinearProgressIndicator(
-                        value: (b.count as int) / maxCount,
-                        backgroundColor: Colors.grey[200],
-                        color: Colors.amber,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Text('${b.count}', style: const TextStyle(fontSize: 12)),
-                  ],
+    final counts = breakdown.map((b) => b.count).toList();
+    final maxCount = counts.isNotEmpty ? counts.reduce((a, b) => a > b ? a : b) : 0;
+    
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                rating.toStringAsFixed(1),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 32,
+                  color: Color(0xFFFFB703),
                 ),
               ),
+              const SizedBox(width: 8),
+              const Icon(Icons.star, color: Color(0xFFFFB703), size: 28),
+              const SizedBox(width: 8),
+              Text('$count ratings', style: const TextStyle(color: Colors.grey, fontSize: 14)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ...breakdown.map((b) => Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Row(
+              children: [
+                Text('${b.stars}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                const Icon(Icons.star, color: Color(0xFFFFB703), size: 16),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: LinearProgressIndicator(
+                    value: maxCount > 0 ? b.count / maxCount : 0,
+                    backgroundColor: Colors.grey[200],
+                    color: const Color(0xFFFFB703),
+                    minHeight: 8,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text('${b.count}', style: const TextStyle(fontSize: 13)),
+              ],
             ),
-          ],
-        ),
+          )).toList(),
+        ],
       ),
     );
   }
@@ -1047,14 +1920,11 @@ class BorrowSuccessDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      backgroundColor: Colors.white,
-      child: Container(
-        width: MediaQuery.of(context).size.width > 400 ? 400 : double.infinity,
-        padding: const EdgeInsets.all(24),
+      child: Padding(
+        padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Close button in top right
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
@@ -1073,8 +1943,6 @@ class BorrowSuccessDialog extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 16),
-
-            // Success message
             Text(
               'Thank you for the book borrow request',
               style: GoogleFonts.montserrat(
@@ -1085,9 +1953,8 @@ class BorrowSuccessDialog extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 12),
-
             Text(
-              'Please, wait for the Admin\'s Approval',
+              "Please, wait for the Admin's Approval",
               style: GoogleFonts.montserrat(
                 fontWeight: FontWeight.w500,
                 fontSize: 16,
@@ -1096,8 +1963,6 @@ class BorrowSuccessDialog extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),
-
-            // Divider line like in the image
             const Divider(
               thickness: 1,
               color: Colors.grey,
@@ -1111,7 +1976,10 @@ class BorrowSuccessDialog extends StatelessWidget {
 
 class _ReviewItem extends StatelessWidget {
   final Review review;
-  const _ReviewItem({required this.review});
+  final bool isOwnReview;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
+  const _ReviewItem({required this.review, this.isOwnReview = false, this.onEdit, this.onDelete});
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -1120,149 +1988,125 @@ class _ReviewItem extends StatelessWidget {
       margin: const EdgeInsets.symmetric(vertical: 6),
       child: Padding(
         padding: const EdgeInsets.all(12),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  CircleAvatar(
-                    radius: 18,
-                    backgroundImage: NetworkImage(review.photo),
-                  ),
-                  const SizedBox(width: 10),
-                  Text(
-                    review.user,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  const Spacer(),
-                  Text(
-                    review.date,
-                    style: const TextStyle(
-                      color: Colors.blueGrey,
-                      fontSize: 12,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    CircleAvatar(
+                      backgroundImage: NetworkImage(review.photo),
+                      radius: 18,
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton(
-                    onPressed: () {},
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: const Color(0xFF0096C7),
-                      side: const BorderSide(color: Color(0xFF0096C7)),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 4,
-                      ),
-                    ),
-                    child: const Text('Follow'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: List.generate(
-                  review.rating,
-                      (i) => const Icon(Icons.star, color: Colors.amber, size: 14),
+                    const SizedBox(width: 10),
+                    Text(review.user, style: GoogleFonts.montserrat(fontWeight: FontWeight.bold)),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 6),
-              Text(review.text, style: const TextStyle(fontSize: 14)),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Text(
-                    '${review.likes} Likes',
-                    style: const TextStyle(
-                      color: Colors.blueGrey,
-                      fontSize: 12,
+                if (isOwnReview) Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.edit, color: Colors.blue),
+                      onPressed: onEdit,
+                      tooltip: 'Edit',
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  TextButton(onPressed: () {}, child: const Text('Like')),
-                  TextButton(onPressed: () {}, child: const Text('Comment')),
-                ],
-              ),
-            ],
-          ),
+                    IconButton(
+                      icon: const Icon(Icons.delete, color: Colors.red),
+                      onPressed: onDelete,
+                      tooltip: 'Delete',
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(Icons.star, color: Colors.amber, size: 16),
+                const SizedBox(width: 4),
+                Text(review.rating.toString(), style: GoogleFonts.montserrat(fontWeight: FontWeight.bold)),
+                const SizedBox(width: 12),
+                Text(review.date, style: GoogleFonts.montserrat(color: Colors.grey[600], fontSize: 12)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(review.text, style: GoogleFonts.montserrat()),
+          ],
         ),
       ),
     );
   }
 }
-
 class _AlsoEnjoyedSection extends StatelessWidget {
   final List<BookRecommendation> books;
   const _AlsoEnjoyedSection({required this.books});
 
   @override
   Widget build(BuildContext context) {
-    final safeBooks = books ?? [];
-    if (safeBooks.isEmpty) {
-      return const SizedBox(height: 170);
+    if (books.isEmpty) {
+      return Center(
+        child: Text('No related books found', style: TextStyle(color: Colors.grey)),
+      );
     }
-
     return SizedBox(
-      height: 190, // ✅ Increased to give enough height
+      height: 220,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        itemCount: safeBooks.length,
+        itemCount: books.length,
         separatorBuilder: (context, i) => const SizedBox(width: 14),
         itemBuilder: (context, i) {
-          final book = safeBooks[i];
-          if (book == null) {
-            return const SizedBox(width: 100, height: 170);
-          }
-          return SizedBox(
-            width: 100,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Image.network(
-                    book.cover ?? '',
-                    width: 90,
-                    height: 120,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) => Container(
-                      width: 90, // match width
-                      height: 120, // match height
-                      color: Colors.grey[300],
-                      child: const Icon(Icons.book, size: 40, color: Colors.grey),
+          final book = books[i];
+          return GestureDetector(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => BookDetailsPage(bookId: book.id),
+                ),
+              );
+            },
+            child: SizedBox(
+              width: 120,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.network(
+                      book.cover,
+                      width: 100,
+                      height: 140,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) => Container(
+                        width: 100,
+                        height: 140,
+                        color: Colors.grey[300],
+                        child: const Icon(Icons.book, size: 30, color: Colors.grey),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 6),
-                SizedBox(
-                  width: 90,
-                  child: Text(
-                    book.title ?? '',
+                  const SizedBox(height: 6),
+                  Text(
+                    book.title,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 13),
                   ),
-                ),
-                Text(
-                  book.author ?? '',
-                  style: const TextStyle(color: Colors.blueGrey, fontSize: 12),
-                ),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.star, color: Colors.amber, size: 14),
-                    Text(
-                      '${book.rating ?? ''}',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ],
-                ),
-              ],
+                  Text(
+                    book.author,
+                    style: const TextStyle(color: Colors.blueGrey, fontSize: 12),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Row(
+                    children: [
+                      const Icon(Icons.star, color: Colors.amber, size: 14),
+                      Text(book.rating.toStringAsFixed(1), style: const TextStyle(fontSize: 12)),
+                    ],
+                  ),
+                ],
+              ),
             ),
           );
         },
@@ -1270,8 +2114,6 @@ class _AlsoEnjoyedSection extends StatelessWidget {
     );
   }
 }
-
-
 class _SectionHeader extends StatelessWidget {
   final String title;
   final IconData? icon;
@@ -1331,12 +2173,14 @@ class WriteReviewDialog extends StatefulWidget {
   final String bookCover;
   final String bookName;
   final String authorName;
+  final String bookId;
 
   const WriteReviewDialog({
     Key? key,
     required this.bookCover,
     required this.bookName,
     required this.authorName,
+    required this.bookId,
   }) : super(key: key);
 
   @override
@@ -1347,6 +2191,56 @@ class _WriteReviewDialogState extends State<WriteReviewDialog> {
   int rating = 0;
   final TextEditingController reviewController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
+  bool _isSubmitting = false;
+
+  Future<void> _submitReviewAndRating(BuildContext context) async {
+    if (_formKey.currentState?.validate() != true) return;
+    if (rating == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Please select a rating.')),
+      );
+      return;
+    }
+    
+    setState(() => _isSubmitting = true);
+    
+    try {
+      final user = supabase.auth.currentUser;
+      if (user == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Please login to submit a review.')),
+        );
+        setState(() => _isSubmitting = false);
+        return;
+      }
+
+      // Insert review into the new reviews table
+      final response = await supabase
+        .from('reviews')
+        .insert({
+          'book_id': widget.bookId,
+          'user_id': user.id,
+          'rating': rating,
+          'review': reviewController.text.isNotEmpty ? reviewController.text : null,
+        })
+        .select();
+
+      if (response is List && response.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Review submitted successfully!')),
+        );
+        Navigator.pop(context);
+      } else {
+        throw Exception('Failed to insert review');
+      }
+      setState(() => _isSubmitting = false);
+    } catch (e) {
+      setState(() => _isSubmitting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to submit review: $e')),
+      );
+    }
+  }
 
   @override
   void dispose() {
@@ -1394,6 +2288,7 @@ class _WriteReviewDialogState extends State<WriteReviewDialog> {
                   fontSize: 28,
                   color: const Color(0xFF22223b),
                 ),
+                textAlign: TextAlign.center,
               ),
               const SizedBox(height: 24),
 
@@ -1445,7 +2340,7 @@ class _WriteReviewDialogState extends State<WriteReviewDialog> {
                   icon: Icon(
                     i < rating ? Icons.star : Icons.star_border,
                     color: const Color(0xFFFF6B35),
-                    size: 32,
+                    size: 28,
                   ),
                   onPressed: () {
                     setState(() {
@@ -1470,7 +2365,6 @@ class _WriteReviewDialogState extends State<WriteReviewDialog> {
                 ),
               ),
               const SizedBox(height: 8),
-
               // Review text field
               Form(
                 key: _formKey,
@@ -1510,47 +2404,32 @@ class _WriteReviewDialogState extends State<WriteReviewDialog> {
 
               // Submit button
               SizedBox(
-                width: 120,
+                width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: () {
-                    if (_formKey.currentState!.validate() && rating > 0) {
-                      // Handle review submission here
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Review submitted successfully!'),
-                          backgroundColor: Colors.green,
-                        ),
-                      );
-                      Navigator.of(context).pop();
-                    } else if (rating == 0) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Please select a rating'),
-                          backgroundColor: Colors.orange,
-                        ),
-                      );
-                    }
-                  },
+                  onPressed: _isSubmitting
+                      ? null
+                      : () => _submitReviewAndRating(context),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF38B000),
+                    backgroundColor: const Color(0xFF0096C7),
                     foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    textStyle: GoogleFonts.montserrat(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
                   ),
-                  child: const Text('Submit'),
+                  child: _isSubmitting
+                      ? const SizedBox(
+                          height: 22,
+                          width: 22,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Text('Submit Review'),
                 ),
               ),
             ],
           ),
         ),
-      ),
-    );
+      ));
   }
 }
 
@@ -1642,35 +2521,16 @@ class _BorrowRequestDialogState extends State<BorrowRequestDialog> {
           const SizedBox(height: 18),
           Text(widget.bookName,
               style: GoogleFonts.montserrat(
+
                 fontWeight: FontWeight.bold,
                 fontSize: 24,
                 color: const Color(0xFF22223b),
               )),
-          Text(widget.authorName,
-              style: GoogleFonts.montserrat(
-                fontWeight: FontWeight.w500,
-                fontSize: 18,
-                color: Colors.black87,
-              )),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(5, (i) => IconButton(
-              icon: Icon(
-                i < rating ? Icons.star : Icons.star_border,
-                color: const Color(0xFF43AA8B),
-                size: 28,
-              ),
-              onPressed: () {
-                setState(() {
-                  rating = i + 1;
-                });
-              },
-              splashRadius: 20,
-            )),
-          ),
-          const SizedBox(height: 10),
+         
+          const SizedBox(height: 13),
+         
           Align(
+
             alignment: Alignment.centerLeft,
             child: Padding(
               padding: const EdgeInsets.only(left: 8.0, bottom: 4),
@@ -1900,33 +2760,61 @@ class _BorrowRequestDialogState extends State<BorrowRequestDialog> {
               Expanded(
                 child: ElevatedButton(
                   onPressed: () {
-                    if (collectionDate == null || returnDate == null) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Please select both dates.')),
-                      );
-                      return;
-                    }
-                    // Close current dialog first
-                    Navigator.of(context).pop();
-                    // Show success message dialog
-                    showDialog(
-                      context: context,
-                      barrierDismissible: false,
-                      builder: (context) => const BorrowSuccessDialog(),
-                    );
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF0096C7),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    // Validate dates and show confirmation dialog
+                    if (collectionDate != null && returnDate != null) {
+                      showDialog(
+                        context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('Confirm Borrow Request'),
+                  content: Text(
+                    'Book: ${widget.bookName}\n'
+                    'Author: ${widget.authorName}\n'
+                    'Collection Date: ${_dateFormat.format(collectionDate!)}\n'
+                    'Return Date: ${_dateFormat.format(returnDate!)}\n\n'
+                    'Do you want to proceed with the request?',
                   ),
-                  child: const Text('CONFIRM'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('Cancel'),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        // Handle the borrow request submission
+                        // For now, just show a success message
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Borrow request submitted!'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                        Navigator.of(context).pop(); // Close the dialog
+                        Navigator.of(context).pop(); // Close the BorrowRequestDialog
+                      },
+                      child: const Text('Confirm'),
+                    ),
+                  ],
                 ),
-              ),
+              );
+             } else {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Please select both dates.')),
+              );
+              }
+            },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF0096C7),
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
+          child: const Text('CONFIRM'),
+        ),
+      ),
+
             ],
           ),
         ],

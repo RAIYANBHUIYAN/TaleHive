@@ -4,7 +4,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'book_details.dart';
 
 class FavoritesPage extends StatefulWidget {
-  const FavoritesPage({Key? key}) : super(key: key);
+  final VoidCallback? onFavoritesChanged; // Add this callback
+  
+  const FavoritesPage({Key? key, this.onFavoritesChanged}) : super(key: key);
 
   @override
   State<FavoritesPage> createState() => _FavoritesPageState();
@@ -74,6 +76,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
     }
   }
 
+  // ✅ Update the _removeFromFavorites method to notify parent
   Future<void> _removeFromFavorites(String bookId) async {
     try {
       final user = supabase.auth.currentUser;
@@ -91,6 +94,11 @@ class _FavoritesPageState extends State<FavoritesPage> {
           .update({'Favourites': favoritesString})
           .eq('id', user.id);
 
+      // ✅ Notify parent page about the change
+      if (widget.onFavoritesChanged != null) {
+        widget.onFavoritesChanged!();
+      }
+
       _showSnackBar('Removed from favorites', backgroundColor: Colors.orange);
     } catch (e) {
       print('Error removing from favorites: $e');
@@ -107,15 +115,48 @@ class _FavoritesPageState extends State<FavoritesPage> {
         content: Text(message, style: GoogleFonts.montserrat()),
         backgroundColor: backgroundColor ?? const Color(0xFF0096C7),
         behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.all(16),
+        margin: EdgeInsets.symmetric(
+          horizontal: MediaQuery.of(context).size.width * 0.05,
+          vertical: 16,
+        ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         duration: const Duration(seconds: 2),
       ),
     );
   }
 
+  // ✅ Get responsive grid count based on screen width
+  int _getGridCrossAxisCount(double screenWidth) {
+    if (screenWidth < 600) {
+      return 2; // Mobile
+    } else if (screenWidth < 900) {
+      return 3; // Tablet portrait
+    } else if (screenWidth < 1200) {
+      return 4; // Tablet landscape
+    } else {
+      return 5; // Desktop
+    }
+  }
+
+  // ✅ Get responsive aspect ratio
+  double _getGridAspectRatio(double screenWidth) {
+    if (screenWidth < 400) {
+      return 0.65; // Mobile - slightly taller cards for better book cover visibility
+    } else if (screenWidth < 600) {
+      return 0.68; // Small screens
+    } else if (screenWidth < 900) {
+      return 0.72; // Tablet portrait
+    } else {
+      return 0.75; // Tablet landscape and desktop
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final screenSize = MediaQuery.of(context).size;
+    final screenWidth = screenSize.width;
+    final screenHeight = screenSize.height;
+    
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
@@ -125,12 +166,15 @@ class _FavoritesPageState extends State<FavoritesPage> {
           icon: const Icon(Icons.arrow_back, color: Color(0xFF22223b)),
           onPressed: () => Navigator.pop(context),
         ),
-        title: Text(
-          'My Favorites',
-          style: GoogleFonts.montserrat(
-            color: const Color(0xFF22223b),
-            fontWeight: FontWeight.bold,
-            fontSize: 20,
+        title: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            'My Favorites',
+            style: GoogleFonts.montserrat(
+              color: const Color(0xFF22223b),
+              fontWeight: FontWeight.bold,
+              fontSize: screenWidth < 400 ? 18 : 20,
+            ),
           ),
         ),
         centerTitle: true,
@@ -144,95 +188,137 @@ class _FavoritesPageState extends State<FavoritesPage> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator(color: Color(0xFF0096C7)))
           : _favoriteBooks.isEmpty
-              ? _buildEmptyState()
-              : _buildFavoritesList(),
+              ? _buildEmptyState(screenWidth, screenHeight)
+              : _buildFavoritesList(screenWidth),
     );
   }
 
-  Widget _buildEmptyState() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0096C7).withOpacity(0.1),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.favorite_border,
-                size: 64,
-                color: Color(0xFF0096C7),
-              ),
+  Widget _buildEmptyState(double screenWidth, double screenHeight) {
+    return SafeArea(
+      child: SingleChildScrollView(
+        child: Container(
+          width: screenWidth,
+          constraints: BoxConstraints(
+            minHeight: screenHeight * 0.7,
+          ),
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: screenWidth * 0.08,
+              vertical: 32,
             ),
-            const SizedBox(height: 24),
-            Text(
-              'No Favorites Yet',
-              style: GoogleFonts.montserrat(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFF2D3748),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Start exploring and add books to your favorites by tapping the heart icon.',
-              style: GoogleFonts.montserrat(
-                fontSize: 16,
-                color: const Color(0xFF64748B),
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 32),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF0096C7),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: EdgeInsets.all(screenWidth < 400 ? 20 : 24),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0096C7).withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.favorite_border,
+                    size: screenWidth < 400 ? 48 : 64,
+                    color: const Color(0xFF0096C7),
+                  ),
                 ),
-              ),
-              child: Text(
-                'Explore Books',
-                style: GoogleFonts.montserrat(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 16,
+                
+                SizedBox(height: screenHeight * 0.03),
+                
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    'No Favorites Yet',
+                    style: GoogleFonts.montserrat(
+                      fontSize: screenWidth < 400 ? 20 : 24,
+                      fontWeight: FontWeight.bold,
+                      color: const Color(0xFF2D3748),
+                    ),
+                  ),
                 ),
-              ),
+                
+                SizedBox(height: screenHeight * 0.015),
+                
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.05),
+                  child: Text(
+                    'Start exploring and add books to your favorites by tapping the heart icon.',
+                    style: GoogleFonts.montserrat(
+                      fontSize: screenWidth < 400 ? 14 : 16,
+                      color: const Color(0xFF64748B),
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                
+                SizedBox(height: screenHeight * 0.04),
+                
+                SizedBox(
+                  width: screenWidth < 400 ? screenWidth * 0.7 : null,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF0096C7),
+                      foregroundColor: Colors.white,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: screenWidth < 400 ? 24 : 32,
+                        vertical: screenWidth < 400 ? 12 : 16,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        'Explore Books',
+                        style: GoogleFonts.montserrat(
+                          fontWeight: FontWeight.w600,
+                          fontSize: screenWidth < 400 ? 14 : 16,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildFavoritesList() {
+  Widget _buildFavoritesList(double screenWidth) {
+    final crossAxisCount = _getGridCrossAxisCount(screenWidth);
+    final aspectRatio = _getGridAspectRatio(screenWidth);
+    final horizontalPadding = screenWidth * 0.04;
+    
     return CustomScrollView(
       physics: const BouncingScrollPhysics(),
       slivers: [
         // Header info
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: EdgeInsets.all(horizontalPadding),
             child: Row(
               children: [
                 Icon(
                   Icons.favorite,
                   color: const Color(0xFF0096C7),
-                  size: 20,
+                  size: screenWidth < 400 ? 18 : 20,
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  '${_favoriteBooks.length} favorite${_favoriteBooks.length != 1 ? 's' : ''}',
-                  style: GoogleFonts.montserrat(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: const Color(0xFF2D3748),
+                SizedBox(width: screenWidth * 0.02),
+                Flexible(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      '${_favoriteBooks.length} favorite${_favoriteBooks.length != 1 ? 's' : ''}',
+                      style: GoogleFonts.montserrat(
+                        fontSize: screenWidth < 400 ? 14 : 16,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF2D3748),
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -242,18 +328,18 @@ class _FavoritesPageState extends State<FavoritesPage> {
         
         // Books grid
         SliverPadding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
           sliver: SliverGrid(
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              childAspectRatio: 0.65, // Made books taller for more content
-              crossAxisSpacing: 16,
-              mainAxisSpacing: 16,
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: crossAxisCount,
+              childAspectRatio: aspectRatio,
+              crossAxisSpacing: screenWidth < 400 ? 12 : 16,
+              mainAxisSpacing: screenWidth < 400 ? 12 : 16,
             ),
             delegate: SliverChildBuilderDelegate(
               (context, index) {
                 final book = _favoriteBooks[index];
-                return _buildFavoriteBookCard(book);
+                return _buildFavoriteBookCard(book, screenWidth);
               },
               childCount: _favoriteBooks.length,
             ),
@@ -261,15 +347,17 @@ class _FavoritesPageState extends State<FavoritesPage> {
         ),
         
         // Bottom padding
-        const SliverToBoxAdapter(
-          child: SizedBox(height: 20),
+        SliverToBoxAdapter(
+          child: SizedBox(height: MediaQuery.of(context).padding.bottom + 20),
         ),
       ],
     );
   }
 
-  Widget _buildFavoriteBookCard(Map<String, dynamic> book) {
+  Widget _buildFavoriteBookCard(Map<String, dynamic> book, double screenWidth) {
     final bookId = book['id']?.toString() ?? '';
+    final isSmallScreen = screenWidth < 400;
+    final cardPadding = isSmallScreen ? 8.0 : 12.0;
     
     return GestureDetector(
       onTap: () {
@@ -283,11 +371,11 @@ class _FavoritesPageState extends State<FavoritesPage> {
       child: Container(
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(isSmallScreen ? 12 : 16),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.08),
-              blurRadius: 12,
+              blurRadius: isSmallScreen ? 8 : 12,
               offset: const Offset(0, 4),
             ),
           ],
@@ -295,126 +383,269 @@ class _FavoritesPageState extends State<FavoritesPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Book image with remove button
-            Stack(
-              children: [
-                Container(
-                  height: 160,
-                  width: double.infinity,
-                  margin: const EdgeInsets.all(12),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Image.network(
-                      book['cover_image_url'] ?? '',
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return Container(
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF0096C7).withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Icon(
-                            Icons.picture_as_pdf,
-                            color: Color(0xFF0096C7),
-                            size: 40,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-                
-                // Remove from favorites button
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: GestureDetector(
-                    onTap: () => _showRemoveConfirmation(bookId, book['title'] ?? 'this book'),
-                    child: Container(
-                      padding: const EdgeInsets.all(6),
+            // ✅ Fixed book image container with proper aspect ratio
+            Expanded(
+              flex: isSmallScreen ? 6 : 7, // More space for image
+              child: Container(
+                width: double.infinity,
+                margin: EdgeInsets.all(cardPadding),
+                child: Stack(
+                  children: [
+                    // ✅ Properly fitted book cover
+                    Container(
+                      width: double.infinity,
+                      height: double.infinity,
                       decoration: BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.2),
-                            blurRadius: 4,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
+                        borderRadius: BorderRadius.circular(isSmallScreen ? 8 : 12),
+                        border: Border.all(
+                          color: Colors.grey.withOpacity(0.2),
+                          width: 1,
+                        ),
                       ),
-                      child: const Icon(
-                        Icons.favorite,
-                        color: Colors.red,
-                        size: 18,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(isSmallScreen ? 8 : 12),
+                        child: book['cover_image_url'] != null && book['cover_image_url'].toString().isNotEmpty
+                            ? Image.network(
+                                book['cover_image_url'],
+                                fit: BoxFit.cover, // ✅ This ensures the image covers the entire container
+                                width: double.infinity,
+                                height: double.infinity,
+                                loadingBuilder: (context, child, loadingProgress) {
+                                  if (loadingProgress == null) return child;
+                                  return Container(
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF0096C7).withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(isSmallScreen ? 8 : 12),
+                                    ),
+                                    child: Center(
+                                      child: CircularProgressIndicator(
+                                        color: const Color(0xFF0096C7),
+                                        strokeWidth: 2,
+                                        value: loadingProgress.expectedTotalBytes != null
+                                            ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                                            : null,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                errorBuilder: (context, error, stackTrace) {
+                                  return Container(
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                        colors: [
+                                          const Color(0xFF0096C7).withOpacity(0.1),
+                                          const Color(0xFF0096C7).withOpacity(0.2),
+                                        ],
+                                      ),
+                                      borderRadius: BorderRadius.circular(isSmallScreen ? 8 : 12),
+                                    ),
+                                    child: Center(
+                                      child: Column(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Icon(
+                                            Icons.picture_as_pdf,
+                                            color: const Color(0xFF0096C7),
+                                            size: isSmallScreen ? 24 : 32,
+                                          ),
+                                          if (!isSmallScreen) ...[
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              'PDF',
+                                              style: GoogleFonts.montserrat(
+                                                color: const Color(0xFF0096C7),
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
+                              )
+                            : Container(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                    colors: [
+                                      const Color(0xFF0096C7).withOpacity(0.1),
+                                      const Color(0xFF0096C7).withOpacity(0.2),
+                                    ],
+                                  ),
+                                  borderRadius: BorderRadius.circular(isSmallScreen ? 8 : 12),
+                                ),
+                                child: Center(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        Icons.picture_as_pdf,
+                                        color: const Color(0xFF0096C7),
+                                        size: isSmallScreen ? 24 : 32,
+                                      ),
+                                      if (!isSmallScreen) ...[
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          'PDF',
+                                          style: GoogleFonts.montserrat(
+                                            color: const Color(0xFF0096C7),
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              ),
                       ),
                     ),
-                  ),
+                    
+                    // ✅ Remove from favorites button - better positioned
+                    Positioned(
+                      top: 4,
+                      right: 4,
+                      child: GestureDetector(
+                        onTap: () => _showRemoveConfirmation(bookId, book['title'] ?? 'this book'),
+                        child: Container(
+                          padding: EdgeInsets.all(isSmallScreen ? 6 : 8),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.95),
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.15),
+                                blurRadius: 6,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Icon(
+                            Icons.favorite,
+                            color: Colors.red,
+                            size: isSmallScreen ? 16 : 20,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
             
-            // Book details
+            // ✅ Book details section - properly constrained
             Expanded(
+              flex: isSmallScreen ? 4 : 3, // Less space for text, more for image
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                padding: EdgeInsets.fromLTRB(cardPadding, 0, cardPadding, cardPadding),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      book['title'] ?? 'No Title',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.montserrat(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        height: 1.2,
+                    // ✅ Title - properly constrained
+                    Expanded(
+                      flex: 2,
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: Text(
+                          book['title'] ?? 'No Title',
+                          maxLines: isSmallScreen ? 2 : 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.montserrat(
+                            fontSize: isSmallScreen ? 11 : 13,
+                            fontWeight: FontWeight.bold,
+                            height: 1.2,
+                            color: const Color(0xFF2D3748),
+                          ),
+                        ),
                       ),
                     ),
                     
-                    const SizedBox(height: 4),
-                    
+                    // ✅ Author - constrained to one line
                     if (book['author_name'] != null && book['author_name'].toString().trim().isNotEmpty)
-                      Text(
-                        book['author_name'],
-                        style: GoogleFonts.montserrat(
-                          color: Colors.blueGrey,
-                          fontSize: 12,
+                      Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          book['author_name'],
+                          style: GoogleFonts.montserrat(
+                            color: const Color(0xFF64748B),
+                            fontSize: isSmallScreen ? 9 : 11,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                       ),
                     
-                    const Spacer(),
+                    const SizedBox(height: 8),
                     
-                    Row(
-                      children: [
-                        const Icon(Icons.star, color: Colors.amber, size: 14),
-                        const SizedBox(width: 4),
-                        Text(
-                          '4.5',
-                          style: GoogleFonts.montserrat(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const Spacer(),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF0096C7).withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            'FAVORITE',
-                            style: GoogleFonts.montserrat(
-                              color: const Color(0xFF0096C7),
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
+                    // ✅ Bottom row - rating and badge
+                    SizedBox(
+                      width: double.infinity,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          // Rating
+                          Expanded(
+                            flex: 1,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.star,
+                                  color: Colors.amber,
+                                  size: isSmallScreen ? 12 : 14,
+                                ),
+                                const SizedBox(width: 2),
+                                Text(
+                                  '4.5',
+                                  style: GoogleFonts.montserrat(
+                                    fontSize: isSmallScreen ? 9 : 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: const Color(0xFF2D3748),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                        ),
-                      ],
+                          
+                          // Favorite badge
+                          Expanded(
+                            flex: 1,
+                            child: Container(
+                              alignment: Alignment.centerRight,
+                              child: Container(
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: isSmallScreen ? 6 : 8,
+                                  vertical: isSmallScreen ? 2 : 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF0096C7).withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color: const Color(0xFF0096C7).withOpacity(0.3),
+                                    width: 0.5,
+                                  ),
+                                ),
+                                child: Text(
+                                  'FAVORITE',
+                                  style: GoogleFonts.montserrat(
+                                    color: const Color(0xFF0096C7),
+                                    fontSize: isSmallScreen ? 7 : 9,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
@@ -427,6 +658,8 @@ class _FavoritesPageState extends State<FavoritesPage> {
   }
 
   void _showRemoveConfirmation(String bookId, String bookTitle) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -434,17 +667,34 @@ class _FavoritesPageState extends State<FavoritesPage> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: Row(
             children: [
-              const Icon(Icons.favorite, color: Colors.red, size: 24),
+              Icon(
+                Icons.favorite, 
+                color: Colors.red, 
+                size: screenWidth < 400 ? 20 : 24,
+              ),
               const SizedBox(width: 12),
-              Text(
-                'Remove Favorite',
-                style: GoogleFonts.montserrat(fontWeight: FontWeight.bold),
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Remove Favorite',
+                    style: GoogleFonts.montserrat(
+                      fontWeight: FontWeight.bold,
+                      fontSize: screenWidth < 400 ? 16 : 18,
+                    ),
+                  ),
+                ),
               ),
             ],
           ),
-          content: Text(
-            'Remove "$bookTitle" from your favorites?',
-            style: GoogleFonts.montserrat(fontSize: 16),
+          content: SingleChildScrollView(
+            child: Text(
+              'Remove "$bookTitle" from your favorites?',
+              style: GoogleFonts.montserrat(
+                fontSize: screenWidth < 400 ? 14 : 16,
+              ),
+            ),
           ),
           actions: [
             TextButton(
@@ -454,6 +704,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
                 style: GoogleFonts.montserrat(
                   color: Colors.grey[600],
                   fontWeight: FontWeight.w600,
+                  fontSize: screenWidth < 400 ? 14 : 16,
                 ),
               ),
             ),
@@ -471,6 +722,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
                 style: GoogleFonts.montserrat(
                   color: Colors.white,
                   fontWeight: FontWeight.w600,
+                  fontSize: screenWidth < 400 ? 14 : 16,
                 ),
               ),
             ),

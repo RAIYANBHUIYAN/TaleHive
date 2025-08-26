@@ -268,209 +268,162 @@ class _LoginState extends State<Login> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[100], // Softer background color
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(25.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              // Add the logo at the top with error handling
-              Image.asset(
-                'Asset/images/logo.jpg',
-                height: 100,
-                errorBuilder: (context, error, stackTrace) {
-                  return Column(
-                    children: [
-                      Icon(
-                        Icons.image_not_supported,
-                        size: 60,
-                        color: Colors.grey,
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        'Logo not found',
-                        style: TextStyle(color: Colors.red, fontSize: 14),
-                      ),
-                    ],
-                  );
-                },
-              ),
-              SizedBox(height: 20), // Spacing below the logo
-              Column(
+      backgroundColor: Colors.grey[100],
+      body: Stack(
+        children: [
+          Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(25.0),
+              child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment:
-                    CrossAxisAlignment.center, // Center elements horizontally
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Text(
-                    'Welcome Back !!',
-                    style: TextStyle(
-                      fontSize: 40,
-                      color: Colors.blue,
-                    ), // Slightly smaller font size for mobile
-                  ),
-                  Text('Please enter your credentials to log in'),
-                  SizedBox(height: 20), // Add some spacing
-                  Container(
-                    width:
-                        300, // Keep a reasonable width for the form container
-                    child: Form(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                  // Add the logo at the top with error handling
+                  Image.asset(
+                    'Asset/images/logo.jpg',
+                    height: 100,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Column(
                         children: [
-                          TextFormField(
-                            decoration: InputDecoration(
-                              labelText: 'Username',
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(30.0),
-                                borderSide: BorderSide(
-                                  color: Colors.lightGreen,
-                                ),
-                              ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(30.0),
-                                borderSide: BorderSide(
-                                  color: Colors.lightGreen,
-                                ),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(30.0),
-                                borderSide: BorderSide(
-                                  color: Colors.lightGreenAccent,
-                                  width: 2.0,
-                                ),
-                              ),
-                            ),
+                          Icon(
+                            Icons.image_not_supported,
+                            size: 60,
+                            color: Colors.grey,
                           ),
-                          SizedBox(height: 15), // Spacing between fields
-                          TextFormField(
-                            decoration: InputDecoration(
-                              labelText: 'Password',
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(30.0),
-                                borderSide: BorderSide(
-                                  color: Colors.lightGreen,
-                                ),
-                              ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(30.0),
-                                borderSide: BorderSide(
-                                  color: Colors.lightGreen,
-                                ),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(30.0),
-                                borderSide: BorderSide(
-                                  color: Colors.lightGreenAccent,
-                                  width: 2.0,
-                                ),
-                              ),
-                              // Add the password visibility toggle icon
-                              suffixIcon: IconButton(
-                                icon: Icon(
-                                  _isPasswordVisible
-                                      ? Icons.visibility
-                                      : Icons.visibility_off,
-                                  color: Colors
-                                      .grey, // Adjust icon color as needed
-                                ),
-                                onPressed: () {
-                                  // Toggle password visibility state
-                                  setState(() {
-                                    _isPasswordVisible = !_isPasswordVisible;
-                                  });
-                                },
-                              ),
-                            ),
-                            obscureText:
-                                !_isPasswordVisible, // Use the state variable here
+                          SizedBox(height: 8),
+                          Text(
+                            'Logo not found',
+                            style: TextStyle(color: Colors.red, fontSize: 14),
                           ),
                         ],
-                      ),
-                    ),
-                  ),
-                  SizedBox(height: 10), // Spacing
-                  TextButton(
-                    onPressed: () {
-                      // Navigate to the Forgot Password page with a custom animation
-                      Navigator.push(
-                        context,
-                        PageRouteBuilder(
-                          pageBuilder:
-                              (context, animation, secondaryAnimation) =>
-                                  const ForgotPassword(),
-                          transitionsBuilder:
-                              (context, animation, secondaryAnimation, child) {
-                                const begin = Offset(
-                                  1.0,
-                                  0.0,
-                                ); // Start from the right
-                                const end = Offset.zero; // End at the center
-                                const curve =
-                                    Curves.ease; // Smooth animation curve
-
-                                var tween = Tween(
-                                  begin: begin,
-                                  end: end,
-                                ).chain(CurveTween(curve: curve));
-
-                                return SlideTransition(
-                                  position: animation.drive(tween),
-                                  child: child,
-                                );
-                              },
-                        ),
                       );
                     },
-                    child: Text(
-                      'Forgot password?',
-                      style: TextStyle(color: Colors.blueGrey),
-                    ),
                   ),
-                  SizedBox(height: 20), // Spacing
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  SizedBox(height: 20), // Spacing below the logo
+                  Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment:
+                        CrossAxisAlignment.center, // Center elements horizontally
                     children: [
-                      ElevatedButton(
-                        onPressed: () {},
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.lightGreen,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(30.0),
+                      Text(
+                        'Welcome Back !!',
+                        style: TextStyle(
+                          fontSize: 40,
+                          color: Colors.blue,
+                        ), // Slightly smaller font size for mobile
+                      ),
+                      Text('Please enter your credentials to log in'),
+                      SizedBox(height: 20), // Add some spacing
+                      Container(
+                        width:
+                            300, // Keep a reasonable width for the form container
+                        child: Form(
+                          key: _formKey,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              TextFormField(
+                                controller: emailController,
+                                decoration: InputDecoration(
+                                  labelText: 'Username',
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(30.0),
+                                    borderSide: BorderSide(
+                                      color: Colors.lightGreen,
+                                    ),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(30.0),
+                                    borderSide: BorderSide(
+                                      color: Colors.lightGreen,
+                                    ),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(30.0),
+                                    borderSide: BorderSide(
+                                      color: Colors.lightGreenAccent,
+                                      width: 2.0,
+                                    ),
+                                  ),
+                                ),
+                                validator: (value) {
+                                  if (value == null || value.isEmpty) {
+                                    return 'Please enter your email';
+                                  }
+                                  return null;
+                                },
+                              ),
+                              SizedBox(height: 15), // Spacing between fields
+                              TextFormField(
+                                controller: passwordController,
+                                decoration: InputDecoration(
+                                  labelText: 'Password',
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(30.0),
+                                    borderSide: BorderSide(
+                                      color: Colors.lightGreen,
+                                    ),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(30.0),
+                                    borderSide: BorderSide(
+                                      color: Colors.lightGreen,
+                                    ),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(30.0),
+                                    borderSide: BorderSide(
+                                      color: Colors.lightGreenAccent,
+                                      width: 2.0,
+                                    ),
+                                  ),
+                                  // Add the password visibility toggle icon
+                                  suffixIcon: IconButton(
+                                    icon: Icon(
+                                      _isPasswordVisible
+                                          ? Icons.visibility
+                                          : Icons.visibility_off,
+                                      color: Colors
+                                          .grey, // Adjust icon color as needed
+                                    ),
+                                    onPressed: () {
+                                      // Toggle password visibility state
+                                      setState(() {
+                                        _isPasswordVisible = !_isPasswordVisible;
+                                      });
+                                    },
+                                  ),
+                                ),
+                                obscureText:
+                                    !_isPasswordVisible, // Use the state variable here
+                                validator: (value) {
+                                  if (value == null || value.isEmpty) {
+                                    return 'Please enter your password';
+                                  }
+                                  return null;
+                                },
+                              ),
+                            ],
                           ),
-                          padding: EdgeInsets.symmetric(
-                            horizontal: 40,
-                            vertical: 15,
-                          ),
-                        ),
-                        child: Text(
-                          'LOG IN',
-                          style: TextStyle(color: Colors.white),
                         ),
                       ),
-                      ElevatedButton(
+                      SizedBox(height: 10), // Spacing
+                      TextButton(
                         onPressed: () {
-                          // Navigate to the Signup page with a custom animation
+                          // Navigate to the Forgot Password page with a custom animation
                           Navigator.push(
                             context,
                             PageRouteBuilder(
                               pageBuilder:
                                   (context, animation, secondaryAnimation) =>
-                                      const Signup(),
+                                      const ForgotPassword(),
                               transitionsBuilder:
-                                  (
-                                    context,
-                                    animation,
-                                    secondaryAnimation,
-                                    child,
-                                  ) {
+                                  (context, animation, secondaryAnimation, child) {
                                     const begin = Offset(
                                       1.0,
                                       0.0,
                                     ); // Start from the right
-                                    const end =
-                                        Offset.zero; // End at the center
+                                    const end = Offset.zero; // End at the center
                                     const curve =
                                         Curves.ease; // Smooth animation curve
 
@@ -487,128 +440,203 @@ class _LoginState extends State<Login> {
                             ),
                           );
                         },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.lightGreen,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(30.0),
-                          ),
-                          padding: EdgeInsets.symmetric(
-                            horizontal: 40,
-                            vertical: 15,
-                          ),
-                        ),
                         child: Text(
-                          'Sign Up',
-                          style: TextStyle(color: Colors.white),
+                          'Forgot password?',
+                          style: TextStyle(color: Colors.blueGrey),
                         ),
                       ),
-                    ],
-                  ),
-                  SizedBox(height: 20), // Spacing
-                  Row(
-                    children: const [
-                      Expanded(
-                        child: Divider(color: Colors.grey, thickness: 1),
-                      ),
-                      Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 8.0),
-                        child: Text("or", style: TextStyle(color: Colors.grey)),
-                      ),
-                      Expanded(
-                        child: Divider(color: Colors.grey, thickness: 1),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 16),
-                  Container(
-                    width: 300,
-                    child: ElevatedButton(
-                      onPressed: isLoading ? null : _loginWithGoogle,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: Colors.black87,
-                        elevation: 2,
-                        shadowColor: Colors.grey.withOpacity(0.5),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(30.0),
-                          side: BorderSide(color: Colors.grey[300]!, width: 1),
-                        ),
-                        padding: EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 15,
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
+                      SizedBox(height: 20), // Spacing
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
-                          Container(
-                            padding: EdgeInsets.all(2),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(4),
+                          ElevatedButton(
+                            onPressed: isLoading ? null : _loginWithEmail,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.lightGreen,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(30.0),
+                              ),
+                              padding: EdgeInsets.symmetric(
+                                horizontal: 40,
+                                vertical: 15,
+                              ),
                             ),
-                            child: Image.asset(
-                              'Asset/images/google.jpg',
-                              width: 24,
-                              height: 24,
-                              errorBuilder: (context, error, stackTrace) {
-                                // Fallback to icon if image not found
-                                return Icon(
-                                  Icons.g_mobiledata,
-                                  color: Color(0xFF4285F4),
-                                  size: 24,
-                                );
-                              },
+                            child: Text(
+                              'LOG IN',
+                              style: TextStyle(color: Colors.white),
                             ),
                           ),
-                          SizedBox(width: 12),
-                          Text(
-                            'Sign in with Google',
-                            style: TextStyle(
-                              color: Colors.black87,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w500,
-                              letterSpacing: 0.25,
+                        ElevatedButton(
+                          onPressed: () {
+                            // Navigate to the Signup page with a custom animation
+                            Navigator.push(
+                              context,
+                              PageRouteBuilder(
+                                pageBuilder:
+                                    (context, animation, secondaryAnimation) =>
+                                        const Signup(),
+                                transitionsBuilder:
+                                    (
+                                      context,
+                                      animation,
+                                      secondaryAnimation,
+                                      child,
+                                    ) {
+                                      const begin = Offset(
+                                        1.0,
+                                        0.0,
+                                      ); // Start from the right
+                                      const end =
+                                          Offset.zero; // End at the center
+                                      const curve =
+                                          Curves.ease; // Smooth animation curve
+
+                                      var tween = Tween(
+                                        begin: begin,
+                                        end: end,
+                                      ).chain(CurveTween(curve: curve));
+
+                                      return SlideTransition(
+                                        position: animation.drive(tween),
+                                        child: child,
+                                      );
+                                    },
+                              ),
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.lightGreen,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(30.0),
                             ),
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 40,
+                              vertical: 15,
+                            ),
+                          ),
+                          child: Text(
+                            'Sign Up',
+                            style: TextStyle(color: Colors.white),
+                          ),
+                        ),
+                    ]),
+                      SizedBox(height: 20), // Spacing
+                      Row(
+                        children: const [
+                          Expanded(
+                            child: Divider(color: Colors.grey, thickness: 1),
+                          ),
+                          Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 8.0),
+                            child: Text("or", style: TextStyle(color: Colors.grey)),
+                          ),
+                          Expanded(
+                            child: Divider(color: Colors.grey, thickness: 1),
                           ),
                         ],
                       ),
-                    ),
-                  ),
-                ],
-              ),
-
-              SizedBox(height: 50),
-
-              // Footer Text
-              Column(
-                children: [
-                  Text(
-                    'TaleHive',
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.teal[700],
-                    ),
-                  ),
-                  SizedBox(height: 8),
-                  Container(
-                    width: 300,
-                    child: Text(
-                      'Your Premier Digital Library for Exploring Technical, Training, and IT Books',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.grey[800],
-                        height: 1.4,
+                      SizedBox(height: 16),
+                      Container(
+                        width: 300,
+                        child: ElevatedButton(
+                          onPressed: isLoading ? null : _loginWithGoogle,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            foregroundColor: Colors.black87,
+                            elevation: 2,
+                            shadowColor: Colors.grey.withOpacity(0.5),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(30.0),
+                              side: BorderSide(color: Colors.grey[300]!, width: 1),
+                            ),
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 15,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                padding: EdgeInsets.all(2),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Image.asset(
+                                  'Asset/images/google.jpg',
+                                  width: 24,
+                                  height: 24,
+                                  errorBuilder: (context, error, stackTrace) {
+                                    // Fallback to icon if image not found
+                                    return Icon(
+                                      Icons.g_mobiledata,
+                                      color: Color(0xFF4285F4),
+                                      size: 24,
+                                    );
+                                  },
+                                ),
+                              ),
+                              SizedBox(width: 12),
+                              Text(
+                                'Sign in with Google',
+                                style: TextStyle(
+                                  color: Colors.black87,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                  letterSpacing: 0.25,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
-                      textAlign: TextAlign.center,
-                    ),
+                    ],
+                  ),
+
+                  SizedBox(height: 50),
+
+                  // Footer Text
+                  Column(
+                    children: [
+                      Text(
+                        'TaleHive',
+                        style: TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.teal[700],
+                        ),
+                      ),
+                      SizedBox(height: 8),
+                      Container(
+                        width: 300,
+                        child: Text(
+                          'Your Premier Digital Library for Exploring Technical, Training, and IT Books',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.grey[800],
+                            height: 1.4,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ],
+            ),
           ),
-        ),
+          // ✅ Loading overlay
+          if (isLoading)
+            Container(
+              color: Colors.black.withOpacity(0.3),
+              child: const Center(
+                child: CircularProgressIndicator(
+                  color: Colors.lightGreen,
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

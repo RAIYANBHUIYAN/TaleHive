@@ -11,6 +11,7 @@ import '../club/book_club.dart';
 import 'book_details.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'favorites_page.dart'; // Add this import at the top of the file
+import 'package:url_launcher/url_launcher.dart';
 
 class UserHomePage extends StatefulWidget {
   const UserHomePage({super.key});
@@ -117,7 +118,7 @@ class _UserHomePageState extends State<UserHomePage> {
     }
   }
 
-  // Add this new method to load user favorites
+  // Update the _loadUserFavorites method
   Future<void> _loadUserFavorites() async {
     setState(() => _isLoadingFavorites = true);
     try {
@@ -125,19 +126,17 @@ class _UserHomePageState extends State<UserHomePage> {
       if (user != null) {
         final response = await supabase
             .from('users')
-            .select('favourites')
+            .select('Favourites') // Use lowercase 'favourites'
             .eq('id', user.id)
             .single();
         
-        final favorites = response['favourites'];
+        final favorites = response['Favourites']; // Use lowercase 'favourites'
         if (favorites != null) {
           if (favorites is String) {
-            // If stored as comma-separated string
             setState(() {
               _favoriteBookIds = favorites.split(',').where((id) => id.isNotEmpty).toSet();
             });
           } else if (favorites is List) {
-            // If stored as array
             setState(() {
               _favoriteBookIds = favorites.map((id) => id.toString()).toSet();
             });
@@ -213,7 +212,6 @@ class _UserHomePageState extends State<UserHomePage> {
 
       final isFavorite = _favoriteBookIds.contains(bookId);
       
-      // Optimistically update UI
       setState(() {
         if (isFavorite) {
           _favoriteBookIds.remove(bookId);
@@ -222,14 +220,12 @@ class _UserHomePageState extends State<UserHomePage> {
         }
       });
 
-      // Update database
       final favoritesString = _favoriteBookIds.join(',');
       
       await supabase.from('users')
-          .update({'Favourites': favoritesString})
+          .update({'Favourites': favoritesString}) // Use lowercase 'favourites'
           .eq('id', user.id);
 
-      // Show success message
       if (mounted) {
         _showSnackBar(
           isFavorite 
@@ -243,7 +239,6 @@ class _UserHomePageState extends State<UserHomePage> {
     } catch (e) {
       print('Error toggling favorite: $e');
       
-      // Revert optimistic update on error
       setState(() {
         if (_favoriteBookIds.contains(bookId)) {
           _favoriteBookIds.remove(bookId);
@@ -407,44 +402,7 @@ class _UserHomePageState extends State<UserHomePage> {
                   ),
                 ),
                 
-                // Stats section
-                Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 20),
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.9),
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 10,
-                        offset: const Offset(0, 5),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      _buildStatItem(
-                        icon: Icons.menu_book,
-                        value: userDisplayData['books'].toString(),
-                        label: 'Books',
-                      ),
-                      _buildVerticalDivider(),
-                      _buildStatItem(
-                        icon: Icons.people,
-                        value: userDisplayData['friends'].toString(),
-                        label: 'Friends',
-                      ),
-                      _buildVerticalDivider(),
-                      _buildStatItem(
-                        icon: Icons.person_add,
-                        value: userDisplayData['following'].toString(),
-                        label: 'Following',
-                      ),
-                    ],
-                  ),
-                ),
+              
                 
                 const SizedBox(height: 30),
                 
@@ -474,25 +432,35 @@ class _UserHomePageState extends State<UserHomePage> {
                       _buildDrawerMenuItem(
                         icon: Icons.favorite,
                         title: 'Favorites',
-                        onTap: () {
+                        onTap: () async {
                           Navigator.pop(context); // Close drawer
-                          Navigator.push(
+                          
+                          // ✅ Navigate and wait for result
+                          await Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (context) => const FavoritesPage(),
+                              builder: (context) => FavoritesPage(
+                                onFavoritesChanged: () {
+                                  // ✅ Reload favorites when changed
+                                  _loadUserFavorites();
+                                },
+                              ),
                             ),
                           );
+                          
+                          // ✅ Also reload when returning from favorites page
+                          _loadUserFavorites();
                         },
                       ),
                       
-                      _buildDrawerMenuItem(
-                        icon: Icons.bookmark,
-                        title: 'Reading List',
-                        onTap: () {
-                          Navigator.pop(context);
-                          // Add your reading list navigation here
-                        },
-                      ),
+                      // _buildDrawerMenuItem(
+                      //   icon: Icons.bookmark,
+                      //   title: 'Reading List',
+                      //   onTap: () {
+                      //     Navigator.pop(context);
+                      //     // Add your reading list navigation here
+                      //   },
+                      // ),
                       
                       _buildDrawerMenuItem(
                         icon: Icons.history,
@@ -506,10 +474,15 @@ class _UserHomePageState extends State<UserHomePage> {
                       _buildDrawerMenuItem(
                         icon: Icons.help_outline,
                         title: 'Help & Support',
-                        onTap: () {
-                          Navigator.pop(context);
-                          // Add your help navigation here
-                        },
+                     onTap: () async {
+  Navigator.pop(context);
+  final Uri emailLaunchUri = Uri(
+    scheme: 'mailto',
+    path: 'knowldge465109@gmail.com',
+    query: 'subject=App Support&body=Describe your issue here',
+  );
+  await launchUrl(emailLaunchUri);
+},
                       ),
                       
                       const SizedBox(height: 30),
@@ -1586,12 +1559,28 @@ class _HorizontalBookList extends StatelessWidget {
         await Future.delayed(const Duration(milliseconds: 300));
         Navigator.pop(context);
         
-        Navigator.push(
+        // ✅ Add callback support
+        await Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => BookDetailsPage(bookId: bookId),
+            builder: (context) => BookDetailsPage(
+              bookId: bookId,
+              onFavoriteChanged: () {
+                // ✅ Reload favorites when changed
+                final parentState = context.findAncestorStateOfType<_UserHomePageState>();
+                if (parentState != null) {
+                  parentState._loadUserFavorites();
+                }
+              },
+            ),
           ),
         );
+        
+        // ✅ Also reload when returning
+        final parentState = context.findAncestorStateOfType<_UserHomePageState>();
+        if (parentState != null) {
+          parentState._loadUserFavorites();
+        }
       },
       child: Container(
         width: 150,
@@ -1802,13 +1791,27 @@ class _RecommendedList extends StatelessWidget {
     final bookId = book['id']?.toString() ?? '';
     
     return GestureDetector(
-      onTap: () {
-        Navigator.push(
+      onTap: () async {
+        await Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => BookDetailsPage(bookId: bookId),
+            builder: (context) => BookDetailsPage(
+              bookId: bookId,
+              onFavoriteChanged: () {
+                final parentState = context.findAncestorStateOfType<_UserHomePageState>();
+                if (parentState != null) {
+                  parentState._loadUserFavorites();
+                }
+              },
+            ),
           ),
         );
+        
+        // Reload when returning
+        final parentState = context.findAncestorStateOfType<_UserHomePageState>();
+        if (parentState != null) {
+          parentState._loadUserFavorites();
+        }
       },
       child: Container(
         width: 160,
@@ -1995,15 +1998,32 @@ class _RecentReadingsList extends StatelessWidget {
     );
   }
 
+  // In the _RecentReadingsList class, update the _buildRecentBookCard method
   Widget _buildRecentBookCard(BuildContext context, Map<String, dynamic> book) {
+    final bookId = book['id']?.toString() ?? '';
+    
     return GestureDetector(
-      onTap: () {
-        Navigator.push(
+      onTap: () async {
+        await Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => BookDetailsPage(bookId: book['id']?.toString() ?? 'mock'),
+            builder: (context) => BookDetailsPage(
+              bookId: bookId,
+              onFavoriteChanged: () {
+                final parentState = context.findAncestorStateOfType<_UserHomePageState>();
+                if (parentState != null) {
+                  parentState._loadUserFavorites();
+                }
+              },
+            ),
           ),
         );
+        
+        // Reload when returning
+        final parentState = context.findAncestorStateOfType<_UserHomePageState>();
+        if (parentState != null) {
+          parentState._loadUserFavorites();
+        }
       },
       child: Container(
         width: 140,
@@ -2020,9 +2040,54 @@ class _RecentReadingsList extends StatelessWidget {
         ),
         child: Column(
           children: [
+            // Header with favorite icon
             Container(
-              height: 120,
-              margin: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  GestureDetector(
+                    onTap: () {
+                      final parentState = context.findAncestorStateOfType<_UserHomePageState>();
+                      if (parentState != null && bookId.isNotEmpty) {
+                        parentState._toggleFavorite(bookId);
+                      }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Builder(
+                        builder: (context) {
+                          final parentState = context.findAncestorStateOfType<_UserHomePageState>();
+                          final isFavorite = parentState?._favoriteBookIds.contains(bookId) ?? false;
+                          
+                          return Icon(
+                            isFavorite ? Icons.favorite : Icons.favorite_border,
+                            color: isFavorite ? Colors.red : Colors.grey[600],
+                            size: 16,
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            // Book image
+            Container(
+              height: 100,
+              margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
                 child: Image.network(
@@ -2046,6 +2111,7 @@ class _RecentReadingsList extends StatelessWidget {
               ),
             ),
             
+            // Book details
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
@@ -2121,7 +2187,7 @@ class _Footer extends StatelessWidget {
           const SizedBox(height: 16),
           
           Text(
-            'TaleHive Library',
+            'TaleHive Community',
             style: GoogleFonts.montserrat(
               fontSize: 18,
               fontWeight: FontWeight.bold,

@@ -9,7 +9,7 @@ import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../user_authentication/login.dart';
-import '../pdf_viewer_page.dart';
+import '../pdf_preview/pdf_viewer_page.dart';
 import '../../admin_authentication/admin_login.dart';
 
 
