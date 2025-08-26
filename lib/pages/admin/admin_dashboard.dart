@@ -1,6 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'catalog/all_users_books_reqst_Catalog_management.dart';
+import 'books/books_and_club_management.dart';
+import 'users/user_management.dart';
+import '../../components/admin_sidebar.dart';
+import '../main_home_page/main_page.dart';
 
 class AdminDashboardPage extends StatefulWidget {
   const AdminDashboardPage({Key? key}) : super(key: key);
@@ -10,12 +17,110 @@ class AdminDashboardPage extends StatefulWidget {
 }
 
 class _AdminDashboardPageState extends State<AdminDashboardPage> {
+  final supabase = Supabase.instance.client;
   bool _isSidebarOpen = false;
+  bool _isLoading = true;
+  
+  // Dashboard stats
+  Map<String, int> _stats = {
+    'users': 0,
+    'authors': 0,
+    'books': 0,
+    'requests': 0,
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDashboardData();
+  }
+
+  // Load dashboard statistics from Supabase
+  Future<void> _loadDashboardData() async {
+    setState(() => _isLoading = true);
+    
+    try {
+      // Load users count
+      final usersData = await supabase
+          .from('users')
+          .select();
+      
+      // Load books count  
+      final booksData = await supabase
+          .from('books')
+          .select();
+      
+      // Get unique author count
+      final authorBooksData = await supabase
+          .from('books')
+          .select('author_id')
+          .not('author_id', 'is', null);
+
+      final uniqueAuthors = authorBooksData
+          .map((book) => book['author_id'])
+          .toSet()
+          .length;
+
+      setState(() {
+        _stats['users'] = usersData.length;
+        _stats['books'] = booksData.length;
+        _stats['authors'] = uniqueAuthors;
+        _stats['requests'] = 67; // Placeholder - add actual requests table query
+      });
+    } catch (e) {
+      print('Error loading dashboard data: $e');
+      // Set default values on error
+      setState(() {
+        _stats = {
+          'users': 150,
+          'authors': 25,
+          'books': 1500,
+          'requests': 67,
+        };
+      });
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  // Smooth transition route helper
+  Route _createRoute(Widget page) {
+    return PageRouteBuilder(
+      pageBuilder: (context, animation, secondaryAnimation) => page,
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        const begin = Offset(1.0, 0.0);
+        const end = Offset.zero;
+        const curve = Curves.ease;
+        var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+        return SlideTransition(
+          position: animation.drive(tween),
+          child: child,
+        );
+      },
+    );
+  }
 
   void _toggleSidebar() {
     setState(() {
       _isSidebarOpen = !_isSidebarOpen;
     });
+  }
+
+  void _handleSidebarTap(String label) {
+    if (label == 'Log Out') {
+      _showLogoutDialog();
+    } else if (label == 'Catalog') {
+      Navigator.of(context).push(_createRoute(const AllUsersBookRequestCatalogManagementPage()));
+      _toggleSidebar();
+    } else if (label == 'Books') {
+      Navigator.of(context).push(_createRoute(const BooksAndClubManagementPage()));
+      _toggleSidebar();
+    } else if (label == 'Users') {
+      Navigator.of(context).push(_createRoute(const UserManagementPage()));
+      _toggleSidebar();
+    } else {
+      _toggleSidebar();
+    }
   }
 
   @override
@@ -31,7 +136,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             children: [
               _buildHeader(),
               Expanded(
-                child: isMobile ? _buildMobileContent() : _buildDesktopContent(),
+                child: _isLoading 
+                    ? const Center(child: CircularProgressIndicator())
+                    : (isMobile ? _buildMobileContent() : _buildDesktopContent()),
               ),
             ],
           ),
@@ -51,187 +158,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             left: _isSidebarOpen ? 0 : -280,
             top: 0,
             bottom: 0,
-            child: _buildSidebar(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSidebar() {
-    return Container(
-      width: 280,
-      color: const Color(0xFF0096C7),
-      child: Column(
-        children: [
-          const SizedBox(height: 40),
-          // Logo Section
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-
-          ),
-          const SizedBox(height: 24),
-          // Profile Section
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 24),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: Colors.white.withOpacity(0.2),
-                width: 1,
-              ),
-            ),
-            child: Row(
-              children: [
-                // Profile Avatar
-                Container(
-                  width: 100,
-                  height: 100,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: Colors.white.withOpacity(0.3),
-                      width: 2,
-                    ),
-                  ),
-                  child: ClipOval(
-                    child: Image.asset(
-                      'Asset/images/loren.jpg',
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return const Icon(
-                          Icons.person,
-                          color: Color(0xFF0096C7),
-                          size: 30,
-                        );
-                      },
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                // Profile Info
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Admin',
-                        style: GoogleFonts.montserrat(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'System Administrator',
-                        style: GoogleFonts.montserrat(
-                          color: Colors.white70,
-                          fontSize: 11,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Container(
-                            width: 6,
-                            height: 6,
-                            decoration: const BoxDecoration(
-                              color: Colors.green,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Online',
-                            style: GoogleFonts.montserrat(
-                              color: Colors.white70,
-                              fontSize: 10,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-          // Navigation Menu
-          Expanded(
-            child: Column(
-              children: [
-                _buildSidebarItem(
-                  icon: Icons.dashboard,
-                  label: 'Dashboard',
-                  isSelected: true,
-                ),
-                _buildSidebarItem(
-                  icon: Icons.menu_book,
-                  label: 'Catalog',
-                ),
-                _buildSidebarItem(
-                  icon: Icons.book,
-                  label: 'Books',
-                ),
-                _buildSidebarItem(
-                  icon: Icons.people,
-                  label: 'Users',
-                ),
-              ],
-            ),
-          ),
-          // Logout Button
-          Container(
-            margin: const EdgeInsets.all(24),
-            child: _buildSidebarItem(
-              icon: Icons.logout,
-              label: 'Log Out',
+            child: AdminSidebar(
+              onItemTap: _handleSidebarTap,
+              isDashboard: true,
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildSidebarItem({
-    required IconData icon,
-    required String label,
-    bool isSelected = false,
-  }) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      decoration: BoxDecoration(
-        color: isSelected ? Colors.white.withOpacity(0.2) : Colors.transparent,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: ListTile(
-        leading: Icon(
-          icon,
-          color: Colors.white,
-          size: 24,
-        ),
-        title: Text(
-          label,
-          style: GoogleFonts.montserrat(
-            color: Colors.white,
-            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-            fontSize: 16,
-          ),
-        ),
-        onTap: () {
-          // Handle navigation
-          if (label == 'Log Out') {
-            // Handle logout
-          } else {
-            // Close sidebar after navigation
-            _toggleSidebar();
-          }
-        },
       ),
     );
   }
@@ -321,8 +253,22 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             ),
           ),
           
-          // Empty space to balance the layout
-          const SizedBox(width: 44),
+          // Refresh Button
+          GestureDetector(
+            onTap: _loadDashboardData,
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                Icons.refresh,
+                color: Colors.grey[600],
+                size: 20,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -393,8 +339,22 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             ),
           ),
           
-          // Empty space to balance the layout (same width as hamburger button)
-          const SizedBox(width: 44),
+          // Refresh Button
+          GestureDetector(
+            onTap: _loadDashboardData,
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                Icons.refresh,
+                color: Colors.grey[600],
+                size: 20,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -425,30 +385,26 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               children: [
                 AspectRatio(
                   aspectRatio: 1.0,
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      return PieChart(
-                        PieChartData(
-                          sections: [
-                            PieChartSectionData(
-                              color: const Color(0xFF0096C7),
-                              value: 70,
-                              title: '',
-                              radius: 60,
-                            ),
-                            PieChartSectionData(
-                              color: const Color(0xFF2D3748),
-                              value: 30,
-                              title: '',
-                              radius: 60,
-                            ),
-                          ],
-                          sectionsSpace: 0,
-                          centerSpaceRadius: 0,
-                          borderData: FlBorderData(show: false),
+                  child: PieChart(
+                    PieChartData(
+                      sections: [
+                        PieChartSectionData(
+                          color: const Color(0xFF0096C7),
+                          value: _stats['books']!.toDouble(),
+                          title: '',
+                          radius: 60,
                         ),
-                      );
-                    },
+                        PieChartSectionData(
+                          color: const Color(0xFF2D3748),
+                          value: (_stats['books']! * 0.3).toDouble(),
+                          title: '',
+                          radius: 60,
+                        ),
+                      ],
+                      sectionsSpace: 0,
+                      centerSpaceRadius: 0,
+                      borderData: FlBorderData(show: false),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -470,7 +426,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           ),
           
           // Stats Cards Section
-
           Column(
             children: [
               // First row - User Base and Book Count side by side
@@ -479,7 +434,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                   Expanded(
                     child: _buildStatCard(
                       icon: Icons.person,
-                      value: '0150',
+                      value: _stats['users'].toString().padLeft(4, '0'),
                       label: 'Total User Base',
                     ),
                   ),
@@ -487,7 +442,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                   Expanded(
                     child: _buildStatCard(
                       icon: Icons.menu_book,
-                      value: '01500',
+                      value: _stats['books'].toString().padLeft(5, '0'),
                       label: 'Total Book Count',
                     ),
                   ),
@@ -496,8 +451,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               const SizedBox(height: 16),
               // Second row - Book Borrow Requests full width
               _buildStatCard(
-                icon: Icons.menu_book,
-                value: '067',
+                icon: Icons.request_page,
+                value: _stats['requests'].toString().padLeft(3, '0'),
                 label: 'Total Book Borrow Requests',
               ),
             ],
@@ -550,30 +505,26 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               child: Column(
                 children: [
                   Expanded(
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        return PieChart(
-                          PieChartData(
-                            sections: [
-                              PieChartSectionData(
-                                color: const Color(0xFF0096C7),
-                                value: 70,
-                                title: '',
-                                radius: 80,
-                              ),
-                              PieChartSectionData(
-                                color: const Color(0xFF2D3748),
-                                value: 30,
-                                title: '',
-                                radius: 80,
-                              ),
-                            ],
-                            sectionsSpace: 0,
-                            centerSpaceRadius: 0,
-                            borderData: FlBorderData(show: false),
+                    child: PieChart(
+                      PieChartData(
+                        sections: [
+                          PieChartSectionData(
+                            color: const Color(0xFF0096C7),
+                            value: _stats['books']!.toDouble(),
+                            title: '',
+                            radius: 80,
                           ),
-                        );
-                      },
+                          PieChartSectionData(
+                            color: const Color(0xFF2D3748),
+                            value: (_stats['books']! * 0.3).toDouble(),
+                            title: '',
+                            radius: 80,
+                          ),
+                        ],
+                        sectionsSpace: 0,
+                        centerSpaceRadius: 0,
+                        borderData: FlBorderData(show: false),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -606,7 +557,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                     Expanded(
                       child: _buildStatCard(
                         icon: Icons.person,
-                        value: '0150',
+                        value: _stats['users'].toString().padLeft(4, '0'),
                         label: 'Total User Base',
                       ),
                     ),
@@ -614,15 +565,15 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                     Expanded(
                       child: _buildStatCard(
                         icon: Icons.menu_book,
-                        value: '01500',
+                        value: _stats['books'].toString().padLeft(5, '0'),
                         label: 'Total Book Count',
                       ),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
                       child: _buildStatCard(
-                        icon: Icons.menu_book,
-                        value: '067',
+                        icon: Icons.request_page,
+                        value: _stats['requests'].toString().padLeft(3, '0'),
                         label: 'Total Book Borrow Requests',
                       ),
                     ),
@@ -977,71 +928,108 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     );
   }
 
-  Widget _buildMostReadableBookItem() {
-    final bool isMobile = MediaQuery.of(context).size.width < 768;
-    
-    return Container(
-      margin: EdgeInsets.symmetric(horizontal: isMobile ? 16 : 20),
-      padding: EdgeInsets.all(isMobile ? 12 : 16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8F9FA),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: Colors.grey[200]!,
-          width: 1,
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: EdgeInsets.all(isMobile ? 6 : 8),
-            decoration: BoxDecoration(
-              color: const Color(0xFF0096C7).withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(
-              Icons.menu_book,
-              color: const Color(0xFF0096C7),
-              size: isMobile ? 16 : 20,
-            ),
+  void _showLogoutDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
           ),
-          SizedBox(width: isMobile ? 8 : 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Deep Learning - Matara',
-                  style: GoogleFonts.montserrat(
-                    fontWeight: FontWeight.w600,
-                    fontSize: isMobile ? 12 : 14,
-                    color: const Color(0xFF2D3748),
-                  ),
+          title: Row(
+            children: [
+              Icon(
+                Icons.logout,
+                color: Colors.red[600],
+                size: 24,
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Logout',
+                style: GoogleFonts.montserrat(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
                 ),
-                Text(
-                  'Branch ID: 1',
-                  style: GoogleFonts.montserrat(
-                    fontSize: isMobile ? 10 : 12,
-                    color: const Color(0xFF4A5568),
-                  ),
+              ),
+            ],
+          ),
+          content: Text(
+            'Are you sure you want to logout from admin panel?',
+            style: GoogleFonts.montserrat(
+              fontSize: 14,
+              color: Colors.grey[600],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(
+                'Cancel',
+                style: GoogleFonts.montserrat(
+                  color: Colors.grey[600],
+                  fontWeight: FontWeight.w500,
                 ),
-              ],
+              ),
             ),
-          ),
-          Container(
-            padding: EdgeInsets.all(isMobile ? 2 : 4),
-            decoration: BoxDecoration(
-              color: const Color(0xFF0096C7).withOpacity(0.1),
-              borderRadius: BorderRadius.circular(4),
+            ElevatedButton(
+              onPressed: _performLogout,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red[600],
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 10,
+                ),
+              ),
+              child: Text(
+                'Logout',
+                style: GoogleFonts.montserrat(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
-            child: Icon(
-              Icons.sync,
-              color: const Color(0xFF0096C7),
-              size: isMobile ? 12 : 16,
-            ),
-          ),
-        ],
-      ),
+          ],
+        );
+      },
     );
+  }
+
+  Future<void> _performLogout() async {
+    try {
+      Navigator.pop(context);
+      
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Text('Logging out...'),
+            ],
+          ),
+        ),
+      );
+
+      await supabase.auth.signOut();
+
+      if (mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => const MainPage()),
+          (Route<dynamic> route) => false,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error logging out: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 }
