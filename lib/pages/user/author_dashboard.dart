@@ -13,7 +13,7 @@ import 'package:path/path.dart' as path;
 import 'package:mime/mime.dart';
 
 import '../main_home_page/main_page.dart';
-import '../pdf_viewer_page.dart';
+import '../pdf_preview/pdf_viewer_page.dart';
 
 class AuthorDashboardPage extends StatefulWidget {
   const AuthorDashboardPage({Key? key}) : super(key: key);
@@ -428,9 +428,10 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => PdfViewerPage(
+          builder: (context) => PDFViewerPage(
             pdfUrl: pdfUrl,
             bookTitle: bookTitle,
+            bookId: book['id'], // Pass the required bookId argument
           ),
         ),
       );
