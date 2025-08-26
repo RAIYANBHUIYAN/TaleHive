@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../pages/user/author_dashboard.dart';
+import '../pages/user/user_home.dart';
 
 class Signup extends StatefulWidget {
   const Signup({super.key});
@@ -17,222 +18,561 @@ class _SignupState extends State<Signup> {
   final emailController = TextEditingController();
   final usernameController = TextEditingController();
   final passwordController = TextEditingController();
-
   bool _isPasswordVisible = false;
   bool isLoading = false;
+  
+  String selectedRole = 'Reader';
+  final List<String> roles = ['Reader', 'Author'];
+  final supabase = Supabase.instance.client;
 
   Future<void> _registerUser() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (_formKey.currentState!.validate()) {
+      try {
+        setState(() => isLoading = true);
 
-    try {
-      setState(() => isLoading = true);
+        // First check if email already exists in our tables
+        final existingUser = await supabase
+            .from('users')
+            .select('email')
+            .eq('email', emailController.text.trim())
+            .maybeSingle();
+        
+        final existingAuthor = await supabase
+            .from('authors')
+            .select('email')
+            .eq('email', emailController.text.trim())
+            .maybeSingle();
 
-      // Create Firebase Auth user
-      UserCredential userCredential = await FirebaseAuth.instance
-          .createUserWithEmailAndPassword(
-            email: emailController.text.trim(),
-            password: passwordController.text.trim(),
-          );
+        if (existingUser != null || existingAuthor != null) {
+          _showError('This email is already registered. Please login instead.');
+          return;
+        }
 
-      // Save user info in Firestore
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(userCredential.user!.uid)
-          .set({
-            'firstName': firstNameController.text.trim(),
-            'lastName': lastNameController.text.trim(),
-            'contactNo': contactController.text.trim(),
-            'email': emailController.text.trim(),
+        // Check if username already exists (for readers only)
+        if (selectedRole == 'Reader') {
+          final existingUsername = await supabase
+              .from('users')
+              .select('username')
+              .eq('username', usernameController.text.trim())
+              .maybeSingle();
+          
+          if (existingUsername != null) {
+            _showError('Username already exists. Please choose a different username.');
+            return;
+          }
+        }
+
+        final AuthResponse response = await supabase.auth.signUp(
+          email: emailController.text.trim(),
+          password: passwordController.text.trim(),
+          data: {
+            'role': selectedRole.toLowerCase(),
+            'first_name': firstNameController.text.trim(),
+            'last_name': lastNameController.text.trim(),
+            'contact_no': contactController.text.trim(),
             'username': usernameController.text.trim(),
-            'uid': userCredential.user!.uid,
-            'createdAt': Timestamp.now(),
-          });
+            'display_name': '${firstNameController.text.trim()} ${lastNameController.text.trim()}',
+          },
+        );
 
-      _showSnackBar(
-        'Account created successfully! Please login to continue.',
-        isError: false,
-      );
+        if (response.user != null) {
+          try {
+            String table = selectedRole == 'Author' ? 'authors' : 'users';
+            
+            // Base data that both tables have
+            Map<String, dynamic> userData = {
+              'id': response.user!.id,
+              'email': emailController.text.trim(),
+              'first_name': firstNameController.text.trim(),
+              'last_name': lastNameController.text.trim(),
+              'contact_no': contactController.text.trim(),
+              'role': selectedRole.toLowerCase(),
+            };
 
-      Navigator.pop(context);
-    } on FirebaseAuthException catch (e) {
-      String message;
-      switch (e.code) {
-        case 'email-already-in-use':
-          message = 'This email is already registered. Try logging in instead.';
-          break;
-        case 'weak-password':
-          message =
-              'Password is too weak. Use at least 6 characters with letters & numbers.';
-          break;
-        case 'invalid-email':
-          message = 'Please enter a valid email address.';
-          break;
-        case 'operation-not-allowed':
-          message = 'Email/password accounts are disabled. Contact support.';
-          break;
-        case 'too-many-requests':
-          message = 'Too many attempts. Try again later.';
-          break;
-        default:
-          message = 'An unknown error occurred.';
+            // Add table-specific fields
+            if (selectedRole == 'Author') {
+              userData.addAll({
+                'display_name': '${firstNameController.text.trim()} ${lastNameController.text.trim()}',
+                'bio': 'Passionate storyteller ready to share amazing stories.',
+                'books_published': 0,
+                'total_views': 0,
+                'total_downloads': 0,
+                'verification_status': 'pending',
+                'is_active': true,
+              });
+            } else {
+              userData.addAll({
+                'username': usernameController.text.trim(),
+                'favorite_genres': 'Fiction, Science',
+                'books_read': 0,
+                'is_active': true,
+              });
+            }
+
+            // Insert user data into custom table
+            await supabase.from(table).insert(userData);
+
+            // Show success message and navigate to appropriate dashboard
+            _showSuccess('Account created successfully! Please check your email to verify.');
+            
+            // Clear form
+            _clearForm();
+            
+            // Navigate to appropriate dashboard based on role
+            Future.delayed(const Duration(seconds: 2), () {
+              if (mounted) {
+                if (selectedRole == 'Author') {
+                  // Navigate to author dashboard
+                  Navigator.pushAndRemoveUntil(
+                    context,
+                    MaterialPageRoute(builder: (context) => const AuthorDashboardPage()),
+                    (route) => false,
+                  );
+                } else {
+                  // Navigate to user home for readers
+                  Navigator.pushAndRemoveUntil(
+                    context,
+                    MaterialPageRoute(builder: (context) => const UserHomePage()),
+                    (route) => false,
+                  );
+                }
+              }
+            });
+
+          } catch (dbError) {
+            print('Database error: $dbError');
+            
+            // Show specific error messages
+            String errorMessage = 'Failed to create profile';
+            
+            if (dbError.toString().contains('duplicate key value violates unique constraint')) {
+              if (dbError.toString().contains('username')) {
+                errorMessage = 'Username already exists. Please choose a different username.';
+              } else if (dbError.toString().contains('email')) {
+                errorMessage = 'Email already exists. Please use a different email.';
+              } else {
+                errorMessage = 'This account already exists. Please login instead.';
+              }
+            } else if (dbError.toString().contains('violates not-null constraint')) {
+              errorMessage = 'Please fill in all required fields.';
+            } else if (dbError.toString().contains('invalid input syntax')) {
+              errorMessage = 'Please check your input and try again.';
+            } else {
+              errorMessage = 'Profile creation failed. The account was created but profile setup incomplete.';
+            }
+            
+            _showError(errorMessage);
+          }
+        } else {
+          _showError('Failed to create account. Please try again.');
+        }
+      } on AuthException catch (e) {
+        print('Auth error: $e');
+        String errorMessage = 'Signup failed';
+        
+        if (e.message.contains('rate limit') || e.message.contains('too many')) {
+          errorMessage = 'Too many signup attempts. Please wait a few minutes and try again.';
+        } else if (e.message.contains('already registered') || e.message.contains('already exists')) {
+          errorMessage = 'This email is already registered. Please login instead.';
+        } else if (e.message.contains('invalid email')) {
+          errorMessage = 'Please enter a valid email address.';
+        } else if (e.message.contains('weak password')) {
+          errorMessage = 'Password is too weak. Please use at least 6 characters.';
+        } else {
+          errorMessage = e.message;
+        }
+        
+        _showError(errorMessage);
+      } catch (e) {
+        print('General error: $e');
+        _showError('Network error. Please check your connection and try again.');
+      } finally {
+        setState(() => isLoading = false);
       }
-      _showSnackBar(message, isError: true);
-    } catch (e) {
-      _showSnackBar('Error: $e', isError: true);
-    } finally {
-      setState(() => isLoading = false);
     }
   }
 
-  void _showSnackBar(String message, {bool isError = false}) {
+  void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
           children: [
-            Icon(
-              isError ? Icons.error_outline : Icons.check_circle_outline,
-              color: Colors.white,
-            ),
-            const SizedBox(width: 12),
+            Icon(Icons.error_outline, color: Colors.white, size: 24),
+            SizedBox(width: 12),
             Expanded(
-              child: Text(message, style: const TextStyle(fontSize: 16)),
+              child: Text(
+                message,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
             ),
           ],
         ),
-        backgroundColor: isError ? Colors.red[600] : Colors.green[600],
+        backgroundColor: Colors.red[600],
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        margin: const EdgeInsets.all(16),
-        duration: const Duration(seconds: 4),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        margin: EdgeInsets.all(16),
+        duration: Duration(seconds: 4),
+        elevation: 8,
       ),
     );
   }
 
-  InputDecoration _inputDecoration(String label) {
-    return InputDecoration(
-      labelText: label,
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(30.0)),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(30.0),
-        borderSide: const BorderSide(color: Colors.lightGreen),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(30.0),
-        borderSide: const BorderSide(
-          color: Colors.lightGreenAccent,
-          width: 2.0,
+  void _showSuccess(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(Icons.check_circle_outline, color: Colors.white, size: 24),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                message,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
         ),
+        backgroundColor: Colors.green[600],
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        margin: EdgeInsets.all(16),
+        duration: Duration(seconds: 3),
+        elevation: 8,
       ),
     );
+  }
+
+  void _clearForm() {
+    firstNameController.clear();
+    lastNameController.clear();
+    contactController.clear();
+    emailController.clear();
+    usernameController.clear();
+    passwordController.clear();
+    setState(() {
+      selectedRole = 'Reader';
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Sign Up'),
+        title: Text('Sign Up'),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
+          icon: Icon(Icons.arrow_back),
+          onPressed: () {
+            Navigator.pop(context); // Navigate back
+          },
         ),
       ),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(20.0),
           child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Image.asset('Asset/images/logo.jpg', height: 100),
-              const SizedBox(height: 20),
-              const Text(
+              Image.asset(
+                'Asset/images/logo.jpg', // Assuming the logo is here
+                height: 100,
+              ),
+              SizedBox(height: 20),
+              Text(
                 'Sign Up',
                 style: TextStyle(fontSize: 40, color: Colors.blue),
               ),
-              const Text('Please provide your information to sign up.'),
-              const SizedBox(height: 20),
-              SizedBox(
+              Text('Please provide your information to sign up.'),
+              SizedBox(height: 20),
+              
+              // Role Selection Card
+              Container(
+                width: 450,
+                margin: EdgeInsets.only(bottom: 20),
+                padding: EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey[50],
+                  borderRadius: BorderRadius.circular(15),
+                  border: Border.all(color: Colors.grey[300]!),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Select Your Role',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue[800],
+                      ),
+                    ),
+                    SizedBox(height: 12),
+                    Row(
+                      children: roles.map((role) {
+                        bool isSelected = selectedRole == role;
+                        Color roleColor = role == 'Author' ? Colors.purple : Colors.blue;
+                        IconData roleIcon = role == 'Author' ? Icons.edit_outlined : Icons.book_outlined;
+                        
+                        return Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                selectedRole = role;
+                              });
+                            },
+                            child: Container(
+                              margin: EdgeInsets.only(right: role == 'Reader' ? 8 : 0),
+                              padding: EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: isSelected ? roleColor.withOpacity(0.1) : Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: isSelected ? roleColor : Colors.grey[300]!,
+                                  width: isSelected ? 2 : 1,
+                                ),
+                              ),
+                              child: Column(
+                                children: [
+                                  Icon(
+                                    roleIcon,
+                                    color: isSelected ? roleColor : Colors.grey[600],
+                                    size: 32,
+                                  ),
+                                  SizedBox(height: 8),
+                                  Text(
+                                    role,
+                                    style: TextStyle(
+                                      color: isSelected ? roleColor : Colors.grey[600],
+                                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  SizedBox(height: 4),
+                                  Text(
+                                    role == 'Author' ? 'Publish Stories' : 'Read Books',
+                                    style: TextStyle(
+                                      color: Colors.grey[500],
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ),
+              ),
+              
+              Container(
                 width: 450,
                 child: Form(
                   key: _formKey,
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
                         children: [
                           Expanded(
                             child: TextFormField(
                               controller: firstNameController,
-                              validator: (v) => v == null || v.isEmpty
-                                  ? 'Enter first name'
-                                  : null,
-                              decoration: _inputDecoration('First Name'),
+                              validator: (value) => value == null || value.isEmpty ? 'Enter first name' : null,
+                              decoration: InputDecoration(
+                                labelText: 'First Name',
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(30.0),
+                                  borderSide: BorderSide(
+                                    color: selectedRole == 'Author' ? Colors.purple : Colors.lightGreen,
+                                  ),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(30.0),
+                                  borderSide: BorderSide(
+                                    color: selectedRole == 'Author' ? Colors.purple : Colors.lightGreen,
+                                  ),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(30.0),
+                                  borderSide: BorderSide(
+                                    color: selectedRole == 'Author' ? Colors.purple : Colors.lightGreenAccent,
+                                    width: 2.0,
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
-                          const SizedBox(width: 10),
+                          SizedBox(width: 10), // Spacing between fields
                           Expanded(
                             child: TextFormField(
                               controller: lastNameController,
-                              validator: (v) => v == null || v.isEmpty
-                                  ? 'Enter last name'
-                                  : null,
-                              decoration: _inputDecoration('Last Name'),
+                              validator: (value) => value == null || value.isEmpty ? 'Enter last name' : null,
+                              decoration: InputDecoration(
+                                labelText: 'Last Name',
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(30.0),
+                                  borderSide: BorderSide(
+                                    color: selectedRole == 'Author' ? Colors.purple : Colors.lightGreen,
+                                  ),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(30.0),
+                                  borderSide: BorderSide(
+                                    color: selectedRole == 'Author' ? Colors.purple : Colors.lightGreen,
+                                  ),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(30.0),
+                                  borderSide: BorderSide(
+                                    color: selectedRole == 'Author' ? Colors.purple : Colors.lightGreenAccent,
+                                    width: 2.0,
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 15),
+                      SizedBox(height: 15), // Spacing between rows
                       Row(
                         children: [
                           Expanded(
                             child: TextFormField(
                               controller: contactController,
-                              validator: (v) => v == null || v.isEmpty
-                                  ? 'Enter contact number'
-                                  : null,
+                              validator: (value) => value == null || value.isEmpty ? 'Enter contact number' : null,
+                              decoration: InputDecoration(
+                                labelText: 'Contact No',
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(30.0),
+                                  borderSide: BorderSide(
+                                    color: selectedRole == 'Author' ? Colors.purple : Colors.lightGreen,
+                                  ),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(30.0),
+                                  borderSide: BorderSide(
+                                    color: selectedRole == 'Author' ? Colors.purple : Colors.lightGreen,
+                                  ),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(30.0),
+                                  borderSide: BorderSide(
+                                    color: selectedRole == 'Author' ? Colors.purple : Colors.lightGreenAccent,
+                                    width: 2.0,
+                                  ),
+                                ),
+                              ),
                               keyboardType: TextInputType.phone,
-                              decoration: _inputDecoration('Contact No'),
                             ),
                           ),
-                          const SizedBox(width: 10),
+                          SizedBox(width: 10), // Spacing between fields
                           Expanded(
                             child: TextFormField(
                               controller: emailController,
-                              validator: (v) =>
-                                  v == null ||
-                                      !v.contains('@') ||
-                                      !v.contains('.')
-                                  ? 'Enter valid email'
-                                  : null,
+                              validator: (value) => value == null || !value.contains('@') || !value.contains('.') ? 'Enter valid email' : null,
+                              decoration: InputDecoration(
+                                labelText: 'Email',
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(30.0),
+                                  borderSide: BorderSide(
+                                    color: selectedRole == 'Author' ? Colors.purple : Colors.lightGreen,
+                                  ),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(30.0),
+                                  borderSide: BorderSide(
+                                    color: selectedRole == 'Author' ? Colors.purple : Colors.lightGreen,
+                                  ),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(30.0),
+                                  borderSide: BorderSide(
+                                    color: selectedRole == 'Author' ? Colors.purple : Colors.lightGreenAccent,
+                                    width: 2.0,
+                                  ),
+                                ),
+                              ),
                               keyboardType: TextInputType.emailAddress,
-                              decoration: _inputDecoration('Email'),
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 15),
+                      SizedBox(height: 15), // Spacing between rows
                       Row(
                         children: [
                           Expanded(
                             child: TextFormField(
                               controller: usernameController,
-                              validator: (v) => v == null || v.isEmpty
-                                  ? 'Enter username'
-                                  : null,
-                              decoration: _inputDecoration('Username'),
+                              validator: (value) => value == null || value.isEmpty ? 'Enter username' : null,
+                              decoration: InputDecoration(
+                                labelText: 'Username',
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(30.0),
+                                  borderSide: BorderSide(
+                                    color: selectedRole == 'Author' ? Colors.purple : Colors.lightGreen,
+                                  ),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(30.0),
+                                  borderSide: BorderSide(
+                                    color: selectedRole == 'Author' ? Colors.purple : Colors.lightGreen,
+                                  ),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(30.0),
+                                  borderSide: BorderSide(
+                                    color: selectedRole == 'Author' ? Colors.purple : Colors.lightGreenAccent,
+                                    width: 2.0,
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
-                          const SizedBox(width: 10),
+                          SizedBox(width: 10), // Spacing between fields
                           Expanded(
                             child: TextFormField(
                               controller: passwordController,
-                              validator: (v) => v == null || v.length < 6
-                                  ? 'Minimum 6 characters'
-                                  : null,
-                              obscureText: !_isPasswordVisible,
-                              decoration: _inputDecoration('Password').copyWith(
+                              validator: (value) => value == null || value.length < 6 ? 'Minimum 6 characters' : null,
+                              decoration: InputDecoration(
+                                labelText: 'Password',
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(30.0),
+                                  borderSide: BorderSide(
+                                    color: selectedRole == 'Author' ? Colors.purple : Colors.lightGreen,
+                                  ),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(30.0),
+                                  borderSide: BorderSide(
+                                    color: selectedRole == 'Author' ? Colors.purple : Colors.lightGreen,
+                                  ),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(30.0),
+                                  borderSide: BorderSide(
+                                    color: selectedRole == 'Author' ? Colors.purple : Colors.lightGreenAccent,
+                                    width: 2.0,
+                                  ),
+                                ),
                                 suffixIcon: IconButton(
                                   icon: Icon(
                                     _isPasswordVisible
                                         ? Icons.visibility
                                         : Icons.visibility_off,
+                                    color: Colors.grey,
                                   ),
                                   onPressed: () {
                                     setState(() {
@@ -241,48 +581,55 @@ class _SignupState extends State<Signup> {
                                   },
                                 ),
                               ),
+                              obscureText: !_isPasswordVisible,
                             ),
                           ),
                         ],
-                      ),
-                      const SizedBox(height: 20),
-                      ElevatedButton(
-                        onPressed: isLoading ? null : _registerUser,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.lightGreen,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(30.0),
-                          ),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 80,
-                            vertical: 15,
-                          ),
-                        ),
-                        child: isLoading
-                            ? const CircularProgressIndicator(
-                                color: Colors.white,
-                              )
-                            : const Text(
-                                'SIGN UP',
-                                style: TextStyle(color: Colors.white),
-                              ),
                       ),
                     ],
                   ),
                 ),
               ),
-              const SizedBox(height: 40),
-              const Text(
-                'TaleHive',
-                style: TextStyle(fontSize: 24, color: Colors.blue),
-              ),
-              const SizedBox(
-                width: 300,
-                child: Text(
-                  'Your Premier Digital Library for Exploring Technical, Training, and IT Books',
-                  style: TextStyle(fontSize: 14, color: Colors.black87),
-                  textAlign: TextAlign.center,
+              SizedBox(height: 20), // Spacing before button
+              ElevatedButton(
+                onPressed: isLoading ? null : _registerUser,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: selectedRole == 'Author' ? Colors.purple : Colors.lightGreen,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(30.0),
+                  ),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: 80,
+                    vertical: 15,
+                  ),
                 ),
+                child: isLoading
+                    ? CircularProgressIndicator(color: Colors.white)
+                    : Text(
+                        'SIGN UP AS ${selectedRole.toUpperCase()}', 
+                        style: TextStyle(color: Colors.white)
+                      ),
+              ),
+              SizedBox(height: 40), // Spacing before library info
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Text(
+                    'TaleHive',
+                    style: TextStyle(fontSize: 24, color: Colors.blue),
+                  ),
+                  Container(
+                    width: 300,
+                    child: Text(
+                      selectedRole == 'Author' 
+                          ? 'Your Platform to Publish and Share Amazing Stories with Thousands of Readers'
+                          : 'Your Premier Digital Library for Exploring Technical, Training, and IT Books',
+                      style: TextStyle(fontSize: 14, color: Colors.black87),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

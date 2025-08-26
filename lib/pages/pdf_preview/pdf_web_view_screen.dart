@@ -1,39 +1,87 @@
 import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:http/http.dart' as http;
+import 'dart:typed_data';
 
-class PdfPreviewScreen extends StatefulWidget {
+class PdfWebViewScreen extends StatefulWidget {
   final String pdfUrl;
   final String bookTitle;
   final String author;
-  final int maxPages;
   final bool isPreview;
+  final int maxPages;
 
-  const PdfPreviewScreen({
+  const PdfWebViewScreen({
     Key? key,
     required this.pdfUrl,
     required this.bookTitle,
     this.author = '',
-    this.maxPages = 10,
     this.isPreview = true,
+    this.maxPages = 10,
   }) : super(key: key);
 
   @override
-  State<PdfPreviewScreen> createState() => _PdfPreviewScreenState();
+  State<PdfWebViewScreen> createState() => _PdfWebViewScreenState();
 }
 
-class _PdfPreviewScreenState extends State<PdfPreviewScreen> {
+class _PdfWebViewScreenState extends State<PdfWebViewScreen> {
   late PdfViewerController _pdfViewerController;
   int _currentPageNumber = 1;
   int _totalPages = 0;
   bool _isLoading = true;
   String? _errorMessage;
+  Uint8List? _pdfBytes;
 
   @override
   void initState() {
     super.initState();
     _pdfViewerController = PdfViewerController();
-    print('Loading PDF from URL: ${widget.pdfUrl}');
+    _loadPdfFromUrl();
+  }
+
+  Future<void> _loadPdfFromUrl() async {
+    try {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
+
+      print('Loading PDF from: ${widget.pdfUrl}');
+      
+      // Convert Google Drive URL to download format
+      String downloadUrl = widget.pdfUrl;
+      if (widget.pdfUrl.contains('drive.google.com')) {
+        String fileId = '';
+        if (widget.pdfUrl.contains('/file/d/')) {
+          fileId = widget.pdfUrl.split('/file/d/')[1].split('/')[0];
+        } else if (widget.pdfUrl.contains('id=')) {
+          fileId = widget.pdfUrl.split('id=')[1].split('&')[0];
+        }
+        
+        if (fileId.isNotEmpty) {
+          downloadUrl = 'https://drive.google.com/uc?export=download&id=$fileId';
+        }
+      }
+
+      // Download PDF bytes
+      final response = await http.get(Uri.parse(downloadUrl));
+      
+      if (response.statusCode == 200) {
+        setState(() {
+          _pdfBytes = response.bodyBytes;
+          _isLoading = false;
+        });
+        print('PDF loaded successfully. Size: ${_pdfBytes!.length} bytes');
+      } else {
+        throw Exception('Failed to download PDF: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error loading PDF: $e');
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Failed to load PDF: ${e.toString()}';
+      });
+    }
   }
 
   @override
@@ -106,65 +154,87 @@ class _PdfPreviewScreenState extends State<PdfPreviewScreen> {
                       ),
                     ),
                   ),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      Navigator.pushNamed(context, '/login');
+                    },
+                    child: Text(
+                      'Login',
+                      style: GoogleFonts.montserrat(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.orange[700],
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
           
           // Page counter
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            color: Colors.white,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  _isLoading 
-                      ? 'Loading...' 
-                      : 'Page $_currentPageNumber of ${widget.isPreview && _totalPages > widget.maxPages ? widget.maxPages : _totalPages}',
-                  style: GoogleFonts.montserrat(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                if (widget.isPreview && _currentPageNumber >= widget.maxPages)
-                  ElevatedButton(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      Navigator.pushNamed(context, '/login');
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF0096C7),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          if (!_isLoading && _errorMessage == null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              color: Colors.white,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    widget.isPreview 
+                        ? 'Page $_currentPageNumber of ${_totalPages > 0 ? (_totalPages > widget.maxPages ? widget.maxPages : _totalPages) : widget.maxPages}'
+                        : 'Page $_currentPageNumber of $_totalPages',
+                    style: GoogleFonts.montserrat(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
                     ),
-                    child: Text(
-                      'Login to Continue',
-                      style: GoogleFonts.montserrat(
-                        fontSize: 12,
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
+                  ),
+                  if (widget.isPreview && _currentPageNumber >= widget.maxPages)
+                    ElevatedButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        Navigator.pushNamed(context, '/login');
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF0096C7),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      ),
+                      child: Text(
+                        'Login to Continue',
+                        style: GoogleFonts.montserrat(
+                          fontSize: 12,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
-          ),
           
           // PDF Viewer or Error/Loading state
           Expanded(
-            child: _errorMessage != null
-                ? _buildErrorWidget()
-                : _isLoading
-                    ? _buildLoadingWidget()
-                    : _buildPdfViewer(),
+            child: _buildContent(),
           ),
         ],
       ),
     );
   }
 
+  Widget _buildContent() {
+    if (_isLoading) {
+      return _buildLoadingWidget();
+    } else if (_errorMessage != null) {
+      return _buildErrorWidget();
+    } else if (_pdfBytes != null) {
+      return _buildPdfViewer();
+    } else {
+      return _buildErrorWidget();
+    }
+  }
+
   Widget _buildPdfViewer() {
-    return SfPdfViewer.network(
-      widget.pdfUrl,
+    return SfPdfViewer.memory(
+      _pdfBytes!,
       controller: _pdfViewerController,
       onPageChanged: (PdfPageChangedDetails details) {
         setState(() {
@@ -180,19 +250,23 @@ class _PdfPreviewScreenState extends State<PdfPreviewScreen> {
       onDocumentLoaded: (PdfDocumentLoadedDetails details) {
         setState(() {
           _totalPages = details.document.pages.count;
-          _isLoading = false;
         });
         print('PDF loaded successfully. Total pages: $_totalPages');
+        
+        // If in preview mode and PDF has more than maxPages, show warning
+        if (widget.isPreview && _totalPages > widget.maxPages) {
+          _showPreviewInfoDialog();
+        }
       },
       onDocumentLoadFailed: (PdfDocumentLoadFailedDetails details) {
         setState(() {
-          _isLoading = false;
           _errorMessage = details.error;
         });
         print('PDF load failed: ${details.error}');
       },
       enableDoubleTapZooming: true,
       enableTextSelection: false, // Disable text selection in preview
+      pageSpacing: 4,
     );
   }
 
@@ -208,7 +282,7 @@ class _PdfPreviewScreenState extends State<PdfPreviewScreen> {
             ),
             const SizedBox(height: 16),
             Text(
-              'Loading PDF...',
+              'Loading PDF preview...',
               style: GoogleFonts.montserrat(
                 fontSize: 16,
                 color: Colors.grey[600],
@@ -216,7 +290,7 @@ class _PdfPreviewScreenState extends State<PdfPreviewScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Please wait while we load the book preview',
+              'Please wait while we prepare your book preview',
               style: GoogleFonts.montserrat(
                 fontSize: 12,
                 color: Colors.grey[500],
@@ -262,25 +336,39 @@ class _PdfPreviewScreenState extends State<PdfPreviewScreen> {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: () {
-                  setState(() {
-                    _isLoading = true;
-                    _errorMessage = null;
-                  });
-                  // Try to reload by rebuilding the widget
-                  _pdfViewerController = PdfViewerController();
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0096C7),
-                ),
-                child: Text(
-                  'Try Again',
-                  style: GoogleFonts.montserrat(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  ElevatedButton(
+                    onPressed: () {
+                      _loadPdfFromUrl();
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF0096C7),
+                    ),
+                    child: Text(
+                      'Try Again',
+                      style: GoogleFonts.montserrat(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 12),
+                  OutlinedButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      Navigator.pushNamed(context, '/login');
+                    },
+                    child: Text(
+                      'Login for Better Access',
+                      style: GoogleFonts.montserrat(
+                        color: const Color(0xFF0096C7),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -326,6 +414,53 @@ class _PdfPreviewScreenState extends State<PdfPreviewScreen> {
         ],
       ),
     );
+  }
+
+  void _showPreviewInfoDialog() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.info, color: Colors.orange[700]),
+              const SizedBox(width: 8),
+              Text(
+                'Preview Mode',
+                style: GoogleFonts.montserrat(fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          content: Text(
+            'This book has $_totalPages pages, but you can only view the first ${widget.maxPages} pages in preview mode. Login to access the complete book.',
+            style: GoogleFonts.montserrat(),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Got it'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context); // Close dialog
+                Navigator.pop(context); // Close PDF viewer
+                Navigator.pushNamed(context, '/login'); // Go to login
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0096C7),
+              ),
+              child: Text(
+                'Login Now',
+                style: GoogleFonts.montserrat(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    });
   }
 
   @override

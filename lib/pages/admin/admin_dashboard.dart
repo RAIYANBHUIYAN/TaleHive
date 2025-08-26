@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import 'catalog/all_users_books_reqst_Catalog_management.dart';
 import 'books/books_and_club_management.dart';
 import 'users/user_management.dart';
 import '../../components/admin_sidebar.dart';
+import '../main_home_page/main_page.dart';
 
 class AdminDashboardPage extends StatefulWidget {
   const AdminDashboardPage({Key? key}) : super(key: key);
@@ -14,6 +17,72 @@ class AdminDashboardPage extends StatefulWidget {
 }
 
 class _AdminDashboardPageState extends State<AdminDashboardPage> {
+  final supabase = Supabase.instance.client;
+  bool _isSidebarOpen = false;
+  bool _isLoading = true;
+  
+  // Dashboard stats
+  Map<String, int> _stats = {
+    'users': 0,
+    'authors': 0,
+    'books': 0,
+    'requests': 0,
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDashboardData();
+  }
+
+  // Load dashboard statistics from Supabase
+  Future<void> _loadDashboardData() async {
+    setState(() => _isLoading = true);
+    
+    try {
+      // Load users count
+      final usersData = await supabase
+          .from('users')
+          .select();
+      
+      // Load books count  
+      final booksData = await supabase
+          .from('books')
+          .select();
+      
+      // Get unique author count
+      final authorBooksData = await supabase
+          .from('books')
+          .select('author_id')
+          .not('author_id', 'is', null);
+
+      final uniqueAuthors = authorBooksData
+          .map((book) => book['author_id'])
+          .toSet()
+          .length;
+
+      setState(() {
+        _stats['users'] = usersData.length;
+        _stats['books'] = booksData.length;
+        _stats['authors'] = uniqueAuthors;
+        _stats['requests'] = 67; // Placeholder - add actual requests table query
+      });
+    } catch (e) {
+      print('Error loading dashboard data: $e');
+      // Set default values on error
+      setState(() {
+        _stats = {
+          'users': 150,
+          'authors': 25,
+          'books': 1500,
+          'requests': 67,
+        };
+      });
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
   // Smooth transition route helper
   Route _createRoute(Widget page) {
     return PageRouteBuilder(
@@ -30,7 +99,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       },
     );
   }
-  bool _isSidebarOpen = false;
 
   void _toggleSidebar() {
     setState(() {
@@ -40,7 +108,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
   void _handleSidebarTap(String label) {
     if (label == 'Log Out') {
-      // TODO: Implement logout logic
+      _showLogoutDialog();
     } else if (label == 'Catalog') {
       Navigator.of(context).push(_createRoute(const AllUsersBookRequestCatalogManagementPage()));
       _toggleSidebar();
@@ -68,7 +136,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             children: [
               _buildHeader(),
               Expanded(
-                child: isMobile ? _buildMobileContent() : _buildDesktopContent(),
+                child: _isLoading 
+                    ? const Center(child: CircularProgressIndicator())
+                    : (isMobile ? _buildMobileContent() : _buildDesktopContent()),
               ),
             ],
           ),
@@ -97,10 +167,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       ),
     );
   }
-
-
-
-
 
   Widget _buildHeader() {
     final bool isMobile = MediaQuery.of(context).size.width < 768;
@@ -187,8 +253,22 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             ),
           ),
           
-          // Empty space to balance the layout
-          const SizedBox(width: 44),
+          // Refresh Button
+          GestureDetector(
+            onTap: _loadDashboardData,
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                Icons.refresh,
+                color: Colors.grey[600],
+                size: 20,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -259,8 +339,22 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             ),
           ),
           
-          // Empty space to balance the layout (same width as hamburger button)
-          const SizedBox(width: 44),
+          // Refresh Button
+          GestureDetector(
+            onTap: _loadDashboardData,
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                Icons.refresh,
+                color: Colors.grey[600],
+                size: 20,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -291,30 +385,26 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               children: [
                 AspectRatio(
                   aspectRatio: 1.0,
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      return PieChart(
-                        PieChartData(
-                          sections: [
-                            PieChartSectionData(
-                              color: const Color(0xFF0096C7),
-                              value: 70,
-                              title: '',
-                              radius: 60,
-                            ),
-                            PieChartSectionData(
-                              color: const Color(0xFF2D3748),
-                              value: 30,
-                              title: '',
-                              radius: 60,
-                            ),
-                          ],
-                          sectionsSpace: 0,
-                          centerSpaceRadius: 0,
-                          borderData: FlBorderData(show: false),
+                  child: PieChart(
+                    PieChartData(
+                      sections: [
+                        PieChartSectionData(
+                          color: const Color(0xFF0096C7),
+                          value: _stats['books']!.toDouble(),
+                          title: '',
+                          radius: 60,
                         ),
-                      );
-                    },
+                        PieChartSectionData(
+                          color: const Color(0xFF2D3748),
+                          value: (_stats['books']! * 0.3).toDouble(),
+                          title: '',
+                          radius: 60,
+                        ),
+                      ],
+                      sectionsSpace: 0,
+                      centerSpaceRadius: 0,
+                      borderData: FlBorderData(show: false),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -336,7 +426,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           ),
           
           // Stats Cards Section
-
           Column(
             children: [
               // First row - User Base and Book Count side by side
@@ -345,7 +434,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                   Expanded(
                     child: _buildStatCard(
                       icon: Icons.person,
-                      value: '0150',
+                      value: _stats['users'].toString().padLeft(4, '0'),
                       label: 'Total User Base',
                     ),
                   ),
@@ -353,7 +442,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                   Expanded(
                     child: _buildStatCard(
                       icon: Icons.menu_book,
-                      value: '01500',
+                      value: _stats['books'].toString().padLeft(5, '0'),
                       label: 'Total Book Count',
                     ),
                   ),
@@ -362,8 +451,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               const SizedBox(height: 16),
               // Second row - Book Borrow Requests full width
               _buildStatCard(
-                icon: Icons.menu_book,
-                value: '067',
+                icon: Icons.request_page,
+                value: _stats['requests'].toString().padLeft(3, '0'),
                 label: 'Total Book Borrow Requests',
               ),
             ],
@@ -416,30 +505,26 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               child: Column(
                 children: [
                   Expanded(
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        return PieChart(
-                          PieChartData(
-                            sections: [
-                              PieChartSectionData(
-                                color: const Color(0xFF0096C7),
-                                value: 70,
-                                title: '',
-                                radius: 80,
-                              ),
-                              PieChartSectionData(
-                                color: const Color(0xFF2D3748),
-                                value: 30,
-                                title: '',
-                                radius: 80,
-                              ),
-                            ],
-                            sectionsSpace: 0,
-                            centerSpaceRadius: 0,
-                            borderData: FlBorderData(show: false),
+                    child: PieChart(
+                      PieChartData(
+                        sections: [
+                          PieChartSectionData(
+                            color: const Color(0xFF0096C7),
+                            value: _stats['books']!.toDouble(),
+                            title: '',
+                            radius: 80,
                           ),
-                        );
-                      },
+                          PieChartSectionData(
+                            color: const Color(0xFF2D3748),
+                            value: (_stats['books']! * 0.3).toDouble(),
+                            title: '',
+                            radius: 80,
+                          ),
+                        ],
+                        sectionsSpace: 0,
+                        centerSpaceRadius: 0,
+                        borderData: FlBorderData(show: false),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -472,7 +557,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                     Expanded(
                       child: _buildStatCard(
                         icon: Icons.person,
-                        value: '0150',
+                        value: _stats['users'].toString().padLeft(4, '0'),
                         label: 'Total User Base',
                       ),
                     ),
@@ -480,15 +565,15 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                     Expanded(
                       child: _buildStatCard(
                         icon: Icons.menu_book,
-                        value: '01500',
+                        value: _stats['books'].toString().padLeft(5, '0'),
                         label: 'Total Book Count',
                       ),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
                       child: _buildStatCard(
-                        icon: Icons.menu_book,
-                        value: '067',
+                        icon: Icons.request_page,
+                        value: _stats['requests'].toString().padLeft(3, '0'),
                         label: 'Total Book Borrow Requests',
                       ),
                     ),
@@ -843,5 +928,108 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     );
   }
 
+  void _showLogoutDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
+            children: [
+              Icon(
+                Icons.logout,
+                color: Colors.red[600],
+                size: 24,
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Logout',
+                style: GoogleFonts.montserrat(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                ),
+              ),
+            ],
+          ),
+          content: Text(
+            'Are you sure you want to logout from admin panel?',
+            style: GoogleFonts.montserrat(
+              fontSize: 14,
+              color: Colors.grey[600],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(
+                'Cancel',
+                style: GoogleFonts.montserrat(
+                  color: Colors.grey[600],
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: _performLogout,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red[600],
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 10,
+                ),
+              ),
+              child: Text(
+                'Logout',
+                style: GoogleFonts.montserrat(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
 
+  Future<void> _performLogout() async {
+    try {
+      Navigator.pop(context);
+      
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Text('Logging out...'),
+            ],
+          ),
+        ),
+      );
+
+      await supabase.auth.signOut();
+
+      if (mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => const MainPage()),
+          (Route<dynamic> route) => false,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error logging out: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
 }

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'admin_forgot_password.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:talehive/admin_authentication/admin_forgot_password.dart';
+import '../pages/admin/admin_dashboard.dart';
 
 class AdminLogin extends StatefulWidget {
   const AdminLogin({super.key});
@@ -16,38 +16,43 @@ class _AdminLoginState extends State<AdminLogin> {
   final passwordController = TextEditingController();
   bool _isPasswordVisible = false;
   bool isLoading = false;
+  
+  final supabase = Supabase.instance.client;
 
-  Future<void> _adminLogin() async {
+  Future<void> _loginWithEmail() async {
     if (_formKey.currentState!.validate()) {
       setState(() => isLoading = true);
       try {
-        // Sign in with Firebase Auth
-        final UserCredential userCredential = await FirebaseAuth.instance
-            .signInWithEmailAndPassword(
+        final AuthResponse response = await supabase.auth.signInWithPassword(
           email: emailController.text.trim(),
           password: passwordController.text.trim(),
         );
 
-        final User? user = userCredential.user;
-        if (user != null) {
-          // Admin authenticated successfully with Firebase Auth
-          Navigator.pushReplacementNamed(context, '/admin-dashboard');
-          _showSuccess('Welcome Admin! Login successful.');
+        if (response.user != null) {
+          final adminResponse = await supabase
+              .from('admins')
+              .select()
+              .eq('id', response.user!.id)
+              .maybeSingle();
+
+          if (adminResponse != null) {
+            await supabase
+                .from('admins')
+                .update({'last_login_at': DateTime.now().toIso8601String()})
+                .eq('id', response.user!.id);
+            
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const AdminDashboardPage()),
+            );
+            _showSuccess('Welcome Admin! Login successful');
+          } else {
+            await supabase.auth.signOut();
+            _showError('Access denied. Admin privileges required.');
+          }
         }
-      } on FirebaseAuthException catch (e) {
-        String errorMessage = 'Login failed';
-        if (e.code == 'user-not-found') {
-          errorMessage = 'No admin account found with this email.';
-        } else if (e.code == 'wrong-password') {
-          errorMessage = 'Incorrect password. Please try again.';
-        } else if (e.code == 'invalid-email') {
-          errorMessage = 'Please enter a valid email address.';
-        } else if (e.code == 'too-many-requests') {
-          errorMessage = 'Too many failed attempts. Please try again later.';
-        }
-        _showError(errorMessage);
-      } catch (e) {
-        _showError('Error: $e');
+      } on AuthException catch (e) {
+        _showError('Login failed: ${e.message}');
       } finally {
         setState(() => isLoading = false);
       }
@@ -281,7 +286,7 @@ class _AdminLoginState extends State<AdminLogin> {
               
               // Login Button
               ElevatedButton(
-                onPressed: isLoading ? null : _adminLogin,
+                onPressed: isLoading ? null : _loginWithEmail,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.lightGreen,
                   shape: RoundedRectangleBorder(

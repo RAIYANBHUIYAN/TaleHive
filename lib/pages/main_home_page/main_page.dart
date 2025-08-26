@@ -1,14 +1,17 @@
 import 'dart:convert';
+import 'dart:math' show log, pow;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
+import 'package:talehive/pages/pdf_preview/pdf_preview_page.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
-import 'dart:io';
-import 'package:path_provider/path_provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../../user_authentication/login.dart';
-import '../pdf_preview/pdf_preview_screen.dart';
+import '../pdf_viewer_page.dart';
+import '../../admin_authentication/admin_login.dart';
+
 
 class MainPage extends StatefulWidget {
   const MainPage({Key? key}) : super(key: key);
@@ -23,30 +26,19 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
 
+  // Supabase instance
+  final supabase = Supabase.instance.client;
+
   String _selectedCategory = 'All';
-  final List<String> _categories = [
-    'All', 'Fiction', 'Science', 'Technology', 'History',
-    'Biography', 'Children', 'Romance', 'Mystery', 'Fantasy'
-  ];
+  List<String> _categories = ['All'];
 
-  // Google Drive setup - FIXED
-  GoogleSignInAccount? _account;
-  List<Map<String, dynamic>> _drivePdfBooks = [];
+  // Supabase books data
+  List<Map<String, dynamic>> _supabaseBooks = [];
   bool _isLoadingBooks = false;
-
-  final GoogleSignIn _googleSignIn = GoogleSignIn(
-    scopes: [
-      'https://www.googleapis.com/auth/drive.readonly',
-      'https://www.googleapis.com/auth/drive.file',
-    ],
-    // Remove clientId for Android - it's handled by google-services.json
-  );
-
-  final String folderId = '11WvDmk6I3h11tNLWAn-lFBJRcpqw1Sw7';
 
   // Filtered books based on search and category
   List<Map<String, dynamic>> get _filteredBooks {
-    List<Map<String, dynamic>> filtered = _drivePdfBooks;
+    List<Map<String, dynamic>> filtered = _supabaseBooks;
 
     // Filter by category
     if (_selectedCategory != 'All') {
@@ -79,8 +71,8 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
     );
     _animationController.forward();
 
-    // Auto-load books on init
-    _loadBooksFromDrive();
+    // Load books from Supabase
+    _loadBooksFromSupabase();
   }
 
   @override
@@ -91,7 +83,8 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
     super.dispose();
   }
 
-  Future<void> _loadBooksFromDrive() async {
+  // Load books from Supabase
+  Future<void> _loadBooksFromSupabase() async {
     if (_isLoadingBooks) return;
 
     setState(() {
@@ -99,142 +92,100 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
     });
 
     try {
-      print('Starting Google Sign-In...');
+      print('Loading books from Supabase...');
 
-      // Sign out first to ensure fresh sign-in
-      await _googleSignIn.signOut();
+      // Query books from Supabase
+      final response = await supabase
+          .from('books')
+          .select()
+          .eq('is_active', true)
+          .order('created_at', ascending: false)
+          .timeout(const Duration(seconds: 10));
 
-      // Sign in with user interaction
-      _account = await _googleSignIn.signIn();
+      print('Supabase response: $response');
 
-      if (_account == null) {
-        _showSnackBar('Sign-in was cancelled');
-        return;
-      }
+      List<Map<String, dynamic>> loadedBooks = [];
+      Set<String> categories = {'All'};
 
-      print('Signed in as: ${_account!.email}');
-
-      // Get authentication headers
-      final authHeaders = await _account!.authHeaders;
-      print('Auth headers obtained');
-
-      if (!authHeaders.containsKey('Authorization')) {
-        _showSnackBar('Failed to get authorization token');
-        return;
-      }
-
-      final client = http.Client();
-
-      // First, let's check if we can access the folder
-      print('Checking folder access...');
-      final folderResponse = await client.get(
-        Uri.parse('https://www.googleapis.com/drive/v3/files/$folderId'),
-        headers: {
-          'Authorization': authHeaders['Authorization']!,
-          'Content-Type': 'application/json',
-        },
-      );
-
-      print('Folder check response: ${folderResponse.statusCode}');
-
-      if (folderResponse.statusCode != 200) {
-        _showSnackBar('Cannot access the folder. Please check permissions.');
-        return;
-      }
-
-      // Fetch files from the specific folder
-      print('Fetching files from folder...');
-      final response = await client.get(
-        Uri.parse(
-            'https://www.googleapis.com/drive/v3/files?q=\'$folderId\'+in+parents+and+mimeType=\'application/pdf\'&fields=files(id,name,webViewLink,thumbnailLink,size,modifiedTime)'
-        ),
-        headers: {
-          'Authorization': authHeaders['Authorization']!,
-          'Content-Type': 'application/json',
-        },
-      );
-
-      print('Files response status: ${response.statusCode}');
-      print('Files response body: ${response.body}');
-
-      if (response.statusCode == 200) {
-        final responseData = json.decode(response.body);
-        final files = responseData['files'] as List? ?? [];
-
-        print('Found ${files.length} PDF files');
-
-        if (files.isEmpty) {
-          _showSnackBar('No PDF files found in the specified folder');
-          return;
+      if (response is List) {
+        for (var bookData in response) {
+          if (bookData is Map<String, dynamic>) {
+            // Process the book data for display
+            Map<String, dynamic> processedBook = _processBookForDisplay(bookData);
+            loadedBooks.add(processedBook);
+            
+            // Collect categories
+            if (processedBook['category'] != null && 
+                processedBook['category'].toString().trim().isNotEmpty) {
+              categories.add(processedBook['category']);
+            }
+          }
         }
-
-        setState(() {
-          _drivePdfBooks = files.map((file) {
-            final fileName = file['name'] as String;
-            final bookInfo = _parseBookInfo(fileName);
-
-            return {
-              'id': file['id'],
-              'title': bookInfo['title'],
-              'author': bookInfo['author'],
-              'category': bookInfo['category'],
-              'rating': _generateRating(),
-              'webViewLink': file['webViewLink'],
-              'thumbnailLink': file['thumbnailLink'],
-              'size': file['size'],
-              'modifiedTime': file['modifiedTime'],
-              'fileName': fileName,
-            };
-          }).toList();
-        });
-
-        _showSnackBar('Successfully loaded ${_drivePdfBooks.length} books!');
-      } else {
-        _showSnackBar('Failed to load books: HTTP ${response.statusCode}');
       }
-    } catch (error) {
-      print('Detailed error loading books: $error');
-      _showSnackBar('Error: ${error.toString()}');
-    } finally {
+
       setState(() {
-        _isLoadingBooks = false;
+        _supabaseBooks = loadedBooks;
+        _categories = categories.toList()..sort();
       });
+
+      print('Loaded ${_supabaseBooks.length} books from Supabase');
+
+    } catch (error) {
+      print('Error loading books from Supabase: $error');
+      
+      String errorMessage = 'Unknown error occurred';
+      if (error.toString().contains('timeout')) {
+        errorMessage = 'Connection timeout. Please check your internet connection.';
+      } else if (error.toString().contains('network')) {
+        errorMessage = 'Network error. Please try again.';
+      } else {
+        errorMessage = 'Error loading books: ${error.toString()}';
+      }
+      
+      if (mounted) {
+        _showSnackBar(errorMessage);
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingBooks = false;
+        });
+      }
     }
   }
 
-  Map<String, String> _parseBookInfo(String fileName) {
-    // Remove .pdf extension
-    String cleanName = fileName.replaceAll('.pdf', '');
-
-    // Try to extract title and author from filename
-    // Common patterns: "Title - Author", "Title by Author", "Author - Title"
-    String title = cleanName;
-    String author = 'Unknown Author';
-    String category = _categories[1 + (cleanName.hashCode % (_categories.length - 1))]; // Random category except 'All'
-
-    if (cleanName.contains(' - ')) {
-      final parts = cleanName.split(' - ');
-      if (parts.length >= 2) {
-        title = parts[0].trim();
-        author = parts[1].trim();
-      }
-    } else if (cleanName.contains(' by ')) {
-      final parts = cleanName.split(' by ');
-      if (parts.length >= 2) {
-        title = parts[0].trim();
-        author = parts[1].trim();
-      }
-    }
-
+  // Process book data for display
+  Map<String, dynamic> _processBookForDisplay(Map<String, dynamic> bookData) {
     return {
-      'title': title,
-      'author': author,
-      'category': category,
+      'id': bookData['id'],
+      'title': bookData['title'] ?? 'No Title',
+      'author': bookData['author_name'] ?? bookData['author'] ?? '',
+      'category': bookData['category'] ?? 'General',
+      'rating': _parseDouble(bookData['rating']) ?? _generateRating(),
+      'price': _parseDouble(bookData['price']) ?? 0.0,
+      'summary': bookData['summary'] ?? '',
+      'language': bookData['language'] ?? 'English',
+      'pdfUrl': bookData['pdf_url'],
+      'coverImageUrl': bookData['cover_image_url'],
+      'createdAt': bookData['created_at'],
+      'authorEmail': bookData['author_email'],
+      'isAvailable': bookData['is_active'] ?? true,
+      'views': bookData['views'] ?? 0,
+      'downloads': bookData['downloads'] ?? 0,
+      'fileName': bookData['title'] ?? 'Book',
+      'size': '2.5MB', // Default size
     };
   }
 
+  double? _parseDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
+  }
+
   double _generateRating() {
-    // Generate a random rating between 3.5 and 5.0
     return 3.5 + (DateTime.now().millisecondsSinceEpoch % 150) / 100;
   }
 
@@ -254,7 +205,7 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
                   _buildHeroSection(),
                   _buildCategoriesSection(),
                   if (_isLoadingBooks) _buildLoadingSection(),
-                  if (_drivePdfBooks.isNotEmpty) ...[
+                  if (_supabaseBooks.isNotEmpty) ...[
                     _buildFeaturedBooksSection(),
                     _buildPopularBooksSection(),
                     _buildNewArrivalsSection(),
@@ -267,7 +218,7 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
         ),
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _loadBooksFromDrive,
+        onPressed: _loadBooksFromSupabase,
         backgroundColor: const Color(0xFF0096C7),
         child: _isLoadingBooks
             ? const SizedBox(
@@ -293,7 +244,7 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
           ),
           const SizedBox(height: 16),
           Text(
-            'Loading books from Google Drive...',
+            'Loading books from library...',
             style: GoogleFonts.montserrat(
               fontSize: 16,
               color: Colors.grey[600],
@@ -301,7 +252,7 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
           ),
           const SizedBox(height: 8),
           Text(
-            'Please sign in when prompted',
+            'Fetching books from Supabase database',
             style: GoogleFonts.montserrat(
               fontSize: 12,
               color: Colors.grey[500],
@@ -324,7 +275,7 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
           ),
           const SizedBox(height: 16),
           Text(
-            'No books loaded yet',
+            'No books in library yet',
             style: GoogleFonts.montserrat(
               fontSize: 18,
               fontWeight: FontWeight.bold,
@@ -333,7 +284,7 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
           ),
           const SizedBox(height: 8),
           Text(
-            'Tap the refresh button to sign in and load books from Google Drive',
+            'Authors can publish books to add them to the library',
             style: GoogleFonts.montserrat(
               fontSize: 14,
               color: Colors.grey[500],
@@ -420,7 +371,7 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
                           ),
                         ),
                         Text(
-                          'Discover your next great read',
+                          'Digital Community',
                           style: GoogleFonts.montserrat(
                             fontSize: 14,
                             color: Colors.grey[600],
@@ -432,7 +383,7 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
                     ),
                   ),
                   GestureDetector(
-                    onTap: () => _navigateToLogin(),
+                    onTap: () => _showLoginOptionsPopup(),
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       decoration: BoxDecoration(
@@ -447,7 +398,7 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
                         ],
                       ),
                       child: Text(
-                        'My Books',
+                        'Login',
                         style: GoogleFonts.montserrat(
                           color: Colors.white,
                           fontWeight: FontWeight.w600,
@@ -504,7 +455,7 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
       child: TextField(
         controller: _searchController,
         decoration: InputDecoration(
-          hintText: 'Search by title, author...',
+          hintText: 'Search books by title, author...',
           hintStyle: GoogleFonts.montserrat(
             color: Colors.grey[500],
             fontSize: 16,
@@ -673,7 +624,7 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
                 ),
                 if (showViewAll)
                   GestureDetector(
-                    onTap: () => _navigateToLogin(),
+                    onTap: () => _showLoginOptionsPopup(),
                     child: Text(
                       'View All',
                       style: GoogleFonts.montserrat(
@@ -683,6 +634,7 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
                       ),
                     ),
                   ),
+
               ],
             ),
           ),
@@ -727,89 +679,93 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
               Container(
                 height: 180,
                 decoration: BoxDecoration(
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      const Color(0xFF0096C7).withOpacity(0.1),
-                      Colors.grey[100]!,
-                    ],
+                  color: const Color(0xFF0096C7).withOpacity(0.1),
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(16),
+                    topRight: Radius.circular(16),
                   ),
                 ),
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.picture_as_pdf,
-                        size: 48,
-                        color: const Color(0xFF0096C7),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'PDF',
-                        style: GoogleFonts.montserrat(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: const Color(0xFF0096C7),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                child: _buildBookCover(book),
               ),
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.all(12),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Flexible(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              book['title'],
-                              style: GoogleFonts.montserrat(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                color: const Color(0xFF2D3748),
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              book['author'],
-                              style: GoogleFonts.montserrat(
-                                fontSize: 12,
-                                color: Colors.grey[600],
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
+                      Text(
+                        book['title'] ?? 'No Title',
+                        style: GoogleFonts.montserrat(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF2D3748),
                         ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 4),
+                      if (book['author'] != null && book['author'].toString().trim().isNotEmpty)
+                        Text(
+                          book['author'],
+                          style: GoogleFonts.montserrat(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      const Spacer(),
                       Row(
                         children: [
-                          Icon(
-                            Icons.star,
-                            size: 16,
-                            color: Colors.amber[600],
+                          Expanded(
+                            flex: 3,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0096C7).withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                book['category'] ?? 'General',
+                                style: GoogleFonts.montserrat(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w500,
+                                  color: const Color(0xFF0096C7),
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
                           ),
                           const SizedBox(width: 4),
-                          Text(
-                            book['rating'].toStringAsFixed(1),
-                            style: GoogleFonts.montserrat(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: const Color(0xFF4A5568),
+                          Expanded(
+                            flex: 2,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.star,
+                                  size: 14,
+                                  color: Colors.amber[600],
+                                ),
+                                const SizedBox(width: 2),
+                                Flexible(
+                                  child: Text(
+                                    book['rating'].toStringAsFixed(1),
+                                    style: GoogleFonts.montserrat(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: const Color(0xFF4A5568),
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
@@ -821,12 +777,47 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
             ],
           ),
         ),
-      ),
-    );
+      ));
+  }
+
+  // Build book cover from Supabase
+  Widget _buildBookCover(Map<String, dynamic> book) {
+    final coverUrl = book['coverImageUrl'];
+    
+    if (coverUrl != null && coverUrl.toString().isNotEmpty) {
+      return ClipRRect(
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(16),
+          topRight: Radius.circular(16),
+        ),
+        child: Image.network(
+          coverUrl.toString(),
+          fit: BoxFit.cover,
+          width: double.infinity,
+          height: double.infinity,
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            return Container(
+              color: const Color(0xFFF8FAFC),
+              child: Center(
+                child: CircularProgressIndicator(
+                  color: const Color(0xFF0096C7).withOpacity(0.5),
+                  strokeWidth: 2,
+                ),
+              ),
+            );
+          },
+          errorBuilder: (context, error, stackTrace) => _buildDefaultThumbnail(),
+        ),
+      );
+    }
+    
+    return _buildDefaultThumbnail();
   }
 
   Widget _buildFooter() {
     return Container(
+      width: double.infinity,
       margin: const EdgeInsets.only(top: 32),
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -834,76 +825,39 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            const Color(0xFF2D3748),
-            const Color(0xFF1A202C),
+            const Color(0xFF0096C7).withOpacity(0.8),
+            const Color(0xFF0077B6),
           ],
         ),
       ),
       child: Column(
         children: [
-          Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF0096C7), Color(0xFF00B4D8)],
-                  ),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Image.asset(
-                    'Asset/images/icon.jpg',
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      return const Icon(
-                        Icons.library_books,
-                        color: Colors.white,
-                        size: 24,
-                      );
-                    },
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'TaleHive',
-                style: GoogleFonts.montserrat(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
           Text(
-            'Your gateway to our curated PDF book collection.',
+            'TaleHive Digital Community',
             style: GoogleFonts.montserrat(
               fontSize: 16,
-              color: Colors.grey[400],
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
             ),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 24),
-          Wrap(
-            spacing: 32,
-            runSpacing: 16,
-            children: [
-              _buildFooterLink('About'),
-              _buildFooterLink('Contact'),
-              _buildFooterLink('Privacy'),
-              _buildFooterLink('Terms'),
-            ],
-          ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 8),
           Text(
-            '© 2025 Mr and His Team. All rights reserved.',
+            'Discover, Read, Share • ${_supabaseBooks.length} Books Available',
+            style: GoogleFonts.montserrat(
+              fontSize: 14,
+              color: Colors.white70,
+              fontWeight: FontWeight.w500,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            '© 2025 TaleHive Team. All rights reserved.',
             style: GoogleFonts.montserrat(
               fontSize: 12,
-              color: Colors.grey[500],
+              color: Colors.white70,
+              fontWeight: FontWeight.w400,
             ),
             textAlign: TextAlign.center,
           ),
@@ -912,25 +866,273 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
     );
   }
 
-  Widget _buildFooterLink(String text) {
+  void _showLoginOptionsPopup() {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (BuildContext context) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          child: Container(
+            width: MediaQuery.of(context).size.width * 0.85,
+            constraints: const BoxConstraints(maxWidth: 400),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.15),
+                  blurRadius: 20,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        const Color(0xFF0096C7),
+                        const Color(0xFF00B4D8),
+                      ],
+                    ),
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(24),
+                      topRight: Radius.circular(24),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Welcome to TaleHive',
+                              style: GoogleFonts.montserrat(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Choose your login type',
+                              style: GoogleFonts.montserrat(
+                                fontSize: 14,
+                                color: Colors.white.withOpacity(0.9),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(
+                          Icons.close,
+                          color: Colors.white,
+                          size: 24,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    children: [
+                      _buildLoginOptionCard(
+                        icon: Icons.book_outlined,
+                        title: 'Readers',
+                        subtitle: 'Explore and read amazing books',
+                        gradient: [const Color(0xFF6366F1), const Color(0xFF8B5CF6)],
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(
+                            context,
+                            PageRouteBuilder(
+                              pageBuilder: (context, animation, secondaryAnimation) => const Login(),
+                              transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                                const begin = Offset(1.0, 0.0);
+                                const end = Offset.zero;
+                                const curve = Curves.easeInOut;
+                                var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+                                return SlideTransition(
+                                  position: animation.drive(tween),
+                                  child: child,
+                                );
+                              },
+                              transitionDuration: const Duration(milliseconds: 300),
+                            ),
+                          );
+                        },
+                      ),
+                      
+                      const SizedBox(height: 16),
+                      
+                      _buildLoginOptionCard(
+                        icon: Icons.edit_outlined,
+                        title: 'Authors',
+                        subtitle: 'Publish and share your stories',
+                        gradient: [const Color(0xFF10B981), const Color(0xFF059669)],
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(
+                            context,
+                            PageRouteBuilder(
+                              pageBuilder: (context, animation, secondaryAnimation) => const Login(),
+                              transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                                const begin = Offset(1.0, 0.0);
+                                const end = Offset.zero;
+                                const curve = Curves.easeInOut;
+                                var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+                                return SlideTransition(
+                                  position: animation.drive(tween),
+                                  child: child,
+                                );
+                              },
+                              transitionDuration: const Duration(milliseconds: 300),
+                            ),
+                          );
+                        },
+                      ),
+                      
+                      const SizedBox(height: 16),
+                      
+                      _buildLoginOptionCard(
+                        icon: Icons.admin_panel_settings_outlined,
+                        title: 'TaleHive',
+                        subtitle: 'Manage platform and users',
+                        gradient: [const Color(0xFFEF4444), const Color(0xFFDC2626)],
+                        onTap: () {
+                          Navigator.pop(context);
+                          _navigateToAdminLogin();
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Text(
+                    'Select your role to continue',
+                    style: GoogleFonts.montserrat(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildLoginOptionCard({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required List<Color> gradient,
+    required VoidCallback onTap,
+  }) {
     return GestureDetector(
-      onTap: () {},
-      child: Text(
-        text,
-        style: GoogleFonts.montserrat(
-          fontSize: 14,
-          color: Colors.grey[300],
-          fontWeight: FontWeight.w500,
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: Colors.grey.withOpacity(0.2),
+            width: 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: gradient,
+                ),
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: gradient[0].withOpacity(0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Icon(
+                icon,
+                color: Colors.white,
+                size: 28,
+              ),
+            ),
+            
+            const SizedBox(width: 16),
+            
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: GoogleFonts.montserrat(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: const Color(0xFF1F2937),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: GoogleFonts.montserrat(
+                      fontSize: 13,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            Icon(
+              Icons.arrow_forward_ios,
+              color: Colors.grey[400],
+              size: 16,
+            ),
+          ],
         ),
       ),
     );
   }
 
-  void _navigateToLogin() {
+  void _navigateToAdminLogin() {
     Navigator.push(
       context,
       PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) => const Login(),
+        pageBuilder: (context, animation, secondaryAnimation) => const AdminLogin(),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           const begin = Offset(1.0, 0.0);
           const end = Offset.zero;
@@ -950,7 +1152,6 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
     setState(() {
       _selectedCategory = category;
     });
-    _showSnackBar('Showing books in $category category');
   }
 
   void _performSearch() {
@@ -959,215 +1160,143 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
       setState(() {
         // Trigger rebuild to show filtered results
       });
-      _showSnackBar('Searching for "$query"...');
+      final count = _filteredBooks.length;
+      _showSnackBar('Found $count books matching "$query"');
     }
   }
 
-  void _showBookDetails(Map<String, dynamic> book) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (context) => Container(
-        height: MediaQuery.of(context).size.height * 0.8,
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+  Widget _buildMetadataItem({required IconData icon, required String label, Color? iconColor}) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 16, color: iconColor ?? const Color(0xFF64748B)),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: GoogleFonts.montserrat(
+            fontSize: 12,
+            color: const Color(0xFF64748B),
+            fontWeight: FontWeight.w500,
+          ),
         ),
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-            Row(
-              children: [
-                Container(
-                  width: 60,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0096C7).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    Icons.picture_as_pdf,
-                    size: 32,
-                    color: const Color(0xFF0096C7),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        book['title'],
-                        style: GoogleFonts.montserrat(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: const Color(0xFF2D3748),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'by ${book['author']}',
-                        style: GoogleFonts.montserrat(
-                          fontSize: 14,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Icon(Icons.star, color: Colors.amber[600], size: 20),
-                const SizedBox(width: 4),
-                Text(
-                  book['rating'].toStringAsFixed(1),
-                  style: GoogleFonts.montserrat(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Chip(
-                  label: Text(
-                    book['category'],
-                    style: GoogleFonts.montserrat(fontSize: 12),
-                  ),
-                  backgroundColor: const Color(0xFF0096C7).withOpacity(0.1),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'File Info',
+      ],
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 100,
+            child: Text(
+              '$label:',
               style: GoogleFonts.montserrat(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFF2D3748),
+                fontSize: 13,
+                color: const Color(0xFF64748B),
+                fontWeight: FontWeight.w500,
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              'Original filename: ${book['fileName']}',
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              value,
               style: GoogleFonts.montserrat(
-                fontSize: 12,
-                color: Colors.grey[600],
+                fontSize: 13,
+                color: const Color(0xFF1E293B),
+                fontWeight: FontWeight.w500,
               ),
             ),
-            if (book['size'] != null)
-              Text(
-                'File size: ${_formatFileSize(book['size'])}',
-                style: GoogleFonts.montserrat(
-                  fontSize: 12,
-                  color: Colors.grey[600],
-                ),
-              ),
-            const SizedBox(height: 24),
-            Text(
-              'About this book',
-              style: GoogleFonts.montserrat(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFF2D3748),
-              ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatDate(String? dateString) {
+    if (dateString == null) return 'Unknown date';
+    try {
+      final date = DateTime.parse(dateString);
+      return '${_getMonthName(date.month)} ${date.day}, ${date.year}';
+    } catch (e) {
+      return 'Unknown date';
+    }
+  }
+
+  String _getMonthName(int month) {
+    const months = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    return months[month - 1];
+  }
+
+  Widget _buildDefaultThumbnail() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.picture_as_pdf,
+            size: 48,
+            color: const Color(0xFF0096C7).withOpacity(0.5),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'PDF',
+            style: GoogleFonts.montserrat(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF0096C7).withOpacity(0.7),
             ),
-            const SizedBox(height: 8),
-            Text(
-              'This PDF book is from our Google Drive collection. Login to read the full content and access our complete library.',
-              style: GoogleFonts.montserrat(
-                fontSize: 14,
-                color: Colors.grey[700],
-                height: 1.5,
-              ),
-            ),
-            const Spacer(),
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () => _showPdfPreview(book),
-                    icon: const Icon(Icons.preview, color: Colors.white),
-                    label: Text(
-                      'Preview',
-                      style: GoogleFonts.montserrat(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                      ),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.grey[600],
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  flex: 2,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      _navigateToLogin();
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF0096C7),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    child: Text(
-                      'Login to Read',
-                      style: GoogleFonts.montserrat(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
   void _showPdfPreview(Map<String, dynamic> book) async {
-    Navigator.pop(context); // Close the book details modal
+    Navigator.pop(context); // Close book details modal
 
     // Show loading dialog
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const CircularProgressIndicator(color: Color(0xFF0096C7)),
-            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0096C7).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const CircularProgressIndicator(
+                color: Color(0xFF0096C7),
+                strokeWidth: 3,
+              ),
+            ),
+            const SizedBox(height: 20),
             Text(
-              'Loading PDF preview...',
-              style: GoogleFonts.montserrat(),
+              'Preparing Preview',
+              style: GoogleFonts.montserrat(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF1F2937),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Loading first 10 pages...',
+              style: GoogleFonts.montserrat(
+                fontSize: 14,
+                color: const Color(0xFF6B7280),
+              ),
             ),
           ],
         ),
@@ -1175,103 +1304,335 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
     );
 
     try {
-      // Download PDF from Google Drive
-      final pdfPath = await _downloadPdfFromDrive(book['id']);
+      String? pdfLink = book['pdfUrl'];
+      
+      print('PDF Link from Supabase: $pdfLink');
 
-      if (pdfPath != null) {
-        Navigator.pop(context); // Close loading dialog
-
-        // Navigate to PDF preview screen with 10-page limit
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => PdfPreviewScreen(
-              pdfPath: pdfPath,
-              bookTitle: book['title'],
-              maxPages: 10,
-            ),
-          ),
-        );
-      } else {
-        Navigator.pop(context); // Close loading dialog
-        _showSnackBar('Failed to load PDF preview');
+      if (pdfLink == null || pdfLink.isEmpty) {
+        Navigator.pop(context);
+        _showSnackBar('PDF link not available for this book');
+        return;
       }
-    } catch (e) {
+
+      // Small delay for smooth transition
+      await Future.delayed(const Duration(milliseconds: 800));
+
       Navigator.pop(context); // Close loading dialog
-      _showSnackBar('Error loading PDF: ${e.toString()}');
-    }
-  }
 
-  Future<String?> _downloadPdfFromDrive(String fileId) async {
-    try {
-      if (_account == null) {
-        _showSnackBar('Please sign in to preview books');
-        return null;
-      }
-
-      final authHeaders = await _account!.authHeaders;
-      final client = http.Client();
-
-      // Download the PDF file
-      final response = await client.get(
-        Uri.parse('https://www.googleapis.com/drive/v3/files/$fileId?alt=media'),
-        headers: {
-          'Authorization': authHeaders['Authorization']!,
-        },
+      // Navigate to preview page
+      Navigator.push(
+        context,
+        PageRouteBuilder(
+          pageBuilder: (context, animation, secondaryAnimation) => PdfPreviewPage(
+            pdfUrl: pdfLink,
+            bookTitle: book['title'] ?? 'Book Preview',
+            bookData: book,
+          ),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            const begin = Offset(1.0, 0.0);
+            const end = Offset.zero;
+            const curve = Curves.easeInOutCubic;
+            
+            var tween = Tween(begin: begin, end: end).chain(
+              CurveTween(curve: curve),
+            );
+            
+            return SlideTransition(
+              position: animation.drive(tween),
+              child: FadeTransition(
+                opacity: animation,
+                child: child,
+              ),
+            );
+          },
+          transitionDuration: const Duration(milliseconds: 400),
+        ),
       );
 
-      if (response.statusCode == 200) {
-        // Save to temporary directory
-        final tempDir = await getTemporaryDirectory();
-        final file = File('${tempDir.path}/preview_$fileId.pdf');
-        await file.writeAsBytes(response.bodyBytes);
-        return file.path;
-      } else {
-        print('Failed to download PDF: ${response.statusCode}');
-        return null;
-      }
     } catch (e) {
-      print('Error downloading PDF: $e');
-      return null;
-    }
-  }
-
-  void _openBookInBrowser(Map<String, dynamic> book) async {
-    final url = book['webViewLink'];
-    if (url != null) {
-      final uri = Uri.parse(url);
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      } else {
-        _showSnackBar('Could not open book');
-      }
-    }
-  }
-
-  String _formatFileSize(String sizeString) {
-    try {
-      final size = int.parse(sizeString);
-      if (size < 1024) return '${size}B';
-      if (size < 1024 * 1024) return '${(size / 1024).toStringAsFixed(1)}KB';
-      if (size < 1024 * 1024 * 1024) return '${(size / (1024 * 1024)).toStringAsFixed(1)}MB';
-      return '${(size / (1024 * 1024 * 1024)).toStringAsFixed(1)}GB';
-    } catch (e) {
-      return 'Unknown size';
+      Navigator.pop(context);
+      print('Error loading PDF: $e');
+      _showSnackBar('Error loading PDF preview: ${e.toString()}');
     }
   }
 
   void _showSnackBar(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-          message,
-          style: GoogleFonts.montserrat(),
-        ),
+        content: Text(message),
+        duration: const Duration(seconds: 3),
         backgroundColor: const Color(0xFF0096C7),
         behavior: SnackBarBehavior.floating,
         margin: const EdgeInsets.all(16),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(8),
+        ),
+      ),
+    );
+  }
+
+  void _showBookDetails(Map<String, dynamic> book) {
+    final screenHeight = MediaQuery.of(context).size.height;
+    
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Container(
+        height: screenHeight * 0.9,
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.only(top: 12, bottom: 4),
+              child: Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+            ),
+            
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 200,
+                        height: 280,
+                        margin: const EdgeInsets.only(bottom: 20),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.15),
+                              blurRadius: 15,
+                              offset: const Offset(0, 8),
+                            ),
+                          ],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: _buildBookCover(book),
+                        ),
+                      ),
+                    ),
+                    
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            book['title'] ?? 'Untitled',
+                            style: GoogleFonts.montserrat(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              color: const Color(0xFF1E293B),
+                              height: 1.2,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 6),
+                          if (book['author'] != null && book['author'].toString().trim().isNotEmpty)
+                            Text(
+                              'by ${book['author']}',
+                              style: GoogleFonts.montserrat(
+                                fontSize: 15,
+                                color: const Color(0xFF64748B),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                      children: [
+                        Container(
+                        margin: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                          _buildMetadataItem(
+                            icon: Icons.star,
+                            label: '${book['rating']?.toStringAsFixed(1) ?? '4.5'}/5.0',
+                            iconColor: const Color(0xFFF59E0B),
+                          ),
+                          Container(
+                            height: 20,
+                            width: 1,
+                            color: const Color(0xFFE2E8F0),
+                          ),
+                          _buildMetadataItem(
+                            icon: Icons.category_outlined,
+                            label: book['category'] ?? 'General',
+                          ),
+                          Container(
+                            height: 20,
+                            width: 1,
+                            color: const Color(0xFFE2E8F0),
+                          ),
+                          if (book['price'] != null && book['price'] > 0)
+                            _buildMetadataItem(
+                            icon: Icons.attach_money,
+                            label: '\$${book['price']?.toStringAsFixed(2)}',
+                            iconColor: Colors.green,
+                            )
+                          else
+                            _buildMetadataItem(
+                            icon: Icons.free_breakfast,
+                            label: 'Free',
+                            iconColor: Colors.green,
+                            ),
+                          ],
+                        ),
+                        ),
+                      ],
+                      ),
+                    ),
+                    
+                    
+                    if (book['summary'] != null && book['summary'].toString().trim().isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Summary',
+                              style: GoogleFonts.montserrat(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: const Color(0xFF1E293B),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              book['summary'],
+                              style: GoogleFonts.montserrat(
+                                fontSize: 14,
+                                color: const Color(0xFF64748B),
+                                height: 1.5,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                          ],
+                        ),
+                      ),
+                    
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Book Information',
+                            style: GoogleFonts.montserrat(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: const Color(0xFF1E293B),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildInfoRow('Language', book['language'] ?? 'English'),
+                          if (book['createdAt'] != null)
+                            _buildInfoRow('Published', _formatDate(book['createdAt'])),
+                          _buildInfoRow('Availability', book['isAvailable'] == true ? 'Available' : 'Not Available'),
+                          if (book['views'] != null)
+                            _buildInfoRow('Views', '${book['views']}'),
+                        ],
+                      ),
+                    ),
+                    
+                    const SizedBox(height: 24),
+                  ],
+                ),
+              ),
+            ),
+            
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, -2),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () => _showPdfPreview(book),
+                      icon: const Icon(Icons.preview, size: 20, color: Colors.white),
+                      label: Text(
+                        'Preview',
+                        style: GoogleFonts.montserrat(
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF4B5563),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 2,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _showLoginOptionsPopup();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF0096C7),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: Text(
+                        'Login to Read',
+                        style: GoogleFonts.montserrat(
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );

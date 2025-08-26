@@ -117,7 +117,11 @@ class _UserHomePageState extends State<UserHomePage> {
     }
   }
 
+<<<<<<< HEAD
   // Update the _loadUserFavorites method
+=======
+  // Add this new method to load user favorites
+>>>>>>> d7c40e245d6bff3da2c56f5288438ac5f41882b6
   Future<void> _loadUserFavorites() async {
     setState(() => _isLoadingFavorites = true);
     try {
@@ -125,6 +129,7 @@ class _UserHomePageState extends State<UserHomePage> {
       if (user != null) {
         final response = await supabase
             .from('users')
+<<<<<<< HEAD
             .select('Favourites') // Use lowercase 'favourites'
             .eq('id', user.id)
             .single();
@@ -132,10 +137,24 @@ class _UserHomePageState extends State<UserHomePage> {
         final favorites = response['Favourites']; // Use lowercase 'favourites'
         if (favorites != null) {
           if (favorites is String) {
+=======
+            .select('favourites')
+            .eq('id', user.id)
+            .single();
+        
+        final favorites = response['favourites'];
+        if (favorites != null) {
+          if (favorites is String) {
+            // If stored as comma-separated string
+>>>>>>> d7c40e245d6bff3da2c56f5288438ac5f41882b6
             setState(() {
               _favoriteBookIds = favorites.split(',').where((id) => id.isNotEmpty).toSet();
             });
           } else if (favorites is List) {
+<<<<<<< HEAD
+=======
+            // If stored as array
+>>>>>>> d7c40e245d6bff3da2c56f5288438ac5f41882b6
             setState(() {
               _favoriteBookIds = favorites.map((id) => id.toString()).toSet();
             });
@@ -211,6 +230,10 @@ class _UserHomePageState extends State<UserHomePage> {
 
       final isFavorite = _favoriteBookIds.contains(bookId);
       
+<<<<<<< HEAD
+=======
+      // Optimistically update UI
+>>>>>>> d7c40e245d6bff3da2c56f5288438ac5f41882b6
       setState(() {
         if (isFavorite) {
           _favoriteBookIds.remove(bookId);
@@ -219,12 +242,23 @@ class _UserHomePageState extends State<UserHomePage> {
         }
       });
 
+<<<<<<< HEAD
       final favoritesString = _favoriteBookIds.join(',');
       
       await supabase.from('users')
           .update({'Favourites': favoritesString}) // Use lowercase 'favourites'
           .eq('id', user.id);
 
+=======
+      // Update database
+      final favoritesString = _favoriteBookIds.join(',');
+      
+      await supabase.from('users')
+          .update({'Favourites': favoritesString})
+          .eq('id', user.id);
+
+      // Show success message
+>>>>>>> d7c40e245d6bff3da2c56f5288438ac5f41882b6
       if (mounted) {
         _showSnackBar(
           isFavorite 
@@ -238,6 +272,10 @@ class _UserHomePageState extends State<UserHomePage> {
     } catch (e) {
       print('Error toggling favorite: $e');
       
+<<<<<<< HEAD
+=======
+      // Revert optimistic update on error
+>>>>>>> d7c40e245d6bff3da2c56f5288438ac5f41882b6
       setState(() {
         if (_favoriteBookIds.contains(bookId)) {
           _favoriteBookIds.remove(bookId);
@@ -468,6 +506,7 @@ class _UserHomePageState extends State<UserHomePage> {
                       _buildDrawerMenuItem(
                         icon: Icons.favorite,
                         title: 'Favorites',
+<<<<<<< HEAD
                         onTap: () async {
                           Navigator.pop(context); // Close drawer
                           
@@ -486,6 +525,16 @@ class _UserHomePageState extends State<UserHomePage> {
                           
                           // ✅ Also reload when returning from favorites page
                           _loadUserFavorites();
+=======
+                        onTap: () {
+                          Navigator.pop(context); // Close drawer
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const FavoritesPage(),
+                            ),
+                          );
+>>>>>>> d7c40e245d6bff3da2c56f5288438ac5f41882b6
                         },
                       ),
                       
@@ -1590,6 +1639,7 @@ class _HorizontalBookList extends StatelessWidget {
         await Future.delayed(const Duration(milliseconds: 300));
         Navigator.pop(context);
         
+<<<<<<< HEAD
         // ✅ Add callback support
         await Navigator.push(
           context,
@@ -1612,6 +1662,14 @@ class _HorizontalBookList extends StatelessWidget {
         if (parentState != null) {
           parentState._loadUserFavorites();
         }
+=======
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => BookDetailsPage(bookId: bookId),
+          ),
+        );
+>>>>>>> d7c40e245d6bff3da2c56f5288438ac5f41882b6
       },
       child: Container(
         width: 150,
@@ -1822,6 +1880,7 @@ class _RecommendedList extends StatelessWidget {
     final bookId = book['id']?.toString() ?? '';
     
     return GestureDetector(
+<<<<<<< HEAD
       onTap: () async {
         await Navigator.push(
           context,
@@ -1843,6 +1902,15 @@ class _RecommendedList extends StatelessWidget {
         if (parentState != null) {
           parentState._loadUserFavorites();
         }
+=======
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => BookDetailsPage(bookId: bookId),
+          ),
+        );
+>>>>>>> d7c40e245d6bff3da2c56f5288438ac5f41882b6
       },
       child: Container(
         width: 160,
@@ -2029,6 +2097,7 @@ class _RecentReadingsList extends StatelessWidget {
     );
   }
 
+<<<<<<< HEAD
   // In the _RecentReadingsList class, update the _buildRecentBookCard method
   Widget _buildRecentBookCard(BuildContext context, Map<String, dynamic> book) {
     final bookId = book['id']?.toString() ?? '';
@@ -2055,6 +2124,17 @@ class _RecentReadingsList extends StatelessWidget {
         if (parentState != null) {
           parentState._loadUserFavorites();
         }
+=======
+  Widget _buildRecentBookCard(BuildContext context, Map<String, dynamic> book) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => BookDetailsPage(bookId: book['id']?.toString() ?? 'mock'),
+          ),
+        );
+>>>>>>> d7c40e245d6bff3da2c56f5288438ac5f41882b6
       },
       child: Container(
         width: 140,
@@ -2071,6 +2151,7 @@ class _RecentReadingsList extends StatelessWidget {
         ),
         child: Column(
           children: [
+<<<<<<< HEAD
             // Header with favorite icon
             Container(
               padding: const EdgeInsets.all(8),
@@ -2119,6 +2200,11 @@ class _RecentReadingsList extends StatelessWidget {
             Container(
               height: 100,
               margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+=======
+            Container(
+              height: 120,
+              margin: const EdgeInsets.all(12),
+>>>>>>> d7c40e245d6bff3da2c56f5288438ac5f41882b6
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
                 child: Image.network(
@@ -2142,7 +2228,10 @@ class _RecentReadingsList extends StatelessWidget {
               ),
             ),
             
+<<<<<<< HEAD
             // Book details
+=======
+>>>>>>> d7c40e245d6bff3da2c56f5288438ac5f41882b6
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),

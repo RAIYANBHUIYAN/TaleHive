@@ -1,185 +1,179 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
+import 'dart:async';
+import '../main_home_page/main_page.dart';
 
-// --- Data Model ---
-// To make our code more structured and scalable, we define a User model.
-// This class holds all the data related to a user, ensuring type safety
-// and making it easier to manage user information throughout the app.
-// Instead of using a raw Map, we use this dedicated class.
-class UserModel {
-  /// The full name of the user.
-  final String name;
-
-  /// The unique identifier for the user.
-  final String id;
-
-  /// The total number of books the user has read or logged.
-  final int books;
-
-  /// The number of friends the user has on the platform.
-  final int friends;
-
-  /// The number of other users this user is following.
-  final int following;
-
-  /// The date the user joined the platform.
-  final String joined;
-
-  /// A string representing the user's favorite genres.
-  final String genres;
-
-  /// The path to the user's avatar image in the assets folder.
-  final String avatarAsset;
-
-  /// Constructor for the UserModel.
-  /// All fields are required to create a user instance.
-  const UserModel({
-    required this.name,
-    required this.id,
-    required this.books,
-    required this.friends,
-    required this.following,
-    required this.joined,
-    required this.genres,
-    required this.avatarAsset,
-  });
-}
-
-/// The main dashboard page for a user.
-///
-/// This widget is the root of the user profile screen. It is a StatelessWidget
-/// because all the data it displays is passed into it. It orchestrates the
-/// layout of the AppBar, the main profile card, and other action buttons.
-class UserDashboardPage extends StatelessWidget {
-  /// Callback function to execute when the "My Books" button is tapped.
-  final VoidCallback onMyBooksTap;
-
-  /// Callback function to execute when the "Edit Profile" button is tapped.
-  final VoidCallback onEditProfileTap;
-
-  /// A static instance of our user data.
-  ///
-  /// In a real application, this data would be fetched from a database or API.
-  /// For this example, we are using a statically defined UserModel.
-  static final UserModel _user = UserModel(
-    name: 'Arif Abdullah',
-    id: 'BS 1754',
-    books: 100,
-    friends: 1245,
-    following: 8,
-    joined: 'Month DD YEAR',
-    genres: 'Romance, Mystery/Thriller, Fantasy, Science Fiction, +5 More',
-    avatarAsset: 'Asset/images/arif.jpg',
-  );
-
-  /// Constructor for the UserDashboardPage.
+class UserDashboardPage extends StatefulWidget {
   const UserDashboardPage({
     Key? key,
     required this.onMyBooksTap,
     required this.onEditProfileTap,
   }) : super(key: key);
 
+  final VoidCallback onMyBooksTap;
+  final VoidCallback onEditProfileTap;
+
   @override
-  Widget build(BuildContext context) {
-    // The Scaffold provides the basic structure of the visual interface.
-    return Scaffold(
-      backgroundColor: const Color(0xFFF7FAFC),
-      // The AppBar is built using a helper method to keep the build method clean.
-      appBar: _buildAppBar(context, _user),
-      // The body is a SingleChildScrollView to prevent overflow on smaller screens.
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // The main profile card is the centerpiece of the dashboard.
-            // We use a helper method to construct it for better organization.
-            _buildUserProfileCard(context, _user),
-            const SizedBox(height: 24),
-            // The "My Books" button, also built with a helper method.
-            _buildMyBooksButton(),
-            const SizedBox(height: 24),
-            // --- Placeholder for Future Features ---
-            // This section demonstrates how you could add more UI elements
-            // in the future without cluttering the main build method.
-            // _buildRecentActivitySection(),
-            // _buildFriendSuggestions(),
-          ],
-        ),
-      ),
-    );
+  _UserDashboardPageState createState() => _UserDashboardPageState();
+}
+
+class _UserDashboardPageState extends State<UserDashboardPage> {
+  final supabase = Supabase.instance.client;
+  final GoogleSignIn _googleSignIn = GoogleSignIn();
+  final ImagePicker _picker = ImagePicker();
+  Map<String, dynamic>? userData;
+  bool _isUploadingImage = false;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
   }
 
-  /// Builds the top AppBar for the dashboard.
-  ///
-  /// This private helper method encapsulates all the logic for creating and
-  /// styling the AppBar, making the main `build` method easier to read.
-  PreferredSizeWidget _buildAppBar(BuildContext context, UserModel user) {
-    return AppBar(
-      backgroundColor: const Color(0xFF00B4D8),
-      elevation: 0,
-      title: Row(
-        children: [
-          // User avatar in the AppBar.
-          const CircleAvatar(
-            backgroundColor: Colors.white,
-            child: Icon(Icons.person, color: Color(0xFF00B4D8)),
-          ),
-          const SizedBox(width: 12),
-          // User's name, which can shrink if space is limited.
-          Flexible(
-            child: Text(
-              user.name,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          // A spacer to push any subsequent widgets to the end.
-          const Spacer(),
-        ],
-      ),
-    );
+  Future<void> _loadUserData() async {
+    setState(() => _isLoading = true);
+    try {
+      final user = supabase.auth.currentUser;
+      if (user != null) {
+        try {
+          final userResponse = await supabase
+              .from('users')
+              .select()
+              .eq('id', user.id)
+              .single();
+
+          setState(() {
+            userData = userResponse;
+          });
+        } catch (e) {
+          print('Error loading user data: $e');
+          setState(() {
+            userData = {
+              'id': user.id,
+              'email': user.email,
+              'full_name': user.userMetadata?['full_name'] ?? user.userMetadata?['name'],
+              'photo_url': user.userMetadata?['avatar_url'],
+            };
+          });
+        }
+      }
+    } catch (e) {
+      print('Error: $e');
+    } finally {
+      setState(() => _isLoading = false);
+    }
   }
 
-  /// Builds the main profile card that contains user details.
-  ///
-  /// This method uses a LayoutBuilder to create a responsive layout that
-  /// adapts between a row and a column based on the available width.
-  Widget _buildUserProfileCard(BuildContext context, UserModel user) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        // Determine if the layout should be narrow (column) or wide (row).
-        final isNarrow = constraints.maxWidth < 500;
-        return Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(
-              maxWidth: 600,
-              minWidth: 0,
+  Future<void> _updateProfileImage() async {
+    try {
+      final XFile? image = await _picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 70,
+      );
+
+      if (image == null) return;
+
+      setState(() => _isUploadingImage = true);
+
+      final user = supabase.auth.currentUser;
+      if (user == null) throw Exception('User not authenticated');
+
+      final bytes = await File(image.path).readAsBytes();
+      final fileExt = image.path.split('.').last;
+      final fileName = '${user.id}/avatar_${DateTime.now().millisecondsSinceEpoch}.$fileExt';
+
+      await supabase.storage
+          .from('avatars')
+          .uploadBinary(fileName, bytes);
+
+      final imageUrl = supabase.storage
+          .from('avatars')
+          .getPublicUrl(fileName);
+
+      await supabase.from('users')
+          .update({'photo_url': imageUrl})
+          .eq('id', user.id);
+
+      await supabase.auth.updateUser(UserAttributes(
+        data: {'avatar_url': imageUrl},
+      ));
+
+      await _loadUserData();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white),
+                SizedBox(width: 8),
+                Text('Profile image updated successfully!'),
+              ],
             ),
-            child: Card(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(28),
-              ),
-              elevation: 6,
-              margin: EdgeInsets.zero,
-              child: Container(
-                // A decorative gradient for the card background.
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFFe0eafc), Color(0xFFcfdef3)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(28),
-                ),
-                padding: const EdgeInsets.all(24),
-                // The content of the card is determined by the responsive layout.
-                child: isNarrow
-                    ? _buildNarrowLayout(user)
-                    : _buildWideLayout(user),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+
+    } catch (e) {
+      print('Error updating profile image: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Failed to update image: ${e.toString()}')),
+              ],
+            ),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isUploadingImage = false);
+      }
+    }
+  }
+
+  void _showEditProfileDialog() {
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Edit Profile',
+      barrierColor: Colors.black54,
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (context, animation, secondaryAnimation) {
+        return Container();
+      },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        return ScaleTransition(
+          scale: Tween<double>(
+            begin: 0.7,
+            end: 1.0,
+          ).animate(CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutBack,
+          )),
+          child: FadeTransition(
+            opacity: animation,
+            child: AlertDialog(
+              backgroundColor: Colors.transparent,
+              contentPadding: EdgeInsets.zero,
+              content: _EditProfilePopup(
+                userData: userData,
+                onSave: _updateUserProfile,
+                onCancel: () => Navigator.of(context).pop(),
               ),
             ),
           ),
@@ -188,94 +182,311 @@ class UserDashboardPage extends StatelessWidget {
     );
   }
 
-  /// Builds the content for the profile card in a narrow (column) view.
-  Widget _buildNarrowLayout(UserModel user) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        // The main user avatar.
-        CircleAvatar(
-          radius: 56,
-          backgroundColor: Colors.white,
-          backgroundImage: AssetImage(user.avatarAsset),
-        ),
-        const SizedBox(height: 18),
-        // The detailed profile information widget.
-        _ProfileDetails(
-          user: user,
-          onEditProfileTap: onEditProfileTap,
-          isNarrow: true,
-        ),
-      ],
-    );
+  Future<void> _updateUserProfile(Map<String, dynamic> updatedData) async {
+    try {
+      final user = supabase.auth.currentUser;
+      if (user == null) throw Exception('User not authenticated');
+
+      await supabase.from('users')
+          .update(updatedData)
+          .eq('id', user.id);
+
+      if (updatedData['full_name'] != null) {
+        await supabase.auth.updateUser(UserAttributes(
+          data: {'full_name': updatedData['full_name']},
+        ));
+      }
+
+      await _loadUserData();
+
+      if (mounted) {
+        Navigator.of(context).pop();
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white),
+                SizedBox(width: 8),
+                Text('Profile updated successfully!'),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+
+    } catch (e) {
+      print('Error updating profile: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Failed to update profile: ${e.toString()}')),
+              ],
+            ),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
   }
 
-  /// Builds the content for the profile card in a wide (row) view.
-  Widget _buildWideLayout(UserModel user) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // The main user avatar.
-        CircleAvatar(
-          radius: 56,
-          backgroundColor: Colors.white,
-          backgroundImage: AssetImage(user.avatarAsset),
-        ),
-        const SizedBox(width: 36),
-        // The detailed profile information, which expands to fill the space.
-        Expanded(
-          child: _ProfileDetails(
-            user: user,
-            onEditProfileTap: onEditProfileTap,
-            isNarrow: false,
-          ),
-        ),
-      ],
-    );
-  }
+  @override
+  Widget build(BuildContext context) {
+    final user = supabase.auth.currentUser;
+    final profileImageUrl = userData?['photo_url'] ?? 
+                           userData?['avatar_url'] ?? 
+                           user?.userMetadata?['avatar_url'];
 
-  /// Builds the "My Books" button.
-  Widget _buildMyBooksButton() {
-    return Padding(
-      padding: const EdgeInsets.only(left: 16),
-      child: ElevatedButton.icon(
-        onPressed: onMyBooksTap,
-        icon: const Icon(Icons.menu_book),
-        label: const Text('My Books'),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.blue,
-          foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
+    final userDisplayData = {
+      'name': userData?['full_name'] ?? userData?['firstName'] ?? userData?['name'] ?? 
+              user?.userMetadata?['full_name'] ?? user?.userMetadata?['name'] ?? 'User',
+      'id': userData?['email']?.split('@')[0] ?? user?.email?.split('@')[0] ?? 
+            userData?['id']?.toString().substring(0, 8) ?? 'BS 1754',
+      'books': userData?['booksRead'] ?? 100,
+      'friends': userData?['friends'] ?? 1245,
+      'following': userData?['following'] ?? 8,
+      'joined': userData?['created_at'] != null
+          ? _formatDate(userData!['created_at'])
+          : 'Month DD YEAR',
+      'genres': userData?['favoriteGenres'] ?? 'Romance, Mystery/Thriller, Fantasy, Science Fiction, +5 More',
+      'photoURL': profileImageUrl,
+    };
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF7FAFC),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF00B4D8),
+        elevation: 0,
+        title: Row(
+          children: [
+            GestureDetector(
+              onTap: _updateProfileImage,
+              child: Stack(
+                children: [
+                  CircleAvatar(
+                    backgroundColor: Colors.white,
+                    backgroundImage: profileImageUrl != null && profileImageUrl.toString().isNotEmpty
+                        ? NetworkImage(profileImageUrl)
+                        : null,
+                    child: profileImageUrl == null || profileImageUrl.toString().isEmpty
+                        ? const Icon(Icons.person, color: Color(0xFF00B4D8))
+                        : null,
+                  ),
+                  if (_isUploadingImage)
+                    Positioned.fill(
+                      child: Container(
+                        decoration: const BoxDecoration(
+                          color: Colors.black54,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Center(
+                          child: SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Flexible(
+              child: Text(
+                userDisplayData['name'] as String,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const Spacer(),
+          ],
+        ),
+        actions: [
+          IconButton(
+            onPressed: () => _showLogoutDialog(context),
+            icon: const Icon(
+              Icons.logout,
+              color: Colors.white,
+            ),
+            tooltip: 'Logout',
           ),
-          padding: const EdgeInsets.symmetric(
-            horizontal: 24,
-            vertical: 12,
-          ),
-          textStyle: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-          ),
+        ],
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final isNarrow = constraints.maxWidth < 500;
+                return Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      maxWidth: 600,
+                      minWidth: 0,
+                    ),
+                    child: Card(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(28),
+                      ),
+                      elevation: 6,
+                      margin: const EdgeInsets.symmetric(
+                        horizontal: 0,
+                        vertical: 0,
+                      ),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFFe0eafc), Color(0xFFcfdef3)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(28),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 24,
+                        ),
+                        child: isNarrow
+                            ? Column(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  _buildProfileAvatar(profileImageUrl),
+                                  const SizedBox(height: 18),
+                                  _ProfileDetails(
+                                    user: userDisplayData,
+                                    onEditProfileTap: widget.onEditProfileTap,
+                                    isNarrow: true,
+                                  ),
+                                ],
+                              )
+                            : Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _buildProfileAvatar(profileImageUrl),
+                                  const SizedBox(width: 36),
+                                  Expanded(
+                                    child: _ProfileDetails(
+                                      user: userDisplayData,
+                                      onEditProfileTap: widget.onEditProfileTap,
+                                      isNarrow: false,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 24),
+            Padding(
+              padding: const EdgeInsets.only(left: 16),
+              child: ElevatedButton.icon(
+                onPressed: widget.onMyBooksTap,
+                icon: const Icon(Icons.menu_book),
+                label: const Text('My Books'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
+                  textStyle: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  /// A helper function to build a single statistic box.
-  ///
-  /// This static method can be called from anywhere to create a consistent
-  /// styled box for displaying user statistics like books, friends, etc.
+  Widget _buildProfileAvatar(String? profileImageUrl) {
+    return GestureDetector(
+      onTap: _updateProfileImage,
+      child: Stack(
+        children: [
+          CircleAvatar(
+            radius: 56,
+            backgroundColor: Colors.white,
+            backgroundImage: profileImageUrl != null && profileImageUrl.isNotEmpty
+                ? NetworkImage(profileImageUrl)
+                : null,
+            child: profileImageUrl == null || profileImageUrl.isEmpty
+                ? const Icon(Icons.person, size: 56, color: Color(0xFF00B4D8))
+                : null,
+          ),
+          if (_isUploadingImage)
+            Positioned.fill(
+              child: Container(
+                decoration: const BoxDecoration(
+                  color: Colors.black54,
+                  shape: BoxShape.circle,
+                ),
+                child: const Center(
+                  child: CircularProgressIndicator(
+                    color: Colors.white,
+                    strokeWidth: 3,
+                  ),
+                ),
+              ),
+            ),
+          if (!_isUploadingImage)
+            Positioned(
+              bottom: 0,
+              right: 0,
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: const BoxDecoration(
+                  color: Color(0xFF00B4D8),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.camera_alt,
+                  color: Colors.white,
+                  size: 16,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   static Widget _statBox(String value, String label, {IconData? icon}) {
     return Padding(
       padding: const EdgeInsets.only(right: 24),
       child: Column(
         children: [
-          // Optionally display an icon above the statistic.
           if (icon != null) ...[
             Icon(icon, color: const Color(0xFF4a4e69), size: 22),
             const SizedBox(height: 2),
           ],
-          // The numerical value of the statistic.
           Text(
             value,
             style: const TextStyle(
@@ -284,7 +495,6 @@ class UserDashboardPage extends StatelessWidget {
               color: Color(0xFF22223b),
             ),
           ),
-          // The label describing the statistic.
           Text(
             label,
             style: const TextStyle(color: Color(0xFF4a4e69), fontSize: 13),
@@ -294,31 +504,90 @@ class UserDashboardPage extends StatelessWidget {
     );
   }
 
-  // --- Placeholder Methods for Future Expansion ---
-  // These methods do not do anything but serve as placeholders to show where
-  // future logic could be added. This is a good practice for planning ahead.
-
-  /// A placeholder to simulate fetching user activity data.
-  Future<void> _fetchUserActivity() async {
-    // In a real app, you would make an API call here.
-    await Future.delayed(const Duration(seconds: 1));
-    // print("User activity fetched.");
+  static String _formatDate(dynamic timestamp) {
+    if (timestamp == null) return 'Month DD YEAR';
+    try {
+      DateTime? date;
+      if (timestamp is DateTime) {
+        date = timestamp;
+      } else if (timestamp is String) {
+        date = DateTime.tryParse(timestamp);
+      }
+      if (date != null) {
+        return '${_getMonthName(date.month)} ${date.day} ${date.year}';
+      }
+      return 'Month DD YEAR';
+    } catch (e) {
+      return 'Month DD YEAR';
+    }
   }
 
-  /// A placeholder to handle a friend request action.
-  void _handleFriendRequest(String userId) {
-    // Logic to send or accept a friend request would go here.
-    // print("Handling friend request for user: $userId");
+  static String _getMonthName(int month) {
+    const months = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    return months[month - 1];
+  }
+
+  void _showLogoutDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Logout'),
+          content: const Text('Are you sure you want to logout?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => _performLogout(context), // Use optimized version
+              // OR for ultra-fast experience:
+              // onPressed: () => _performQuickLogout(context),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Logout'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Super simple instant logout
+  void _performLogout(BuildContext context) async {
+    Navigator.pop(context); // Close dialog
+
+    // Navigate immediately - no loading, no delays
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (context) => const MainPage()),
+      (Route<dynamic> route) => false,
+    );
+
+    // Simple success message
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Logged out'),
+        backgroundColor: Colors.green,
+        duration: Duration(seconds: 1),
+      ),
+    );
+
+    // Clear Supabase session in background - fire and forget
+    try {
+      supabase.auth.signOut();
+    } catch (e) {
+      // Ignore any errors
+    }
   }
 }
 
-/// A private widget that displays the core details of the user profile.
-///
-/// This widget is used inside the main profile card and is responsible for
-/// laying out the user's name, ID, stats, and other information. It also
-/// adapts its layout based on the `isNarrow` flag.
 class _ProfileDetails extends StatelessWidget {
-  final UserModel user;
+  final Map<String, dynamic> user;
   final VoidCallback onEditProfileTap;
   final bool isNarrow;
 
@@ -331,42 +600,21 @@ class _ProfileDetails extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
-      // Align content to the center in narrow view, or start in wide view.
-      crossAxisAlignment:
-          isNarrow ? CrossAxisAlignment.center : CrossAxisAlignment.start,
-      children: [
-        // Section for Name and ID.
-        _buildNameAndIdSection(),
-        const SizedBox(height: 14),
-
-        // Section for stats (Books, Friends, Following).
-        _buildStatsRow(),
-        const SizedBox(height: 14),
-
-        // Section for additional info like join date and genres.
-        _buildAdditionalInfoSection(),
-      ],
-    );
-  }
-
-  /// Builds the name, ID, and edit profile button section.
-  Widget _buildNameAndIdSection() {
-    // The main container for this section.
-    // We use a Column and then a Row to structure these elements.
-    return Column(
+      crossAxisAlignment: isNarrow
+          ? CrossAxisAlignment.center
+          : CrossAxisAlignment.start,
       children: [
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // The user's name and ID are grouped in an Expanded widget
-            // so they can take up available space and wrap if needed.
             Expanded(
               child: Column(
-                crossAxisAlignment:
-                    isNarrow ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+                crossAxisAlignment: isNarrow
+                    ? CrossAxisAlignment.center
+                    : CrossAxisAlignment.start,
                 children: [
                   Text(
-                    user.name,
+                    user['name'] as String,
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 28,
@@ -376,115 +624,412 @@ class _ProfileDetails extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    user.id,
+                    user['id'] as String,
                     style: const TextStyle(
                       color: Color(0xFF4a4e69),
-                      fontSize: 28,
+                      fontSize: 18,
                     ),
                   ),
                 ],
               ),
             ),
-            // The "Edit Profile" button is only shown in the wide layout here.
+            const SizedBox(height: 10),
             if (!isNarrow) ...[
               const SizedBox(width: 8),
-              _buildEditProfileButton(),
+              ElevatedButton.icon(
+                onPressed: () {
+                  final dashboardState = context.findAncestorStateOfType<_UserDashboardPageState>();
+                  dashboardState?._showEditProfileDialog();
+                },
+                icon: const Icon(Icons.edit, size: 20),
+                label: const Text('Edit Profile'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFf2e9e4),
+                  foregroundColor: const Color(0xFF22223b),
+                  side: const BorderSide(color: Color(0xFF4a4e69)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
+                  textStyle: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+
+                  elevation: 0,
+                ),
+              ),
             ],
           ],
         ),
-        // The "Edit Profile" button is shown below the name in the narrow layout.
         if (isNarrow) ...[
           const SizedBox(height: 10),
-          _buildEditProfileButton(),
-        ],
-      ],
-    );
-  }
-
-  /// Builds the "Edit Profile" button with consistent styling.
-  Widget _buildEditProfileButton() {
-    return ElevatedButton.icon(
-      onPressed: onEditProfileTap,
-      icon: const Icon(Icons.edit, size: 20),
-      label: const Text('Edit Profile'),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: const Color(0xFFf2e9e4),
-        foregroundColor: const Color(0xFF22223b),
-        side: const BorderSide(color: Color(0xFF4a4e69)),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        textStyle: const TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.w600,
-        ),
-        elevation: 0,
-      ),
-    );
-  }
-
-  /// Builds the horizontally scrollable row of user statistics.
-  Widget _buildStatsRow() {
-    // A SingleChildScrollView is used to ensure the stats row
-    // does not overflow on smaller screen widths.
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        // The alignment of the stats row depends on the layout mode.
-        mainAxisAlignment:
-            isNarrow ? MainAxisAlignment.center : MainAxisAlignment.start,
-        children: [
-          // Each stat is created using the static _statBox helper method.
-          UserDashboardPage._statBox(
-            '${user.books}',
-            'Books',
-            icon: Icons.menu_book,
-          ),
-          UserDashboardPage._statBox(
-            '${user.friends}',
-            'Friends',
-            icon: Icons.people,
-          ),
-          UserDashboardPage._statBox(
-            '${user.following}',
-            'Following',
-            icon: Icons.person_add_alt_1,
+          ElevatedButton.icon(
+            onPressed: () {
+              final dashboardState = context.findAncestorStateOfType<_UserDashboardPageState>();
+              dashboardState?._showEditProfileDialog();
+            },
+            icon: const Icon(Icons.edit, size: 20),
+            label: const Text('Edit Profile'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFf2e9e4),
+              foregroundColor: const Color(0xFF22223b),
+              side: const BorderSide(color: Color(0xFF4a4e69)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              textStyle: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+              elevation: 0,
+            ),
           ),
         ],
-      ),
-    );
-  }
-
-  /// Builds the final section containing join date and favorite genres.
-  Widget _buildAdditionalInfoSection() {
-    // This column holds the final text-based information.
-    // The cross-axis alignment ensures it matches the rest of the profile card.
-    return Column(
-      crossAxisAlignment:
-          isNarrow ? CrossAxisAlignment.center : CrossAxisAlignment.start,
-      children: [
-        // Joined date information.
+        const SizedBox(height: 14),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            mainAxisAlignment: isNarrow
+                ? MainAxisAlignment.center
+                : MainAxisAlignment.start,
+            children: [
+              _UserDashboardPageState._statBox(
+                '${user['books']}',
+                'Books',
+                icon: Icons.menu_book,
+              ),
+              _UserDashboardPageState._statBox(
+                '${user['friends']}',
+                'Friends',
+                icon: Icons.people,
+              ),
+              _UserDashboardPageState._statBox(
+                '${user['following']}',
+                'Following',
+                icon: Icons.person_add_alt_1,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
         Text(
-          'Joined in ${user.joined}',
+          'Joined in ${user['joined'] as String}',
           style: const TextStyle(color: Color(0xFF4a4e69), fontSize: 15),
         ),
         const SizedBox(height: 6),
-        // Favorite genres title.
         const Text(
-          'FAVORITE GENRES',
+          'Favorite GENRES',
           style: TextStyle(
             fontWeight: FontWeight.bold,
             fontSize: 15,
             color: Color(0xFF22223b),
           ),
         ),
-        // List of favorite genres.
         Text(
-          user.genres,
+          user['genres'] as String,
           style: const TextStyle(color: Color(0xFF4a4e69), fontSize: 15),
         ),
       ],
+    );
+  }
+}
+
+class _EditProfilePopup extends StatefulWidget {
+  final Map<String, dynamic>? userData;
+  final ValueChanged<Map<String, dynamic>> onSave;
+  final VoidCallback onCancel;
+
+  const _EditProfilePopup({
+    Key? key,
+    required this.userData,
+    required this.onSave,
+    required this.onCancel,
+  }) : super(key: key);
+
+  @override
+  __EditProfilePopupState createState() => __EditProfilePopupState();
+}
+
+class __EditProfilePopupState extends State<_EditProfilePopup> {
+  final _formKey = GlobalKey<FormState>();
+  late TextEditingController _nameController;
+  late TextEditingController _emailController;
+  late TextEditingController _phoneController;
+  late TextEditingController _bioController;
+  late TextEditingController _locationController;
+  late TextEditingController _genresController;
+  
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.userData?['full_name'] ?? '');
+    _emailController = TextEditingController(text: widget.userData?['email'] ?? '');
+    _phoneController = TextEditingController(text: widget.userData?['phone'] ?? '');
+    _bioController = TextEditingController(text: widget.userData?['bio'] ?? '');
+    _locationController = TextEditingController(text: widget.userData?['location'] ?? '');
+    _genresController = TextEditingController(text: widget.userData?['favorite_genres'] ?? '');
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _emailController.dispose();
+    _phoneController.dispose();
+    _bioController.dispose();
+    _locationController.dispose();
+    _genresController.dispose();
+    super.dispose();
+  }
+
+  void _saveProfile() {
+    if (_formKey.currentState!.validate()) {
+      setState(() => _isLoading = true);
+      
+      final updatedData = <String, dynamic>{};
+      
+      if (_nameController.text.trim().isNotEmpty) {
+        updatedData['full_name'] = _nameController.text.trim();
+      }
+      if (_phoneController.text.trim().isNotEmpty) {
+        updatedData['phone'] = _phoneController.text.trim();
+      }
+      if (_bioController.text.trim().isNotEmpty) {
+        updatedData['bio'] = _bioController.text.trim();
+      }
+      if (_locationController.text.trim().isNotEmpty) {
+        updatedData['location'] = _locationController.text.trim();
+      }
+      if (_genresController.text.trim().isNotEmpty) {
+        updatedData['favorite_genres'] = _genresController.text.trim();
+      }
+      
+      widget.onSave(updatedData);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Material(
+          child: Container(
+            constraints: const BoxConstraints(maxHeight: 600),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Color(0xFF00B4D8), Color(0xFF0096C7)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.edit, color: Colors.white, size: 24),
+                      const SizedBox(width: 12),
+                      const Text(
+                        'Edit Profile',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        onPressed: widget.onCancel,
+                        icon: const Icon(Icons.close, color: Colors.white),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(20),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        children: [
+                          _buildTextFormField(
+                            controller: _nameController,
+                            label: 'Full Name',
+                            icon: Icons.person,
+                            validator: (value) {
+                              if (value == null || value.trim().isEmpty) {
+                                return 'Please enter your full name';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 16),
+                          _buildTextFormField(
+                            controller: _emailController,
+                            label: 'Email',
+                            icon: Icons.email,
+                            enabled: false,
+                            hint: 'Email cannot be changed',
+                          ),
+                          const SizedBox(height: 16),
+                          _buildTextFormField(
+                            controller: _phoneController,
+                            label: 'Phone Number',
+                            icon: Icons.phone,
+                            keyboardType: TextInputType.phone,
+                            hint: 'Enter your phone number',
+                          ),
+                          const SizedBox(height: 16),
+                          _buildTextFormField(
+                            controller: _locationController,
+                            label: 'Location',
+                            icon: Icons.location_on,
+                            hint: 'Enter your city/country',
+                          ),
+                          const SizedBox(height: 16),
+                          _buildTextFormField(
+                            controller: _bioController,
+                            label: 'Bio',
+                            icon: Icons.description,
+                            maxLines: 3,
+                            hint: 'Tell us about yourself...',
+                          ),
+                          const SizedBox(height: 16),
+                          _buildTextFormField(
+                            controller: _genresController,
+                            label: 'Favorite Genres',
+                            icon: Icons.category,
+                            hint: 'Romance, Mystery, Sci-Fi, etc.',
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[50],
+                    border: Border(
+                      top: BorderSide(color: Colors.grey[200]!),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: _isLoading ? null : widget.onCancel,
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            side: BorderSide(color: Colors.grey[400]!),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child: const Text(
+                            'Cancel',
+                            style: TextStyle(fontSize: 16),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: _isLoading ? null : _saveProfile,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF00B4D8),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child: _isLoading
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Text(
+                                  'Save Changes',
+                                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTextFormField({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    String? hint,
+    bool enabled = true,
+    int maxLines = 1,
+    TextInputType? keyboardType,
+    String? Function(String?)? validator,
+  }) {
+    return TextFormField(
+      controller: controller,
+      enabled: enabled,
+      maxLines: maxLines,
+      keyboardType: keyboardType,
+      validator: validator,
+      decoration: InputDecoration(
+        hintText: hint,
+        prefixIcon: Icon(icon, color: const Color(0xFF00B4D8)),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey[300]!),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey[300]!),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Color(0xFF00B4D8), width: 2),
+        ),
+        disabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey[200]!),
+        ),
+        filled: !enabled,
+        fillColor: enabled ? null : Colors.grey[100],
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      ),
     );
   }
 }

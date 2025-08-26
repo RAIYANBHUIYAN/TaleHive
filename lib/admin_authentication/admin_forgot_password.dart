@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'admin_reset_password_confirmation.dart';
 
 class AdminForgotPassword extends StatefulWidget {
@@ -19,12 +18,11 @@ class _AdminForgotPasswordState extends State<AdminForgotPassword> {
     if (_formKey.currentState!.validate()) {
       setState(() => isLoading = true);
       try {
-        // Send password reset email directly through Firebase Auth
-        await FirebaseAuth.instance.sendPasswordResetEmail(
-          email: emailController.text.trim(),
+        await Supabase.instance.client.auth.resetPasswordForEmail(
+          emailController.text.trim(),
+          redirectTo: 'your-app://reset-password', // Configure this URL
         );
 
-        // Navigate to confirmation page
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -35,18 +33,8 @@ class _AdminForgotPasswordState extends State<AdminForgotPassword> {
         );
 
         _showSuccess('Admin password reset email sent! Please check your inbox.');
-      } on FirebaseAuthException catch (e) {
-        String errorMessage = 'Something went wrong';
-        if (e.code == 'user-not-found') {
-          errorMessage = 'No admin account found with this email address.';
-        } else if (e.code == 'invalid-email') {
-          errorMessage = 'Please enter a valid email address.';
-        } else if (e.code == 'too-many-requests') {
-          errorMessage = 'Too many requests. Please try again later.';
-        }
-        _showError(errorMessage);
-      } catch (e) {
-        _showError('Error: $e');
+      } on AuthException catch (e) {
+        _showError('Error: ${e.message}');
       } finally {
         setState(() => isLoading = false);
       }
