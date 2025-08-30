@@ -39,6 +39,9 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
   String search = '';
   Map<String, dynamic>? authorData;
 
+  final List<String> accessTypes = ['free', 'borrow', 'buy'];
+  String selectedAccessType = 'free';
+
   @override
   void initState() {
     super.initState();
@@ -1024,6 +1027,13 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                   const SizedBox(height: 8),
 
                   DropdownButtonFormField<String>(
+                    value: selectedAccessType,
+                    decoration: const InputDecoration(labelText: 'Access Type'),
+                    items: accessTypes.map((type) => DropdownMenuItem(value: type, child: Text(type.toUpperCase()))).toList(),
+                    onChanged: (value) => setDialogState(() => selectedAccessType = value!),
+                  ),
+
+                  DropdownButtonFormField<String>(
                     value: selectedCategory,
                     decoration: const InputDecoration(labelText: 'Category'),
                     items: categories.map((type) => DropdownMenuItem(value: type, child: Text(type))).toList(),
@@ -1403,6 +1413,13 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                   const SizedBox(height: 8),
 
                   DropdownButtonFormField<String>(
+                    value: selectedAccessType,
+                    decoration: const InputDecoration(labelText: 'Access Type'),
+                    items: accessTypes.map((type) => DropdownMenuItem(value: type, child: Text(type.toUpperCase()))).toList(),
+                    onChanged: (value) => setDialogState(() => selectedAccessType = value!),
+                  ),
+
+                  DropdownButtonFormField<String>(
                     value: selectedCategory,
                     decoration: const InputDecoration(labelText: 'Category'),
                     items: categories.map((type) => DropdownMenuItem(value: type, child: Text(type))).toList(),
@@ -1444,6 +1461,7 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                     'category': selectedCategory,
                     'pdf_url': pdfUrl,
                     'cover_image_url': coverImageUrl,
+                    'access_type': selectedAccessType,
                   };
 
                   final success = await _saveBookToSupabase(bookData);

@@ -6,10 +6,6 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../pdf_preview/pdf_viewer_page.dart';
 import '../pdf_preview/pdf_service.dart';
-import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:intl/intl.dart';
 // Helper to fetch related books for BookDetails
 
 
@@ -1379,6 +1375,85 @@ class _ActionChipButton extends StatelessWidget {
       ),
     );
   }
+}
+
+Future<bool> _hasActiveBorrow(BuildContext context, String bookId) async {
+  final user = supabase.auth.currentUser;
+  if (user == null) return false;
+  final now = DateTime.now().toIso8601String();
+  final response = await supabase
+      .from('borrow_requests')
+      .select()
+      .eq('book_id', bookId)
+      .eq('user_id', user.id)
+      .eq('status', 'active')
+      .lte('start_date', now)
+      .gte('end_date', now)
+      .maybeSingle();
+  return response != null;
+}
+
+void _showBorrowDialog(BuildContext context, String bookId, String bookTitle, String authorName) {
+  showDialog(
+    context: context,
+    builder: (context) {
+      DateTime startDate = DateTime.now();
+      DateTime endDate = startDate.add(Duration(days: 7));
+      final reasonController = TextEditingController();
+      bool isSubmitting = false;
+      return StatefulBuilder(
+        builder: (context, setState) {
+          return AlertDialog(
+            title: Text('Borrow "$bookTitle"'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Author: $authorName'),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: reasonController,
+                  decoration: InputDecoration(
+                    labelText: 'Reason (optional)',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text('Borrow Period: ${DateFormat('yyyy-MM-dd').format(startDate)} to ${DateFormat('yyyy-MM-dd').format(endDate)}'),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: isSubmitting
+                    ? null
+                    : () async {
+                        setState(() => isSubmitting = true);
+                        final user = supabase.auth.currentUser;
+                        if (user == null) return;
+                        await supabase.from('borrow_requests').insert({
+                          'book_id': bookId,
+                          'user_id': user.id,
+                          'reason': reasonController.text,
+                          'start_date': startDate.toIso8601String(),
+                          'end_date': endDate.toIso8601String(),
+                          'status': 'active',
+                        });
+                        // Optionally insert notification here
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Borrow request successful!'), backgroundColor: Colors.green),
+                        );
+                      },
+                child: isSubmitting ? CircularProgressIndicator() : Text('Confirm Borrow'),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
 }
 
 class _BookInfoSection extends StatelessWidget {

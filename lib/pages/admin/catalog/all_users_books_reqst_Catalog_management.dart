@@ -5,17 +5,28 @@ class AllUsersBookRequestCatalogManagementPage extends StatefulWidget {
   const AllUsersBookRequestCatalogManagementPage({Key? key}) : super(key: key);
 
   @override
-  State<AllUsersBookRequestCatalogManagementPage> createState() => _AllUsersBookRequestCatalogManagementPageState();
+  State<AllUsersBookRequestCatalogManagementPage> createState() =>
+      _AllUsersBookRequestCatalogManagementPageState();
 }
 
-class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookRequestCatalogManagementPage> with SingleTickerProviderStateMixin {
+class _AllUsersBookRequestCatalogManagementPageState
+    extends State<AllUsersBookRequestCatalogManagementPage>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final TextEditingController _searchController = TextEditingController();
-  
+
   // Filter state
   String _selectedCategory = 'All';
-  List<String> _categories = ['All', 'Programming', 'AI/ML', 'Technical', 'Design', 'Business', 'Science'];
-  
+  List<String> _categories = [
+    'All',
+    'Programming',
+    'AI/ML',
+    'Technical',
+    'Design',
+    'Business',
+    'Science',
+  ];
+
   // Sample data for reading books requests (from the image)
   List<Map<String, dynamic>> _readingBooksRequests = [
     {
@@ -233,38 +244,64 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
 
   // Filter methods
   List<Map<String, dynamic>> _getFilteredReadingBooks() {
-    List<Map<String, dynamic>> filteredBooks = _selectedCategory == 'All' 
-        ? _readingBooksRequests 
-        : _readingBooksRequests.where((book) => (book['category'] ?? 'Unknown') == _selectedCategory).toList();
-    
+    List<Map<String, dynamic>> filteredBooks = _selectedCategory == 'All'
+        ? _readingBooksRequests
+        : _readingBooksRequests
+              .where(
+                (book) => (book['category'] ?? 'Unknown') == _selectedCategory,
+              )
+              .toList();
+
     // Apply search filter if search text is not empty
     if (_searchController.text.isNotEmpty) {
       String searchText = _searchController.text.toLowerCase();
-      filteredBooks = filteredBooks.where((book) => 
-        (book['bookId'] ?? '').toString().toLowerCase().contains(searchText) ||
-        (book['userId'] ?? '').toString().toLowerCase().contains(searchText) ||
-        (book['category'] ?? '').toString().toLowerCase().contains(searchText)
-      ).toList();
+      filteredBooks = filteredBooks
+          .where(
+            (book) =>
+                (book['bookId'] ?? '').toString().toLowerCase().contains(
+                  searchText,
+                ) ||
+                (book['userId'] ?? '').toString().toLowerCase().contains(
+                  searchText,
+                ) ||
+                (book['category'] ?? '').toString().toLowerCase().contains(
+                  searchText,
+                ),
+          )
+          .toList();
     }
-    
+
     return filteredBooks;
   }
 
   List<Map<String, dynamic>> _getFilteredMostReadableBooks() {
-    List<Map<String, dynamic>> filteredBooks = _selectedCategory == 'All' 
-        ? _mostReadableBooks 
-        : _mostReadableBooks.where((book) => (book['category'] ?? 'Unknown') == _selectedCategory).toList();
-    
+    List<Map<String, dynamic>> filteredBooks = _selectedCategory == 'All'
+        ? _mostReadableBooks
+        : _mostReadableBooks
+              .where(
+                (book) => (book['category'] ?? 'Unknown') == _selectedCategory,
+              )
+              .toList();
+
     // Apply search filter if search text is not empty
     if (_searchController.text.isNotEmpty) {
       String searchText = _searchController.text.toLowerCase();
-      filteredBooks = filteredBooks.where((book) => 
-        (book['bookId'] ?? '').toString().toLowerCase().contains(searchText) ||
-        (book['userId'] ?? '').toString().toLowerCase().contains(searchText) ||
-        (book['category'] ?? '').toString().toLowerCase().contains(searchText)
-      ).toList();
+      filteredBooks = filteredBooks
+          .where(
+            (book) =>
+                (book['bookId'] ?? '').toString().toLowerCase().contains(
+                  searchText,
+                ) ||
+                (book['userId'] ?? '').toString().toLowerCase().contains(
+                  searchText,
+                ) ||
+                (book['category'] ?? '').toString().toLowerCase().contains(
+                  searchText,
+                ),
+          )
+          .toList();
     }
-    
+
     return filteredBooks;
   }
 
@@ -312,8 +349,14 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
                   fontWeight: FontWeight.w500,
                   fontSize: 13,
                 ),
-                labelPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                indicatorPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                labelPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                indicatorPadding: const EdgeInsets.symmetric(
+                  horizontal: 4,
+                  vertical: 4,
+                ),
                 indicatorSize: TabBarIndicatorSize.tab,
                 dividerColor: Colors.transparent,
                 tabs: const [
@@ -351,10 +394,7 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
                 controller: _searchController,
                 decoration: InputDecoration(
                   hintText: 'Search by ID or Category',
-                  hintStyle: TextStyle(
-                    color: Colors.grey[400],
-                    fontSize: 14,
-                  ),
+                  hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
                   prefixIcon: const Icon(
                     Icons.search,
                     color: Color(0xFF0096C7),
@@ -388,22 +428,31 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
                   _showCategoryFilter();
                 },
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        _selectedCategory == 'All' ? 'Books Category' : _selectedCategory,
+                        _selectedCategory == 'All'
+                            ? 'Books Category'
+                            : _selectedCategory,
                         style: GoogleFonts.montserrat(
                           fontSize: 14,
                           fontWeight: FontWeight.w500,
-                          color: _selectedCategory == 'All' ? Colors.grey[700] : const Color(0xFF0096C7),
+                          color: _selectedCategory == 'All'
+                              ? Colors.grey[700]
+                              : const Color(0xFF0096C7),
                         ),
                       ),
                       const SizedBox(width: 8),
                       Icon(
                         Icons.filter_list,
-                        color: _selectedCategory == 'All' ? Colors.grey[700] : const Color(0xFF0096C7),
+                        color: _selectedCategory == 'All'
+                            ? Colors.grey[700]
+                            : const Color(0xFF0096C7),
                         size: 18,
                       ),
                       if (_selectedCategory != 'All') ...[
@@ -431,11 +480,11 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
   Widget _buildFilterSummary() {
     int readingCount = _getFilteredReadingBooks().length;
     int mostReadableCount = _getFilteredMostReadableBooks().length;
-    
+
     if (_selectedCategory == 'All' && _searchController.text.isEmpty) {
       return const SizedBox.shrink();
     }
-    
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -449,17 +498,13 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
       ),
       child: Row(
         children: [
-          Icon(
-            Icons.info_outline,
-            color: const Color(0xFF0096C7),
-            size: 16,
-          ),
+          Icon(Icons.info_outline, color: const Color(0xFF0096C7), size: 16),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              _selectedCategory != 'All' 
-                ? 'Filtered by: $_selectedCategory • Reading: $readingCount, Most Readable: $mostReadableCount'
-                : 'Search results • Reading: $readingCount, Most Readable: $mostReadableCount',
+              _selectedCategory != 'All'
+                  ? 'Filtered by: $_selectedCategory • Reading: $readingCount, Most Readable: $mostReadableCount'
+                  : 'Search results • Reading: $readingCount, Most Readable: $mostReadableCount',
               style: GoogleFonts.montserrat(
                 fontSize: 12,
                 color: const Color(0xFF0096C7),
@@ -611,10 +656,7 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   border: Border(
-                    bottom: BorderSide(
-                      color: Colors.grey[200]!,
-                      width: 0.5,
-                    ),
+                    bottom: BorderSide(color: Colors.grey[200]!, width: 0.5),
                   ),
                 ),
                 child: Row(
@@ -622,7 +664,10 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
                     Container(
                       width: 100,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: const Color(0xFF0096C7).withOpacity(0.1),
                           borderRadius: BorderRadius.circular(8),
@@ -641,7 +686,10 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
                     Container(
                       width: 100,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.purple.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(8),
@@ -660,7 +708,10 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
                     Container(
                       width: 120,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.orange.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(8),
@@ -679,7 +730,10 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
                     Container(
                       width: 140,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.green.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(8),
@@ -698,7 +752,10 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
                     Container(
                       width: 180,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.grey[100],
                           borderRadius: BorderRadius.circular(8),
@@ -720,7 +777,8 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           GestureDetector(
-                            onTap: () => _showBookReviewsDialog(request['bookId'] ?? ''),
+                            onTap: () =>
+                                _showBookReviewsDialog(request['bookId'] ?? ''),
                             child: Container(
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
@@ -740,16 +798,23 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
                     Container(
                       width: 100,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
-                          color: _getCategoryColor(request['category'] ?? 'Unknown').withOpacity(0.1),
+                          color: _getCategoryColor(
+                            request['category'] ?? 'Unknown',
+                          ).withOpacity(0.1),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
                           request['category'] ?? 'Unknown',
                           style: GoogleFonts.montserrat(
                             fontSize: 12,
-                            color: _getCategoryColor(request['category'] ?? 'Unknown'),
+                            color: _getCategoryColor(
+                              request['category'] ?? 'Unknown',
+                            ),
                             fontWeight: FontWeight.w600,
                           ),
                           textAlign: TextAlign.center,
@@ -883,10 +948,7 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   border: Border(
-                    bottom: BorderSide(
-                      color: Colors.grey[200]!,
-                      width: 0.5,
-                    ),
+                    bottom: BorderSide(color: Colors.grey[200]!, width: 0.5),
                   ),
                 ),
                 child: Row(
@@ -894,7 +956,10 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
                     Container(
                       width: 100,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: const Color(0xFF0096C7).withOpacity(0.1),
                           borderRadius: BorderRadius.circular(8),
@@ -913,7 +978,10 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
                     Container(
                       width: 100,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.purple.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(8),
@@ -932,7 +1000,10 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
                     Container(
                       width: 120,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.orange.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(8),
@@ -951,7 +1022,10 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
                     Container(
                       width: 140,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.green.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(8),
@@ -970,7 +1044,10 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
                     Container(
                       width: 180,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.grey[100],
                           borderRadius: BorderRadius.circular(8),
@@ -992,7 +1069,8 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           GestureDetector(
-                            onTap: () => _showBookReviewsDialog(book['bookId'] ?? ''),
+                            onTap: () =>
+                                _showBookReviewsDialog(book['bookId'] ?? ''),
                             child: Container(
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
@@ -1012,16 +1090,23 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
                     Container(
                       width: 100,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
-                          color: _getCategoryColor(book['category'] ?? 'Unknown').withOpacity(0.1),
+                          color: _getCategoryColor(
+                            book['category'] ?? 'Unknown',
+                          ).withOpacity(0.1),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
                           book['category'] ?? 'Unknown',
                           style: GoogleFonts.montserrat(
                             fontSize: 12,
-                            color: _getCategoryColor(book['category'] ?? 'Unknown'),
+                            color: _getCategoryColor(
+                              book['category'] ?? 'Unknown',
+                            ),
                             fontWeight: FontWeight.w600,
                           ),
                           textAlign: TextAlign.center,
@@ -1144,10 +1229,7 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   border: Border(
-                    bottom: BorderSide(
-                      color: Colors.grey[200]!,
-                      width: 0.5,
-                    ),
+                    bottom: BorderSide(color: Colors.grey[200]!, width: 0.5),
                   ),
                 ),
                 child: Row(
@@ -1155,7 +1237,10 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
                     Container(
                       width: 120,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: const Color(0xFF0096C7).withOpacity(0.1),
                           borderRadius: BorderRadius.circular(8),
@@ -1188,7 +1273,10 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
                           ),
                           const SizedBox(height: 2),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
                             decoration: BoxDecoration(
                               color: const Color(0xFF7C3AED).withOpacity(0.1),
                               borderRadius: BorderRadius.circular(6),
@@ -1222,7 +1310,10 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
                     Container(
                       width: 130,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.grey[100],
                           borderRadius: BorderRadius.circular(8),
@@ -1241,7 +1332,10 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
                     Container(
                       width: 100,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: _getStatusColor(request['status']),
                           borderRadius: BorderRadius.circular(8),
@@ -1304,7 +1398,7 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
 
   Color _getCategoryColor(String? category) {
     if (category == null) return Colors.grey;
-    
+
     switch (category.toLowerCase()) {
       case 'programming':
         return const Color(0xFF0096C7);
@@ -1366,9 +1460,7 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
                   onPressed: () => Navigator.of(context).pop(),
                   child: Text(
                     'Cancel',
-                    style: GoogleFonts.montserrat(
-                      color: Colors.grey[600],
-                    ),
+                    style: GoogleFonts.montserrat(color: Colors.grey[600]),
                   ),
                 ),
                 ElevatedButton(
@@ -1381,9 +1473,7 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
                   ),
                   child: Text(
                     'Apply',
-                    style: GoogleFonts.montserrat(
-                      color: Colors.white,
-                    ),
+                    style: GoogleFonts.montserrat(color: Colors.white),
                   ),
                 ),
               ],
@@ -1422,9 +1512,7 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
               onPressed: () => Navigator.of(context).pop(),
               child: Text(
                 'Close',
-                style: GoogleFonts.montserrat(
-                  color: Colors.grey[600],
-                ),
+                style: GoogleFonts.montserrat(color: Colors.grey[600]),
               ),
             ),
             if (request['status'] == 'Pending') ...[
@@ -1433,14 +1521,10 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
                   Navigator.of(context).pop();
                   // Handle approve action
                 },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
-                ),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
                 child: Text(
                   'Approve',
-                  style: GoogleFonts.montserrat(
-                    color: Colors.white,
-                  ),
+                  style: GoogleFonts.montserrat(color: Colors.white),
                 ),
               ),
               ElevatedButton(
@@ -1448,14 +1532,10 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
                   Navigator.of(context).pop();
                   // Handle reject action
                 },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
-                ),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
                 child: Text(
                   'Reject',
-                  style: GoogleFonts.montserrat(
-                    color: Colors.white,
-                  ),
+                  style: GoogleFonts.montserrat(color: Colors.white),
                 ),
               ),
             ],
@@ -1473,7 +1553,8 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
         'userImage': 'Asset/images/arif.jpg',
         'rating': 5,
         'date': 'Month DD, YYYY',
-        'reviewText': 'Ut commodo elit adipiscing hendrerit non non elementum id ui cursus non odio vel tincidunt quam et, ac sit Nam et, malesuada non placerat Nunc orci ex, eget.\n\nIpsum ex sapien Lorem varius libero, placerat Cras nec dui Donec in ex felis, volutpat sit amet, varius tincidunt non tortor, elit. Morbi turpis venenatis dui.\n\nNullam tincidunt lorem, ipsum Donec fringilla Vestibulum sit consectetur Nam qui, hendrerit vitae turpis lorem. Quisque placerat ex. Cras massa ex ex rutli ex.',
+        'reviewText':
+            'Ut commodo elit adipiscing hendrerit non non elementum id ui cursus non odio vel tincidunt quam et, ac sit Nam et, malesuada non placerat Nunc orci ex, eget.\n\nIpsum ex sapien Lorem varius libero, placerat Cras nec dui Donec in ex felis, volutpat sit amet, varius tincidunt non tortor, elit. Morbi turpis venenatis dui.\n\nNullam tincidunt lorem, ipsum Donec fringilla Vestibulum sit consectetur Nam qui, hendrerit vitae turpis lorem. Quisque placerat ex. Cras massa ex ex rutli ex.',
         'likes': 54,
         'viewReacts': true,
         'viewComment': true,
@@ -1483,7 +1564,8 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
         'userImage': 'Asset/images/loren.jpg',
         'rating': 4,
         'date': 'Month DD, YYYY',
-        'reviewText': 'Ut commodo elit adipiscing hendrerit non non elementum id ui cursus non odio vel tincidunt quam et, ac sit Nam et, malesuada non placerat Nunc orci ex, eget.\n\nIpsum ex sapien Lorem varius libero, placerat Cras nec dui Donec in ex felis, volutpat sit amet, varius tincidunt non tortor, elit. Morbi turpis venenatis dui.\n\nNullam tincidunt lorem, ipsum Donec fringilla Vestibulum sit consectetur Nam qui, hendrerit vitae turpis lorem. Quisque placerat ex. Cras massa ex ex rutli ex.',
+        'reviewText':
+            'Ut commodo elit adipiscing hendrerit non non elementum id ui cursus non odio vel tincidunt quam et, ac sit Nam et, malesuada non placerat Nunc orci ex, eget.\n\nIpsum ex sapien Lorem varius libero, placerat Cras nec dui Donec in ex felis, volutpat sit amet, varius tincidunt non tortor, elit. Morbi turpis venenatis dui.\n\nNullam tincidunt lorem, ipsum Donec fringilla Vestibulum sit consectetur Nam qui, hendrerit vitae turpis lorem. Quisque placerat ex. Cras massa ex ex rutli ex.',
         'likes': 54,
         'viewReacts': true,
         'viewComment': true,
@@ -1523,7 +1605,11 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
                         shape: BoxShape.circle,
                       ),
                       child: IconButton(
-                        icon: const Icon(Icons.close, color: Colors.white, size: 20),
+                        icon: const Icon(
+                          Icons.close,
+                          color: Colors.white,
+                          size: 20,
+                        ),
                         onPressed: () => Navigator.of(context).pop(),
                         splashRadius: 16,
                         padding: const EdgeInsets.all(4),
@@ -1557,12 +1643,15 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
                               children: [
                                 CircleAvatar(
                                   radius: 25,
-                                  backgroundImage: AssetImage(review['userImage']),
+                                  backgroundImage: AssetImage(
+                                    review['userImage'],
+                                  ),
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         review['userName'],
@@ -1577,11 +1666,13 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
                                         children: [
                                           // Star Rating
                                           Row(
-                                            children: List.generate(5, (starIndex) {
+                                            children: List.generate(5, (
+                                              starIndex,
+                                            ) {
                                               return Icon(
-                                                starIndex < review['rating'] 
-                                                  ? Icons.star 
-                                                  : Icons.star_border,
+                                                starIndex < review['rating']
+                                                    ? Icons.star
+                                                    : Icons.star_border,
                                                 color: Colors.amber[600],
                                                 size: 16,
                                               );
@@ -1629,7 +1720,10 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
                                   const SizedBox(width: 20),
                                   if (review['viewReacts'])
                                     Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 6,
+                                      ),
                                       decoration: BoxDecoration(
                                         color: Colors.grey[200],
                                         borderRadius: BorderRadius.circular(20),
@@ -1646,7 +1740,10 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
                                   const SizedBox(width: 10),
                                   if (review['viewComment'])
                                     Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 6,
+                                      ),
                                       decoration: BoxDecoration(
                                         color: Colors.grey[200],
                                         borderRadius: BorderRadius.circular(20),
@@ -1662,7 +1759,10 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
                                     ),
                                   const SizedBox(width: 20),
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
                                     decoration: BoxDecoration(
                                       color: const Color(0xFF0096C7),
                                       borderRadius: BorderRadius.circular(20),
@@ -1678,7 +1778,10 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
                                   ),
                                   const SizedBox(width: 8),
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
                                     decoration: BoxDecoration(
                                       color: Colors.red,
                                       borderRadius: BorderRadius.circular(20),
@@ -1752,15 +1855,9 @@ class _AllUsersBookRequestCatalogManagementPageState extends State<AllUsersBookR
             child: TabBarView(
               controller: _tabController,
               children: [
-                SingleChildScrollView(
-                  child: _buildReadingBooksTable(),
-                ),
-                SingleChildScrollView(
-                  child: _buildMostReadableBooksTable(),
-                ),
-                SingleChildScrollView(
-                  child: _buildBookRequestsTable(),
-                ),
+                SingleChildScrollView(child: _buildReadingBooksTable()),
+                SingleChildScrollView(child: _buildMostReadableBooksTable()),
+                SingleChildScrollView(child: _buildBookRequestsTable()),
               ],
             ),
           ),

@@ -2,6 +2,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 import 'dart:io';
+import 'package:permission_handler/permission_handler.dart';
 
 class PDFService {
   static final _supabase = Supabase.instance.client;
@@ -52,76 +53,83 @@ class PDFService {
     required String fileName,
     Function(int received, int total)? onProgress,
   }) async {
-    try {
-      // Check if file already exists in cache
-      final cacheKey = '${fileName}_${url.hashCode}';
-      if (_fileCache.containsKey(cacheKey)) {
-        final cachedFile = _fileCache[cacheKey]!;
-        if (await cachedFile.exists()) {
-          print('✅ Using cached file: ${cachedFile.path}');
-          onProgress?.call(1, 1); // Report as complete
-          return cachedFile.path;
-        }
-      }
-
-      final directory = await getApplicationDocumentsDirectory();
-      final filePath = '${directory.path}/${fileName}_${DateTime.now().millisecondsSinceEpoch}.pdf';
-      final file = File(filePath);
-
-      print('📥 Starting download: $url');
-      
-      // ✅ Use HTTP client with better configuration
-      final client = http.Client();
-      final request = http.Request('GET', Uri.parse(url));
-      
-      // ✅ Add headers for better compatibility
-      request.headers.addAll({
-        'User-Agent': 'Mozilla/5.0 (compatible; PDFViewer/1.0)',
-        'Accept': 'application/pdf,*/*',
-        'Connection': 'keep-alive',
-      });
-
-      final response = await client.send(request).timeout(
-        const Duration(seconds: 30),
-        onTimeout: () => throw Exception('Download timeout'),
-      );
-
-      if (response.statusCode != 200) {
-        client.close();
-        throw Exception('HTTP ${response.statusCode}: Failed to download PDF');
-      }
-
-      final contentLength = response.contentLength ?? 0;
-      var downloadedBytes = 0;
-      
-      final fileStream = file.openWrite();
-      
-      await response.stream.listen(
-        (chunk) {
-          fileStream.add(chunk);
-          downloadedBytes += chunk.length;
-          onProgress?.call(downloadedBytes, contentLength);
-        },
-        onDone: () async {
-          await fileStream.close();
-          client.close();
-        },
-        onError: (error) async {
-          await fileStream.close();
-          client.close();
-          throw error;
-        },
-      ).asFuture();
-
-      // ✅ Cache the downloaded file
-      _fileCache[cacheKey] = file;
-      print('✅ Download completed: $filePath');
-      
-      return filePath;
-    } catch (e) {
-      print('❌ Download error: $e');
-      rethrow;
+    // Request storage permission
+    if (Platform.isAndroid) {
+      final status = await Permission.storage.request();
+      if (!status.isGranted) throw Exception('Storage permission denied');
     }
+
+    Directory? directory;
+    if (Platform.isAndroid) {
+      directory = Directory('/storage/emulated/0/Download'); // Android Downloads folder
+    } else {
+      directory = await getApplicationDocumentsDirectory();
+    }
+
+    final filePath = '${directory.path}/$fileName.pdf';
+    final file = File(filePath);
+
+    // Check if file already exists in cache
+    final cacheKey = '${fileName}_${url.hashCode}';
+    if (_fileCache.containsKey(cacheKey)) {
+      final cachedFile = _fileCache[cacheKey]!;
+      if (await cachedFile.exists()) {
+        print('✅ Using cached file: ${cachedFile.path}');
+        onProgress?.call(1, 1); // Report as complete
+        return cachedFile.path;
+      }
+    }
+
+    print('📥 Starting download: $url');
+    
+    // ✅ Use HTTP client with better configuration
+    final client = http.Client();
+    final request = http.Request('GET', Uri.parse(url));
+    
+    // ✅ Add headers for better compatibility
+    request.headers.addAll({
+      'User-Agent': 'Mozilla/5.0 (compatible; PDFViewer/1.0)',
+      'Accept': 'application/pdf,*/*',
+      'Connection': 'keep-alive',
+    });
+
+    final response = await client.send(request).timeout(
+      const Duration(seconds: 30),
+      onTimeout: () => throw Exception('Download timeout'),
+    );
+
+    if (response.statusCode != 200) {
+      client.close();
+      throw Exception('HTTP ${response.statusCode}: Failed to download PDF');
+    }
+
+    final contentLength = response.contentLength ?? 0;
+    var downloadedBytes = 0;
+    
+    final fileStream = file.openWrite();
+    
+    await response.stream.listen(
+      (chunk) {
+        fileStream.add(chunk);
+        downloadedBytes += chunk.length;
+        onProgress?.call(downloadedBytes, contentLength);
+      },
+      onDone: () async {
+        await fileStream.close();
+        client.close();
+      },
+      onError: (error) async {
+        await fileStream.close();
+        client.close();
+        throw error;
+      },
+    ).asFuture();
+
+    // ✅ Cache the downloaded file
+    _fileCache[cacheKey] = file;
+    print('✅ Download completed: $filePath');
+    
+    return filePath;
   }
 
   // ✅ Add method to preload PDF for faster access
