@@ -345,6 +345,7 @@ class BookDetails {
   final String summary;
   final String language;
   final String category;
+  final String accessType;
   final int price;
   final DateTime created_at;
   final List<String> formats;
@@ -369,6 +370,7 @@ class BookDetails {
     required this.summary,
     required this.language,
     required this.category,
+  required this.accessType,
     required this.created_at,
     required this.price,
     required this.formats,
@@ -394,6 +396,7 @@ class BookDetails {
       summary: json['summary'] ?? 'No summary available.',
       language: json['language'] ?? 'English',
       category: json['category'] ?? 'General',
+  accessType: json['access_type'] ?? json['access'] ?? 'free',
       created_at: DateTime.parse(json['created_at']),
       price: json['price'] ?? 0,
       formats: List<String>.from(json['formats'] ?? []),
@@ -422,6 +425,7 @@ class BookDetails {
       summary: this.summary,
       language: this.language,
       category: this.category,
+  accessType: this.accessType,
       created_at: this.created_at,
       price: this.price,
       formats: this.formats,
@@ -645,6 +649,7 @@ Future<BookDetails> fetchBookDetails(String bookId) async {
       review: reviewList,
       alsoEnjoyed: [],
       reviewBreakdown: reviewBreakdown,
+  accessType: response['access_type'] ?? response['access'] ?? 'free',
     );
 
     // Fetch related books
@@ -691,6 +696,7 @@ Future<BookDetails> fetchBookDetails(String bookId) async {
       review: [],
       alsoEnjoyed: [],
       reviewBreakdown: [],
+  accessType: 'free',
     );
   }
 }
@@ -1123,16 +1129,7 @@ class _BookCoverActions extends StatelessWidget {
           spacing: 16,
           runSpacing: 16,
           children: [
-            // Read Button - Updated with PDF functionality
-            _ActionChipButton(
-              icon: Icons.menu_book,
-              label: 'Read',
-              color: const Color(0xFF0096C7),
-              minWidth: 140,
-              onPressed: () => _handleReadBook(context),
-            ),
-            
-            // Abstract Button
+            // Abstract Button (always shown)
             _ActionChipButton(
               icon: Icons.summarize,
               label: 'Abstract',
@@ -1140,34 +1137,77 @@ class _BookCoverActions extends StatelessWidget {
               minWidth: 140,
               onPressed: () => _showAbstract(context),
             ),
-            
-            // Download PDF Button - Updated with download functionality
-            _ActionChipButton(
-              icon: Icons.picture_as_pdf,
-              label: 'Download PDF',
-              color: const Color(0xFF43AA8B),
-              minWidth: 140,
-              onPressed: () => _handleDownloadPDF(context),
-            ),
-            
-            // Borrow/Buy Button
-            _ActionChipButton(
-              icon: Icons.shopping_cart,
-              label: 'Borrow/Buy',
-              color: const Color(0xFFF3722C),
-              minWidth: 140,
-              onPressed: () {
-                showDialog(
-                  context: context,
-                  barrierDismissible: false,
-                  builder: (context) => BorrowRequestDialog(
-                    bookCover: book.cover,
-                    bookName: book.title,
-                    authorName: book.author,
-                  ),
-                );
+
+            // Free access: show Read, Download
+            if (book.accessType.toLowerCase() == 'free') ...[
+              _ActionChipButton(
+          icon: Icons.menu_book,
+          label: 'Read',
+          color: const Color(0xFF0096C7),
+          minWidth: 140,
+          onPressed: () => _handleReadBook(context),
+              ),
+              Center(
+                child: _ActionChipButton(
+                          icon: Icons.picture_as_pdf,
+                          label: 'Download PDF',
+                          color: const Color(0xFF43AA8B),
+                          minWidth: 140,
+                          onPressed: () => _handleDownloadPDF(context),
+                ),
+              ),
+            ]
+            // Borrow access: show Borrow or Read based on borrow status
+          else if (book.accessType.toLowerCase() == 'borrow') ...[
+            FutureBuilder<Map<String, dynamic>?>(
+              future: supabase.auth.currentUser?.id != null
+                ? supabase
+                    .from('borrow_requests')
+                    .select()
+                    .eq('book_id', bookId)
+                    .eq('user_id', supabase.auth.currentUser!.id)
+                    .eq('status', 'accepted')
+                    .order('end_date', ascending: false)
+                    .limit(1)
+                    .maybeSingle()
+                : Future.value(null),
+              builder: (context, snapshot) {
+                final borrow = snapshot.data;
+                final now = DateTime.now();
+                final endDate = borrow != null && borrow['end_date'] != null
+                    ? DateTime.tryParse(borrow['end_date'])
+                    : null;
+                final startDate = borrow != null && borrow['start_date'] != null
+                    ? DateTime.tryParse(borrow['start_date'])
+                    : null;
+                if (borrow != null &&
+                    endDate != null &&
+                    startDate != null &&
+                    now.isAfter(startDate) &&
+                    now.isBefore(endDate)) {
+                  // Show Read button only if accepted and within borrow period
+                  return _ActionChipButton(
+                    icon: Icons.menu_book,
+                    label: 'Read',
+                    color: const Color(0xFF0096C7),
+                    minWidth: 140,
+                    onPressed: () => _handleReadBook(context),
+                  );
+                } else {
+                  // Not borrowed or expired, show Borrow button
+                  return _ActionChipButton(
+                    icon: Icons.shopping_cart,
+                    label: 'Borrow',
+                    color: const Color(0xFFF3722C),
+                    minWidth: 140,
+                    onPressed: () {
+                      _showBorrowDialog(context, bookId, book.title, book.author);
+                    },
+                  );
+                }
               },
             ),
+          ],
           ],
         ),
         const SizedBox(height: 10),
@@ -1386,7 +1426,7 @@ Future<bool> _hasActiveBorrow(BuildContext context, String bookId) async {
       .select()
       .eq('book_id', bookId)
       .eq('user_id', user.id)
-      .eq('status', 'active')
+      .eq('status', 'accepted')
       .lte('start_date', now)
       .gte('end_date', now)
       .maybeSingle();
@@ -1401,58 +1441,217 @@ void _showBorrowDialog(BuildContext context, String bookId, String bookTitle, St
       DateTime endDate = startDate.add(Duration(days: 7));
       final reasonController = TextEditingController();
       bool isSubmitting = false;
+      
       return StatefulBuilder(
         builder: (context, setState) {
           return AlertDialog(
-            title: Text('Borrow "$bookTitle"'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('Author: $authorName'),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: reasonController,
-                  decoration: InputDecoration(
-                    labelText: 'Reason (optional)',
+            title: Text('Borrow Request', style: GoogleFonts.montserrat(fontWeight: FontWeight.bold)),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Book: $bookTitle', style: GoogleFonts.montserrat(fontWeight: FontWeight.w600)),
+                  Text('Author: $authorName', style: GoogleFonts.montserrat(color: Colors.grey[600])),
+                  const SizedBox(height: 16),
+                  
+                  // Reason field
+                  TextField(
+                    controller: reasonController,
+                    decoration: InputDecoration(
+                      labelText: 'Reason for borrowing',
+                      hintText: 'Why do you want to borrow this book?',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    maxLines: 3,
                   ),
-                ),
-                const SizedBox(height: 8),
-                Text('Borrow Period: ${DateFormat('yyyy-MM-dd').format(startDate)} to ${DateFormat('yyyy-MM-dd').format(endDate)}'),
-              ],
+                  const SizedBox(height: 16),
+                  
+                  // Collection Date
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text('Collection Date', style: GoogleFonts.montserrat(fontWeight: FontWeight.w600)),
+                    subtitle: Text(DateFormat('yyyy-MM-dd').format(startDate)),
+                    trailing: Icon(Icons.calendar_today),
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: startDate,
+                        firstDate: DateTime.now(),
+                        lastDate: DateTime.now().add(Duration(days: 30)),
+                      );
+                      if (picked != null) {
+                        setState(() {
+                          startDate = picked;
+                          // Auto-set return date to 7 days after collection
+                          endDate = startDate.add(Duration(days: 7));
+                        });
+                      }
+                    },
+                  ),
+                  
+                  // Return Date
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text('Return Date', style: GoogleFonts.montserrat(fontWeight: FontWeight.w600)),
+                    subtitle: Text(DateFormat('yyyy-MM-dd').format(endDate)),
+                    trailing: Icon(Icons.calendar_today),
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: endDate,
+                        firstDate: startDate.add(Duration(days: 1)),
+                        lastDate: startDate.add(Duration(days: 30)),
+                      );
+                      if (picked != null) {
+                        setState(() {
+                          endDate = picked;
+                        });
+                      }
+                    },
+                  ),
+                  
+                  if (isSubmitting) 
+                    Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Center(child: CircularProgressIndicator()),
+                    ),
+                ],
+              ),
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(context),
+                onPressed: isSubmitting ? null : () => Navigator.pop(context),
                 child: Text('Cancel'),
               ),
               ElevatedButton(
-                onPressed: isSubmitting
-                    ? null
-                    : () async {
-                        setState(() => isSubmitting = true);
-                        final user = supabase.auth.currentUser;
-                        if (user == null) return;
-                        await supabase.from('borrow_requests').insert({
-                          'book_id': bookId,
-                          'user_id': user.id,
-                          'reason': reasonController.text,
-                          'start_date': startDate.toIso8601String(),
-                          'end_date': endDate.toIso8601String(),
-                          'status': 'active',
-                        });
-                        // Optionally insert notification here
-                        Navigator.pop(context);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Borrow request successful!'), backgroundColor: Colors.green),
-                        );
-                      },
-                child: isSubmitting ? CircularProgressIndicator() : Text('Confirm Borrow'),
+                onPressed: isSubmitting ? null : () async {
+                  if (reasonController.text.trim().isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Please provide a reason for borrowing')),
+                    );
+                    return;
+                  }
+                  
+                  setState(() => isSubmitting = true);
+                  
+                  final success = await _submitBorrowRequest(
+                    context: context,
+                    bookId: bookId,
+                    reason: reasonController.text.trim(),
+                    startDate: startDate,
+                    endDate: endDate,
+                  );
+                  
+                  setState(() => isSubmitting = false);
+                  
+                  if (success) {
+                    Navigator.pop(context);
+                    _showBorrowSuccessDialog(context);
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0096C7),
+                ),
+                child: Text('Submit Request', style: TextStyle(color: Colors.white)),
               ),
             ],
           );
         },
       );
     },
+  );
+}
+
+// Submit borrow request to database
+Future<bool> _submitBorrowRequest({
+  required BuildContext context,
+  required String bookId,
+  required String reason,
+  required DateTime startDate,
+  required DateTime endDate,
+}) async {
+  try {
+    final user = supabase.auth.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Please login to submit a borrow request')),
+      );
+      return false;
+    }
+
+    // Check if user already has an active or pending request for this book
+    final existingRequest = await supabase
+        .from('borrow_requests')
+        .select()
+        .eq('book_id', bookId)
+        .eq('user_id', user.id)
+        .or('status.eq.pending,status.eq.accepted')
+        .maybeSingle();
+
+    if (existingRequest != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('You already have a pending or active request for this book')),
+      );
+      return false;
+    }
+
+    // Insert the borrow request with 'pending' status
+    final response = await supabase.from('borrow_requests').insert({
+      'book_id': bookId,
+      'user_id': user.id,
+      'reason': reason,
+      'start_date': startDate.toIso8601String(),
+      'end_date': endDate.toIso8601String(),
+      'status': 'pending',
+    }).select();
+
+    if (response is List && response.isNotEmpty) {
+      return true;
+    } else {
+      throw Exception('Failed to insert borrow request');
+    }
+  } catch (e) {
+    print('Error submitting borrow request: $e');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Failed to submit request: ${e.toString()}')),
+    );
+    return false;
+  }
+}
+
+// Show success dialog after borrow request submission
+void _showBorrowSuccessDialog(BuildContext context) {
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text('Request Submitted!', style: GoogleFonts.montserrat(fontWeight: FontWeight.bold)),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.check_circle, color: Colors.green, size: 64),
+          const SizedBox(height: 16),
+          Text(
+            'Your borrow request has been submitted successfully.',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.montserrat(),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'You will be notified when an admin approves your request.',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.montserrat(color: Colors.grey[600], fontSize: 12),
+          ),
+        ],
+      ),
+      actions: [
+        ElevatedButton(
+          onPressed: () => Navigator.pop(context),
+          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0096C7)),
+          child: Text('OK', style: TextStyle(color: Colors.white)),
+        ),
+      ],
+    ),
   );
 }
 

@@ -39,7 +39,7 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
   String search = '';
   Map<String, dynamic>? authorData;
 
-  final List<String> accessTypes = ['free', 'borrow', 'buy'];
+  final List<String> accessTypes = ['free', 'borrow'];
   String selectedAccessType = 'free';
 
   @override

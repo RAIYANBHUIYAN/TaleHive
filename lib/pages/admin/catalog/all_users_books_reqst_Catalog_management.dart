@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:intl/intl.dart';
+import '../../../services/notification_service.dart';
 
 class AllUsersBookRequestCatalogManagementPage extends StatefulWidget {
   const AllUsersBookRequestCatalogManagementPage({Key? key}) : super(key: key);
@@ -14,6 +17,8 @@ class _AllUsersBookRequestCatalogManagementPageState
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final TextEditingController _searchController = TextEditingController();
+  final supabase = Supabase.instance.client;
+  bool _isLoading = false;
 
   // Filter state
   String _selectedCategory = 'All';
@@ -188,41 +193,11 @@ class _AllUsersBookRequestCatalogManagementPageState
     },
   ];
 
-  // Sample data for book requests
-  List<Map<String, dynamic>> _bookRequests = [
-    {
-      'requestId': 'REQ001',
-      'userId': '1',
-      'userName': 'John Doe',
-      'bookTitle': 'Advanced Flutter',
-      'requestDate': '25-02-2024',
-      'status': 'Pending',
-    },
-    {
-      'requestId': 'REQ002',
-      'userId': '2',
-      'userName': 'Jane Smith',
-      'bookTitle': 'React Native Guide',
-      'requestDate': '24-02-2024',
-      'status': 'Approved',
-    },
-    {
-      'requestId': 'REQ003',
-      'userId': '3',
-      'userName': 'Mike Johnson',
-      'bookTitle': 'Python for Data Science',
-      'requestDate': '23-02-2024',
-      'status': 'Rejected',
-    },
-    {
-      'requestId': 'REQ004',
-      'userId': '4',
-      'userName': 'Emily Davis',
-      'bookTitle': 'Cloud Computing',
-      'requestDate': '22-02-2024',
-      'status': 'Pending',
-    },
-  ];
+  // Sample data for book requests (will be replaced with borrow requests)
+  List<Map<String, dynamic>> _bookRequests = [];
+
+  // Real borrow requests from database
+  List<Map<String, dynamic>> _borrowRequests = [];
 
   @override
   void initState() {
@@ -233,6 +208,61 @@ class _AllUsersBookRequestCatalogManagementPageState
         // Trigger rebuild when search text changes
       });
     });
+    _loadBorrowRequests();
+  }
+
+  // Load real borrow requests from Supabase
+  Future<void> _loadBorrowRequests() async {
+    setState(() => _isLoading = true);
+    
+    try {
+      final response = await supabase
+          .from('borrow_requests')
+          .select('''
+            id,
+            book_id,
+            user_id,
+            reason,
+            start_date,
+            end_date,
+            status,
+            created_at,
+            books(title, cover_image_url),
+            users(first_name, last_name, email)
+          ''')
+          .order('created_at', ascending: false);
+      
+      setState(() {
+        _borrowRequests = (response as List<Map<String, dynamic>>);
+        // Transform borrow requests to match the table format
+        _bookRequests = _borrowRequests.map((request) {
+          final book = request['books'] as Map<String, dynamic>?;
+          final user = request['users'] as Map<String, dynamic>?;
+          final createdAt = DateTime.parse(request['created_at']);
+          
+          return {
+            'requestId': request['id'],
+            'userId': request['user_id'],
+            'userName': user != null 
+                ? '${user['first_name'] ?? ''} ${user['last_name'] ?? ''}'.trim()
+                : 'Unknown User',
+            'userEmail': user?['email'] ?? '',
+            'bookTitle': book?['title'] ?? 'Unknown Book',
+            'bookCover': book?['cover_image_url'] ?? '',
+            'reason': request['reason'] ?? '',
+            'startDate': request['start_date'],
+            'endDate': request['end_date'],
+            'requestDate': DateFormat('dd-MM-yyyy').format(createdAt),
+            'status': request['status'],
+            'rawData': request, // Keep original data for actions
+          };
+        }).toList();
+        _isLoading = false;
+      });
+    } catch (e) {
+      print('Error loading borrow requests: $e');
+      setState(() => _isLoading = false);
+    }
   }
 
   @override
@@ -1156,7 +1186,7 @@ class _AllUsersBookRequestCatalogManagementPageState
                   Container(
                     width: 120,
                     child: Text(
-                      'Request ID',
+                      'Borrow ID',
                       style: GoogleFonts.montserrat(
                         fontWeight: FontWeight.w600,
                         fontSize: 14,
@@ -1167,7 +1197,7 @@ class _AllUsersBookRequestCatalogManagementPageState
                   Container(
                     width: 150,
                     child: Text(
-                      'User',
+                      'User Details',
                       style: GoogleFonts.montserrat(
                         fontWeight: FontWeight.w600,
                         fontSize: 14,
@@ -1222,8 +1252,45 @@ class _AllUsersBookRequestCatalogManagementPageState
                 ],
               ),
             ),
-            // Table Rows
-            ...List.generate(_bookRequests.length, (index) {
+            // Table Rows or Loading
+            if (_isLoading)
+              Container(
+                padding: const EdgeInsets.all(32),
+                child: Center(
+                  child: Column(
+                    children: [
+                      CircularProgressIndicator(color: const Color(0xFF0096C7)),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Loading borrow requests...',
+                        style: GoogleFonts.montserrat(color: Colors.grey[600]),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else if (_bookRequests.isEmpty)
+              Container(
+                padding: const EdgeInsets.all(32),
+                child: Center(
+                  child: Column(
+                    children: [
+                      Icon(Icons.inbox_outlined, size: 48, color: Colors.grey[400]),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No borrow requests found',
+                        style: GoogleFonts.montserrat(
+                          color: Colors.grey[600],
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else
+              ...List.generate(_bookRequests.length, (index) {
               final request = _bookRequests[index];
               return Container(
                 padding: const EdgeInsets.all(16),
@@ -1490,22 +1557,32 @@ class _AllUsersBookRequestCatalogManagementPageState
       builder: (BuildContext context) {
         return AlertDialog(
           title: Text(
-            'Request Details',
+            'Borrow Request Details',
             style: GoogleFonts.montserrat(
               fontWeight: FontWeight.w600,
               fontSize: 18,
             ),
           ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildDetailRow('Request ID:', request['requestId']),
-              _buildDetailRow('User:', request['userName']),
-              _buildDetailRow('Book Title:', request['bookTitle']),
-              _buildDetailRow('Request Date:', request['requestDate']),
-              _buildDetailRow('Status:', request['status']),
-            ],
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildDetailRow('Borrow ID:', request['requestId']),
+                _buildDetailRow('User Name:', request['userName']),
+                _buildDetailRow('User Email:', request['userEmail'] ?? ''),
+                _buildDetailRow('Book Title:', request['bookTitle']),
+                _buildDetailRow('Reason:', request['reason'] ?? 'No reason provided'),
+                _buildDetailRow('Collection Date:', request['startDate'] != null 
+                    ? DateFormat('dd MMM yyyy').format(DateTime.parse(request['startDate']))
+                    : 'Not specified'),
+                _buildDetailRow('Return Date:', request['endDate'] != null 
+                    ? DateFormat('dd MMM yyyy').format(DateTime.parse(request['endDate']))
+                    : 'Not specified'),
+                _buildDetailRow('Request Date:', request['requestDate']),
+                _buildDetailRow('Status:', request['status']),
+              ],
+            ),
           ),
           actions: [
             TextButton(
@@ -1515,12 +1592,9 @@ class _AllUsersBookRequestCatalogManagementPageState
                 style: GoogleFonts.montserrat(color: Colors.grey[600]),
               ),
             ),
-            if (request['status'] == 'Pending') ...[
+            if (request['status'] == 'pending') ...[
               ElevatedButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  // Handle approve action
-                },
+                onPressed: () => _approveBorrowRequest(request),
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
                 child: Text(
                   'Approve',
@@ -1528,10 +1602,7 @@ class _AllUsersBookRequestCatalogManagementPageState
                 ),
               ),
               ElevatedButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  // Handle reject action
-                },
+                onPressed: () => _rejectBorrowRequest(request),
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
                 child: Text(
                   'Reject',
@@ -1543,6 +1614,86 @@ class _AllUsersBookRequestCatalogManagementPageState
         );
       },
     );
+  }
+
+  // Approve borrow request
+  Future<void> _approveBorrowRequest(Map<String, dynamic> request) async {
+    try {
+      await supabase
+          .from('borrow_requests')
+          .update({'status': 'accepted'})
+          .eq('id', request['requestId']);
+      
+      // Create notification for user
+      await NotificationService.createNotification(
+        userId: request['userId'],
+        type: 'borrow_approved',
+        title: 'Request Approved',
+        body: 'Your borrow request for "${request['bookTitle'] ?? 'book'}" has been approved!',
+        data: {
+          'request_id': request['requestId'],
+          'book_id': request['bookId'],
+          'book_title': request['bookTitle'],
+        },
+      );
+      
+      Navigator.of(context).pop();
+      _loadBorrowRequests(); // Refresh the list
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Borrow request approved successfully!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to approve request: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  // Reject borrow request  
+  Future<void> _rejectBorrowRequest(Map<String, dynamic> request) async {
+    try {
+      await supabase
+          .from('borrow_requests')
+          .update({'status': 'rejected'})
+          .eq('id', request['requestId']);
+      
+      // Create notification for user
+      await NotificationService.createNotification(
+        userId: request['userId'],
+        type: 'borrow_rejected',
+        title: 'Request Rejected',
+        body: 'Your borrow request for "${request['bookTitle'] ?? 'book'}" has been rejected.',
+        data: {
+          'request_id': request['requestId'],
+          'book_id': request['bookId'],
+          'book_title': request['bookTitle'],
+        },
+      );
+      
+      Navigator.of(context).pop();
+      _loadBorrowRequests(); // Refresh the list
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Borrow request rejected.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to reject request: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   void _showBookReviewsDialog(String bookId) {

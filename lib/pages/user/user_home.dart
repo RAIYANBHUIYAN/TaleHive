@@ -1,6 +1,3 @@
-import 'package:flutter_email_sender/flutter_email_sender.dart';
-  // Send support email using flutter_email_sender
-
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -13,9 +10,13 @@ import 'user_dashboard.dart';
 import '../club/book_club.dart';
 import 'book_details.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'favorites_page.dart'; // Add this import at the top of the file
+import 'favorites_page.dart';
+import 'my_books_page.dart';
+import 'reading_history_page.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_email_sender/flutter_email_sender.dart';
+import '../../widgets/notification_bell_dropdown_v2.dart';
+
 
 class UserHomePage extends StatefulWidget {
   const UserHomePage({super.key});
@@ -491,9 +492,21 @@ class _UserHomePageState extends State<UserHomePage> {
                       _buildDrawerMenuItem(
                         icon: Icons.library_books,
                         title: 'My Books',
-                        onTap: () {
-                          Navigator.pop(context);
-                          // Add your my books navigation here
+                        onTap: () async {
+                          Navigator.pop(context); // Close drawer
+                          
+                          // Navigate to My Books page
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => MyBooksPage(
+                                onBooksChanged: () {
+                                  // Reload any necessary data when books change
+                                  _loadUserData();
+                                },
+                              ),
+                            ),
+                          );
                         },
                       ),
                       
@@ -528,7 +541,12 @@ class _UserHomePageState extends State<UserHomePage> {
                         title: 'Reading History',
                         onTap: () {
                           Navigator.pop(context);
-                          // Add your reading history navigation here
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const ReadingHistoryPage(),
+                            ),
+                          );
                         },
                       ),
                       
@@ -1154,11 +1172,7 @@ class _UserHomePageState extends State<UserHomePage> {
                 ),
               ),
               actions: [
-                IconButton(
-                  icon: const Icon(Icons.notifications_outlined, color: Color(0xFF22223b)),
-                  onPressed: () {},
-                ),
-              
+                const NotificationBellDropdownV2(),
               ],
               flexibleSpace: FlexibleSpaceBar(
                 centerTitle: true,
