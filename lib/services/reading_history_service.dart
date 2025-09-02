@@ -147,9 +147,11 @@ class ReadingHistoryService {
     }
   }
 
-  // Get recently read books (last N books)
+  // Get recently read books (last N books) - Returns flattened book data for home page
   static Future<List<Map<String, dynamic>>> getRecentlyReadBooks(String userId, {int limit = 10}) async {
     try {
+      print('📚 Recent Readings Debug: Fetching recent books for user: $userId with limit: $limit');
+      
       final readingHistoryResponse = await supabase
           .from('reading_history')
           .select('*')
@@ -157,7 +159,10 @@ class ReadingHistoryService {
           .order('last_read_at', ascending: false)
           .limit(limit);
 
+      print('📚 Recent Readings Debug: Reading history response: $readingHistoryResponse');
+
       if (readingHistoryResponse.isEmpty) {
+        print('📚 Recent Readings Debug: No reading history found');
         return [];
       }
 
@@ -165,6 +170,8 @@ class ReadingHistoryService {
       
       for (final historyRecord in readingHistoryResponse) {
         final bookId = historyRecord['book_id'].toString();
+        
+        print('📚 Recent Readings Debug: Fetching book data for ID: $bookId');
         
         final bookResponse = await supabase
             .from('books')
@@ -176,49 +183,58 @@ class ReadingHistoryService {
               published_at, 
               category, 
               access_type,
-              authors:author_id (
-                id,
-                first_name,
-                last_name,
-                display_name
-              )
+              description,
+              price,
+              language,
+              is_active,
+              created_at,
+              updated_at
             ''')
             .eq('id', bookId)
             .maybeSingle();
         
         if (bookResponse != null) {
+          print('📚 Recent Readings Debug: Found book: ${bookResponse['title']}');
+          
+          // Get author info separately
+          final authorResponse = await supabase
+              .from('authors')
+              .select('id, first_name, last_name, display_name')
+              .eq('id', bookResponse['author_id'])
+              .maybeSingle();
+          
           // Extract author name
           String authorName = 'Unknown Author';
-          if (bookResponse['authors'] != null) {
-            final author = bookResponse['authors'];
-            if (author['display_name'] != null && author['display_name'].toString().trim().isNotEmpty) {
-              authorName = author['display_name'];
-            } else if (author['first_name'] != null || author['last_name'] != null) {
-              final firstName = author['first_name'] ?? '';
-              final lastName = author['last_name'] ?? '';
+          if (authorResponse != null) {
+            if (authorResponse['display_name'] != null && authorResponse['display_name'].toString().trim().isNotEmpty) {
+              authorName = authorResponse['display_name'];
+            } else if (authorResponse['first_name'] != null || authorResponse['last_name'] != null) {
+              final firstName = authorResponse['first_name'] ?? '';
+              final lastName = authorResponse['last_name'] ?? '';
               authorName = '$firstName $lastName'.trim();
             }
           }
           
-          final bookData = Map<String, dynamic>.from(bookResponse);
-          bookData['author_name'] = authorName;
-          bookData.remove('authors');
+          // Create flattened book data (same structure as regular books)
+          final flattenedBook = Map<String, dynamic>.from(bookResponse);
+          flattenedBook['author_name'] = authorName;
           
-          result.add({
-            'book': bookData,
-            'reading_info': {
-              'read_count': historyRecord['read_count'],
-              'first_read_at': historyRecord['first_read_at'],
-              'last_read_at': historyRecord['last_read_at'],
-              'created_at': historyRecord['created_at'],
-            },
-          });
+          // Add reading history info as additional fields
+          flattenedBook['read_count'] = historyRecord['read_count'];
+          flattenedBook['first_read_at'] = historyRecord['first_read_at'];
+          flattenedBook['last_read_at'] = historyRecord['last_read_at'];
+          
+          result.add(flattenedBook);
+          print('📚 Recent Readings Debug: Added book to result: ${flattenedBook['title']}');
+        } else {
+          print('📚 Recent Readings Debug: No book found for ID: $bookId');
         }
       }
 
+      print('📚 Recent Readings Debug: Final result count: ${result.length}');
       return result;
     } catch (e) {
-      print('Error fetching recently read books: $e');
+      print('📚 Recent Readings Error: $e');
       return [];
     }
   }

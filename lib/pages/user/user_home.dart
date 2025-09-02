@@ -16,6 +16,7 @@ import 'reading_history_page.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_email_sender/flutter_email_sender.dart';
 import '../../widgets/notification_bell_dropdown_v2.dart';
+import '../../services/reading_history_service.dart';
 
 
 class UserHomePage extends StatefulWidget {
@@ -40,6 +41,10 @@ class _UserHomePageState extends State<UserHomePage> {
   Set<String> _favoriteBookIds = <String>{};
   bool _isLoadingFavorites = false;
 
+  // Add property for recent readings from reading history
+  List<Map<String, dynamic>> _recentReadings = [];
+  bool _isLoadingRecentReadings = false;
+
   final quotes = [
     "There is more treasure in books than in all the pirate's loot on Treasure Island. - Walt Disney",
     "A room without books is like a body without a soul. - Cicero",
@@ -50,7 +55,7 @@ class _UserHomePageState extends State<UserHomePage> {
   List<Map<String, dynamic>> get newArrivals => _books.take(3).toList();
   List<Map<String, dynamic>> get recommended => _books.skip(3).take(5).toList();
   List<Map<String, dynamic>> get popularBooks => _books.skip(8).take(4).toList();
-  List<Map<String, dynamic>> get recentReadings => _books.skip(12).take(5).toList();
+  List<Map<String, dynamic>> get recentReadings => _recentReadings;
 
   @override
   void initState() {
@@ -107,15 +112,91 @@ class _UserHomePageState extends State<UserHomePage> {
   Future<void> _loadBooksFromSupabase() async {
     setState(() => _isLoadingBooks = true);
     try {
+      print('📚 Loading books with author information...');
+      
       final response = await supabase
           .from('books')
           .select()
           .eq('is_active', true)
           .order('created_at', ascending: false);
 
+      print('📚 Found ${response.length} books');
+
+      // Process each book to add author information
+      final List<Map<String, dynamic>> booksWithAuthors = [];
+      
+      for (final bookData in response) {
+        final book = Map<String, dynamic>.from(bookData);
+        
+        // Get author information for this book
+        if (book['author_id'] != null) {
+          try {
+            final authorResponse = await supabase
+                .from('authors')
+                .select('id, first_name, last_name, display_name')
+                .eq('id', book['author_id'])
+                .maybeSingle();
+            
+            // Extract author name
+            String authorName = 'Unknown Author';
+            if (authorResponse != null) {
+              if (authorResponse['display_name'] != null && authorResponse['display_name'].toString().trim().isNotEmpty) {
+                authorName = authorResponse['display_name'];
+              } else if (authorResponse['first_name'] != null || authorResponse['last_name'] != null) {
+                final firstName = authorResponse['first_name'] ?? '';
+                final lastName = authorResponse['last_name'] ?? '';
+                authorName = '$firstName $lastName'.trim();
+              }
+            }
+            
+            book['author_name'] = authorName;
+            print('📚 Book: ${book['title']} - Author: $authorName');
+          } catch (e) {
+            print('📚 Error fetching author for book ${book['title']}: $e');
+            book['author_name'] = 'Unknown Author';
+          }
+        } else {
+          book['author_name'] = 'Unknown Author';
+        }
+        
+        booksWithAuthors.add(book);
+      }
+
       setState(() {
-        _books = response.map((book) => Map<String, dynamic>.from(book)).toList();
+        _books = booksWithAuthors;
       });
+
+      print('📚 Successfully loaded ${_books.length} books with author information');
+
+      // Load recent readings from reading history
+      setState(() {
+        _isLoadingRecentReadings = true;
+      });
+
+      try {
+        final user = supabase.auth.currentUser;
+        if (user != null) {
+          print('🔄 Loading recent readings for user: ${user.id}');
+          final recentReadingsData = await ReadingHistoryService.getRecentlyReadBooks(user.id, limit: 6);
+          print('📚 Recent readings data: $recentReadingsData');
+          print('📚 Recent readings count: ${recentReadingsData.length}');
+          setState(() {
+            _recentReadings = recentReadingsData;
+          });
+        } else {
+          print('❌ No user found for recent readings');
+        }
+      } catch (e) {
+        print('❌ Error loading recent readings: $e');
+        setState(() {
+          _recentReadings = [];
+        });
+      } finally {
+        setState(() {
+          _isLoadingRecentReadings = false;
+        });
+      }
+
     } catch (e) {
       print('Error loading books: $e');
     } finally {
@@ -153,17 +234,6 @@ class _UserHomePageState extends State<UserHomePage> {
       print('Error loading favorites: $e');
     } finally {
       setState(() => _isLoadingFavorites = false);
-    }
-  }
-
-  Future<void> _logout() async {
-    try {
-      await supabase.auth.signOut();
-      Navigator.of(context).pushReplacementNamed('/');
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error logging out: $e')),
-      );
     }
   }
 
@@ -1246,7 +1316,7 @@ class _UserHomePageState extends State<UserHomePage> {
                     // Recent Readings Section
                     const _SectionTitle(title: 'Recent Readings'),
                     const SizedBox(height: 16),
-                    _isLoadingBooks
+                    _isLoadingRecentReadings
                         ? const Center(child: CircularProgressIndicator())
                         : _RecentReadingsList(books: recentReadings),
 
