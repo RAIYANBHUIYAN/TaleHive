@@ -47,9 +47,14 @@ class _ReadingHistoryPageState extends State<ReadingHistoryPage> {
       });
 
       print('📖 Reading History Debug: Loaded ${_readBooks.length} total read books');
+      print('📖 Reading History Debug: Books data: $_readBooks');
       print('📖 Reading History Debug: Stats: $_readingStats');
+      
+      // Let's also check what's in the reading_history table directly
+      await _debugCheckDatabase(user.id);
+      
     } catch (e) {
-      print('Error loading reading history: $e');
+      print('📖 Reading History Error loading: $e');
       _showSnackBar('Failed to load reading history: ${e.toString()}', backgroundColor: Colors.red);
     } finally {
       setState(() => _isLoading = false);
@@ -89,6 +94,7 @@ class _ReadingHistoryPageState extends State<ReadingHistoryPage> {
         ),
         centerTitle: true,
         actions: [
+       
           IconButton(
             icon: const Icon(Icons.refresh, color: Color(0xFF22223b)),
             onPressed: _loadReadingHistory,
@@ -436,6 +442,71 @@ class _ReadingHistoryPageState extends State<ReadingHistoryPage> {
       }
     } catch (e) {
       return 'Recently';
+    }
+  }
+
+  Future<void> _debugCheckDatabase(String userId) async {
+    try {
+      print('📖 Reading History Debug: Checking reading_history table directly...');
+      
+      // Check reading_history table
+      final readingHistoryData = await supabase
+          .from('reading_history')
+          .select('*')
+          .eq('user_id', userId);
+      
+      print('📖 Reading History Debug: Direct reading_history query result: $readingHistoryData');
+      
+      // Check books table
+      final booksData = await supabase
+          .from('books')
+          .select('id, title, author_name')
+          .limit(5);
+          
+      print('📖 Reading History Debug: Sample books in database: $booksData');
+      
+    } catch (e) {
+      print('📖 Reading History Debug Error: $e');
+    }
+  }
+
+  Future<void> _addTestReadingData() async {
+    try {
+      final user = supabase.auth.currentUser;
+      if (user == null) {
+        _showSnackBar('Please login first', backgroundColor: Colors.red);
+        return;
+      }
+
+      print('📖 Adding test reading data...');
+      
+      // First, get a book from the books table
+      final booksResponse = await supabase
+          .from('books')
+          .select('id')
+          .limit(1);
+      
+      if (booksResponse.isEmpty) {
+        _showSnackBar('No books found in database', backgroundColor: Colors.red);
+        return;
+      }
+      
+      final bookId = booksResponse[0]['id'].toString();
+      print('📖 Using book ID: $bookId');
+      
+      // Add reading history using the service
+      final success = await ReadingHistoryService.trackBookReading(user.id, bookId);
+      
+      if (success) {
+        _showSnackBar('Test reading data added!', backgroundColor: Colors.green);
+        _loadReadingHistory(); // Refresh the page
+      } else {
+        _showSnackBar('Failed to add test data', backgroundColor: Colors.red);
+      }
+      
+    } catch (e) {
+      print('Error adding test data: $e');
+      _showSnackBar('Error adding test data: $e', backgroundColor: Colors.red);
     }
   }
 

@@ -52,36 +52,97 @@ class ReadingHistoryService {
   // Get all books read by a user (for Reading History)
   static Future<List<Map<String, dynamic>>> getUserReadBooks(String userId) async {
     try {
-      final response = await supabase
+      print('📖 Reading History Debug: Fetching books for user: $userId');
+      
+      // First, get reading history records
+      final readingHistoryResponse = await supabase
           .from('reading_history')
-          .select('''
-            *,
-            books:book_id (
-              id,
-              title,
-              author_name,
-              cover_image_url,
-              publication_date,
-              genre,
-              access_type
-            )
-          ''')
+          .select('*')
           .eq('user_id', userId)
           .order('last_read_at', ascending: false);
 
-      return response.map<Map<String, dynamic>>((item) {
-        return {
-          'book': item['books'],
-          'reading_info': {
-            'read_count': item['read_count'],
-            'first_read_at': item['first_read_at'],
-            'last_read_at': item['last_read_at'],
-            'created_at': item['created_at'],
-          },
-        };
-      }).toList();
+      print('📖 Reading History Debug: Reading history records: $readingHistoryResponse');
+
+      if (readingHistoryResponse.isEmpty) {
+        print('📖 Reading History Debug: No reading history found for user');
+        return [];
+      }
+
+      // Get all unique book IDs
+      final bookIds = readingHistoryResponse
+          .map((record) => record['book_id'].toString())
+          .toSet()
+          .toList();
+      
+      print('📖 Reading History Debug: Book IDs to fetch: $bookIds');
+
+      // Get books data separately - let's try a different approach
+      final result = <Map<String, dynamic>>[];
+      
+      for (final historyRecord in readingHistoryResponse) {
+        final bookId = historyRecord['book_id'].toString();
+        
+        // Get book data for this specific book with author info
+        final bookResponse = await supabase
+            .from('books')
+            .select('''
+              id, 
+              title, 
+              author_id,
+              cover_image_url, 
+              published_at, 
+              category, 
+              access_type, 
+              description,
+              authors:author_id (
+                id,
+                first_name,
+                last_name,
+                display_name
+              )
+            ''')
+            .eq('id', bookId)
+            .maybeSingle();
+        
+        print('📖 Reading History Debug: Book data for ID $bookId: $bookResponse');
+        
+        if (bookResponse != null) {
+          // Extract author name from authors table
+          String authorName = 'Unknown Author';
+          if (bookResponse['authors'] != null) {
+            final author = bookResponse['authors'];
+            if (author['display_name'] != null && author['display_name'].toString().trim().isNotEmpty) {
+              authorName = author['display_name'];
+            } else if (author['first_name'] != null || author['last_name'] != null) {
+              final firstName = author['first_name'] ?? '';
+              final lastName = author['last_name'] ?? '';
+              authorName = '$firstName $lastName'.trim();
+            }
+          }
+          
+          // Create book data with proper author name
+          final bookData = Map<String, dynamic>.from(bookResponse);
+          bookData['author_name'] = authorName;
+          bookData.remove('authors'); // Remove the nested authors object
+          
+          result.add({
+            'book': bookData,
+            'reading_info': {
+              'read_count': historyRecord['read_count'],
+              'first_read_at': historyRecord['first_read_at'],
+              'last_read_at': historyRecord['last_read_at'],
+              'created_at': historyRecord['created_at'],
+            },
+          });
+        } else {
+          print('📖 Reading History Debug: No book found for ID: $bookId');
+        }
+      }
+
+      print('📖 Reading History Debug: Final combined result: $result');
+      return result;
     } catch (e) {
-      print('Error fetching user read books: $e');
+      print('📖 Reading History Error: $e');
       return [];
     }
   }
@@ -89,35 +150,73 @@ class ReadingHistoryService {
   // Get recently read books (last N books)
   static Future<List<Map<String, dynamic>>> getRecentlyReadBooks(String userId, {int limit = 10}) async {
     try {
-      final response = await supabase
+      final readingHistoryResponse = await supabase
           .from('reading_history')
-          .select('''
-            *,
-            books:book_id (
-              id,
-              title,
-              author_name,
-              cover_image_url,
-              publication_date,
-              genre,
-              access_type
-            )
-          ''')
+          .select('*')
           .eq('user_id', userId)
           .order('last_read_at', ascending: false)
           .limit(limit);
 
-      return response.map<Map<String, dynamic>>((item) {
-        return {
-          'book': item['books'],
-          'reading_info': {
-            'read_count': item['read_count'],
-            'first_read_at': item['first_read_at'],
-            'last_read_at': item['last_read_at'],
-            'created_at': item['created_at'],
-          },
-        };
-      }).toList();
+      if (readingHistoryResponse.isEmpty) {
+        return [];
+      }
+
+      final result = <Map<String, dynamic>>[];
+      
+      for (final historyRecord in readingHistoryResponse) {
+        final bookId = historyRecord['book_id'].toString();
+        
+        final bookResponse = await supabase
+            .from('books')
+            .select('''
+              id, 
+              title, 
+              author_id,
+              cover_image_url, 
+              published_at, 
+              category, 
+              access_type,
+              authors:author_id (
+                id,
+                first_name,
+                last_name,
+                display_name
+              )
+            ''')
+            .eq('id', bookId)
+            .maybeSingle();
+        
+        if (bookResponse != null) {
+          // Extract author name
+          String authorName = 'Unknown Author';
+          if (bookResponse['authors'] != null) {
+            final author = bookResponse['authors'];
+            if (author['display_name'] != null && author['display_name'].toString().trim().isNotEmpty) {
+              authorName = author['display_name'];
+            } else if (author['first_name'] != null || author['last_name'] != null) {
+              final firstName = author['first_name'] ?? '';
+              final lastName = author['last_name'] ?? '';
+              authorName = '$firstName $lastName'.trim();
+            }
+          }
+          
+          final bookData = Map<String, dynamic>.from(bookResponse);
+          bookData['author_name'] = authorName;
+          bookData.remove('authors');
+          
+          result.add({
+            'book': bookData,
+            'reading_info': {
+              'read_count': historyRecord['read_count'],
+              'first_read_at': historyRecord['first_read_at'],
+              'last_read_at': historyRecord['last_read_at'],
+              'created_at': historyRecord['created_at'],
+            },
+          });
+        }
+      }
+
+      return result;
     } catch (e) {
       print('Error fetching recently read books: $e');
       return [];
@@ -131,36 +230,74 @@ class ReadingHistoryService {
       final startOfDay = DateTime(today.year, today.month, today.day).toIso8601String();
       final endOfDay = DateTime(today.year, today.month, today.day, 23, 59, 59).toIso8601String();
 
-      final response = await supabase
+      final readingHistoryResponse = await supabase
           .from('reading_history')
-          .select('''
-            *,
-            books:book_id (
-              id,
-              title,
-              author_name,
-              cover_image_url,
-              publication_date,
-              genre,
-              access_type
-            )
-          ''')
+          .select('*')
           .eq('user_id', userId)
           .gte('last_read_at', startOfDay)
           .lte('last_read_at', endOfDay)
           .order('last_read_at', ascending: false);
 
-      return response.map<Map<String, dynamic>>((item) {
-        return {
-          'book': item['books'],
-          'reading_info': {
-            'read_count': item['read_count'],
-            'first_read_at': item['first_read_at'],
-            'last_read_at': item['last_read_at'],
-            'created_at': item['created_at'],
-          },
-        };
-      }).toList();
+      if (readingHistoryResponse.isEmpty) {
+        return [];
+      }
+
+      final result = <Map<String, dynamic>>[];
+      
+      for (final historyRecord in readingHistoryResponse) {
+        final bookId = historyRecord['book_id'].toString();
+        
+        final bookResponse = await supabase
+            .from('books')
+            .select('''
+              id, 
+              title, 
+              author_id,
+              cover_image_url, 
+              published_at, 
+              category, 
+              access_type,
+              authors:author_id (
+                id,
+                first_name,
+                last_name,
+                display_name
+              )
+            ''')
+            .eq('id', bookId)
+            .maybeSingle();
+        
+        if (bookResponse != null) {
+          // Extract author name
+          String authorName = 'Unknown Author';
+          if (bookResponse['authors'] != null) {
+            final author = bookResponse['authors'];
+            if (author['display_name'] != null && author['display_name'].toString().trim().isNotEmpty) {
+              authorName = author['display_name'];
+            } else if (author['first_name'] != null || author['last_name'] != null) {
+              final firstName = author['first_name'] ?? '';
+              final lastName = author['last_name'] ?? '';
+              authorName = '$firstName $lastName'.trim();
+            }
+          }
+          
+          final bookData = Map<String, dynamic>.from(bookResponse);
+          bookData['author_name'] = authorName;
+          bookData.remove('authors');
+          
+          result.add({
+            'book': bookData,
+            'reading_info': {
+              'read_count': historyRecord['read_count'],
+              'first_read_at': historyRecord['first_read_at'],
+              'last_read_at': historyRecord['last_read_at'],
+              'created_at': historyRecord['created_at'],
+            },
+          });
+        }
+      }
+
+      return result;
     } catch (e) {
       print('Error fetching books read today: $e');
       return [];
