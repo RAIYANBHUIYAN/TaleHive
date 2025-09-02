@@ -94,7 +94,7 @@ class _ReadingHistoryPageState extends State<ReadingHistoryPage> {
         ),
         centerTitle: true,
         actions: [
-       
+        
           IconButton(
             icon: const Icon(Icons.refresh, color: Color(0xFF22223b)),
             onPressed: _loadReadingHistory,
@@ -112,15 +112,15 @@ class _ReadingHistoryPageState extends State<ReadingHistoryPage> {
                 ],
               ),
             )
-          : Column(
-              children: [
-                // Statistics Section
-                _buildStatisticsSection(screenWidth),
-                
-                // Books Grid
-                Expanded(
-                  child: _buildBookGrid(_readBooks),
+          : CustomScrollView(
+              slivers: [
+                // Statistics Section as a sliver
+                SliverToBoxAdapter(
+                  child: _buildStatisticsSection(MediaQuery.of(context).size.width),
                 ),
+                
+                // Books Grid as a sliver
+                _buildBookGridSliver(_readBooks),
               ],
             ),
     );
@@ -238,50 +238,56 @@ class _ReadingHistoryPageState extends State<ReadingHistoryPage> {
     );
   }
 
-  Widget _buildBookGrid(List<Map<String, dynamic>> books) {
+  Widget _buildBookGridSliver(List<Map<String, dynamic>> books) {
     if (books.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.menu_book,
-              size: 64,
-              color: const Color(0xFF94A3B8),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'No books in your reading history yet',
-              style: GoogleFonts.montserrat(
-                fontSize: 16,
-                color: const Color(0xFF64748B),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Start reading books to see them here!',
-              style: GoogleFonts.montserrat(
-                fontSize: 12,
+      return SliverFillRemaining(
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.menu_book,
+                size: 64,
                 color: const Color(0xFF94A3B8),
               ),
-            ),
-          ],
+              const SizedBox(height: 16),
+              Text(
+                'No books in your reading history yet',
+                style: GoogleFonts.montserrat(
+                  fontSize: 16,
+                  color: const Color(0xFF64748B),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Start reading books to see them here!',
+                style: GoogleFonts.montserrat(
+                  fontSize: 12,
+                  color: const Color(0xFF94A3B8),
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }
 
-    return GridView.builder(
+    return SliverPadding(
       padding: const EdgeInsets.all(16),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: _getGridCrossAxisCount(MediaQuery.of(context).size.width),
-        childAspectRatio: 0.65,
-        crossAxisSpacing: 16,
-        mainAxisSpacing: 16,
+      sliver: SliverGrid(
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: _getGridCrossAxisCount(MediaQuery.of(context).size.width),
+          childAspectRatio: 0.65,
+          crossAxisSpacing: 16,
+          mainAxisSpacing: 16,
+        ),
+        delegate: SliverChildBuilderDelegate(
+          (context, index) {
+            return _buildBookCard(books[index]);
+          },
+          childCount: books.length,
+        ),
       ),
-      itemCount: books.length,
-      itemBuilder: (context, index) {
-        return _buildBookCard(books[index]);
-      },
     );
   }
 
