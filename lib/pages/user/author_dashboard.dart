@@ -53,17 +53,26 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
     try {
       final user = supabase.auth.currentUser;
       if (user != null) {
+        print('🔄 Loading author data for user: ${user.id}');
+        
         final response = await supabase
             .from('authors')
             .select()
             .eq('id', user.id)
             .single();
+            
+        print('📊 Author data from database: $response');
+        
         setState(() {
           authorData = response;
         });
+        
+        print('📊 Author data loaded - books_published: ${authorData?['books_published']}');
+      } else {
+        print('⚠️ No authenticated user found');
       }
     } catch (e) {
-      print('Error loading author data: $e');
+      print('❌ Error loading author data: $e');
     }
   }
 
@@ -274,7 +283,6 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
 
       // Add metadata
       bookData['author_id'] = user.id;
-      bookData['author_name'] = authorData?['name'] ?? author['name'];
       bookData['is_active'] = true;
       bookData['created_at'] = DateTime.now().toIso8601String();
       bookData['updated_at'] = DateTime.now().toIso8601String();
@@ -290,6 +298,90 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
       setState(() {
         books = [response, ...books];
       });
+
+      // Increment books_published count in authors table
+      try {
+        print('🔄 Starting books_published increment process...');
+        print('👤 User ID: $user.id');
+        
+        // First, ensure the author record exists
+        try {
+          await supabase
+              .from('authors')
+              .upsert({
+                'id': user.id,
+                'email': user.email,
+                'first_name': authorData?['first_name'] ?? author['first_name'],
+                'last_name': authorData?['last_name'] ?? author['last_name'],
+                'bio': authorData?['bio'] ?? author['bio'],
+                'books_published': authorData?['books_published'] ?? 0,
+                'created_at': DateTime.now().toIso8601String(),
+              });
+          print('✅ Author record ensured in database');
+        } catch (upsertError) {
+          print('⚠️ Warning during author upsert: $upsertError');
+        }
+        
+        // Now get the current books_published count to ensure accuracy
+        final currentAuthorData = await supabase
+            .from('authors')
+            .select('books_published')
+            .eq('id', user.id)
+            .single();
+        
+        print('📊 Current author data: $currentAuthorData');
+        final currentCount = currentAuthorData['books_published'] ?? 0;
+        print('📊 Current books_published count: $currentCount');
+        
+        final newCount = currentCount + 1;
+        print('📊 New books_published count will be: $newCount');
+        
+        final updateResult = await supabase
+            .from('authors')
+            .update({
+              'books_published': newCount,
+            })
+            .eq('id', user.id);
+        
+        print('✅ Update result: $updateResult');
+        
+        // Reload author data to reflect the updated books_published count
+        print('🔄 Reloading author data...');
+        
+        // Add a small delay to ensure database update has propagated
+        await Future.delayed(const Duration(milliseconds: 500));
+        
+        await _loadAuthorData();
+        
+        print('📊 Author data after reload: ${authorData?['books_published']}');
+        
+        // Force UI update after reloading author data with explicit state change
+        if (mounted) {
+          setState(() {
+            // This will trigger a rebuild with the updated authorData
+            // Force refresh of stats cards
+          });
+        }
+        
+        print('📈 Author books_published count incremented from $currentCount to $newCount');
+        print('🎯 Final authorData books_published: ${authorData?['books_published']}');
+        
+        // Additional verification - query the database directly to confirm the update
+        try {
+          final verifyData = await supabase
+              .from('authors')
+              .select('books_published')
+              .eq('id', user.id)
+              .single();
+          print('✅ Database verification - books_published: ${verifyData['books_published']}');
+        } catch (verifyError) {
+          print('⚠️ Could not verify database update: $verifyError');
+        }
+      } catch (e) {
+        print('⚠️ Warning: Failed to increment books_published count: $e');
+        print('⚠️ Error details: ${e.toString()}');
+        // Don't fail the entire operation if this update fails
+      }
 
       print('📚 Book saved with data:');
       print('   Title: ${bookData['title']}');
@@ -448,6 +540,24 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
   // Get unique categories
   Set<String> _getUniqueCategories() {
     return books.map((book) => book['category']?.toString() ?? 'Unknown').toSet();
+  }
+
+  // Get published books count with debugging
+  String _getPublishedCount() {
+    final dbCount = authorData?['books_published'];
+    final localCount = books.length;
+    
+    print('📊 Stats Card Debug:');
+    print('   - Database count: $dbCount');
+    print('   - Local books count: $localCount');
+    print('   - Author data: ${authorData != null ? "loaded" : "null"}');
+    
+    if (dbCount != null) {
+      return dbCount.toString();
+    } else {
+      print('⚠️ Using fallback count (local books): $localCount');
+      return localCount.toString();
+    }
   }
 
   // Add this method to test URLs:
@@ -656,9 +766,9 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                   // Stats Cards
                   Row(
                     children: [
-                      _statCard('Total Books', '${books.length}', Icons.menu_book, Colors.blue),
-                      const SizedBox(width: 8),
-                      _statCard('Published', '${books.length}', Icons.publish, Colors.green),
+                      // _statCard('Total Books', '${books.length}', Icons.menu_book, Colors.blue),
+                      // const SizedBox(width: 8),
+                      _statCard('Published', '${_getPublishedCount()}', Icons.publish, Colors.green),
                       const SizedBox(width: 8),
                       _statCard('Categories', '${_getUniqueCategories().length}', Icons.category, Colors.orange),
                     ],
@@ -728,9 +838,7 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                                             overflow: TextOverflow.ellipsis,
                                           ),
                                           const SizedBox(height: 8),
-                                          if (book['author_name'] != null)
-                                            Text('Author: ${book['author_name']}', style: const TextStyle(color: Colors.grey, fontSize: 14)),
-                                          const SizedBox(height: 4),
+                  
                                           if (book['category'] != null)
                                             Container(
                                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -836,7 +944,6 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
 
   void _editBook(Map<String, dynamic> book) {
     final titleController = TextEditingController(text: book['title']);
-    final authorNameController = TextEditingController(text: book['author_name']);
     final priceController = TextEditingController(text: book['price']?.toString() ?? '');
     final summaryController = TextEditingController(text: book['summary'] ?? '');
     final languageController = TextEditingController(text: book['language'] ?? 'English');
@@ -1017,8 +1124,7 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                   // Form fields
                   TextField(controller: titleController, decoration: const InputDecoration(labelText: 'Book Title*')),
                   const SizedBox(height: 8),
-                  TextField(controller: authorNameController, decoration: const InputDecoration(labelText: 'Author Name')),
-                  const SizedBox(height: 8),
+                
                   TextField(controller: priceController, decoration: const InputDecoration(labelText: 'Price (\$)'), keyboardType: TextInputType.number),
                   const SizedBox(height: 8),
                   TextField(controller: languageController, decoration: const InputDecoration(labelText: 'Language')),
@@ -1062,7 +1168,6 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                   try {
                     final updatedData = {
                       'title': titleController.text.trim(),
-                      'author_name': authorNameController.text.trim(),
                       'price': double.tryParse(priceController.text) ?? 0.0,
                       'language': languageController.text.trim(),
                       'summary': summaryController.text.trim(),
@@ -1240,7 +1345,6 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
 
   void _showPublishBookDialog() {
     final titleController = TextEditingController();
-    final authorNameController = TextEditingController(text: authorData?['name'] ?? author['name']);
     final priceController = TextEditingController();
     final summaryController = TextEditingController();
     final languageController = TextEditingController(text: 'English');
@@ -1403,8 +1507,6 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                   // Form fields
                   TextField(controller: titleController, decoration: const InputDecoration(labelText: 'Book Title*')),
                   const SizedBox(height: 8),
-                  TextField(controller: authorNameController, decoration: const InputDecoration(labelText: 'Author Name')),
-                  const SizedBox(height: 8),
                   TextField(controller: priceController, decoration: const InputDecoration(labelText: 'Price (\$)'), keyboardType: TextInputType.number),
                   const SizedBox(height: 8),
                   TextField(controller: languageController, decoration: const InputDecoration(labelText: 'Language')),
@@ -1454,7 +1556,6 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
 
                   final bookData = {
                     'title': titleController.text.trim(),
-                    'author_name': authorNameController.text.trim(),
                     'price': double.tryParse(priceController.text) ?? 0.0,
                     'language': languageController.text.trim(),
                     'summary': summaryController.text.trim(),
@@ -1667,6 +1768,38 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
 
         // Delete from database - use the string ID directly (works with UUIDs)
         await supabase.from('books').delete().eq('id', id);
+        
+        // Decrement books_published count in authors table
+        try {
+          final user = supabase.auth.currentUser;
+          if (user != null) {
+            // Get the current books_published count from database to ensure accuracy
+            final currentAuthorData = await supabase
+                .from('authors')
+                .select('books_published')
+                .eq('id', user.id)
+                .single();
+            
+            final currentCount = currentAuthorData['books_published'] ?? 0;
+            final newCount = (currentCount > 0) ? currentCount - 1 : 0;
+            
+            await supabase
+                .from('authors')
+                .update({
+                  'books_published': newCount,
+             
+                })
+                .eq('id', user.id);
+            
+            // Reload author data to reflect the updated books_published count
+            await _loadAuthorData();
+            
+            print('📉 Author books_published count decremented from $currentCount to $newCount');
+          }
+        } catch (e) {
+          print('⚠️ Warning: Failed to decrement books_published count: $e');
+          // Don't fail the entire operation if this update fails
+        }
         
         // Close loading dialog
         if (mounted) Navigator.pop(context);

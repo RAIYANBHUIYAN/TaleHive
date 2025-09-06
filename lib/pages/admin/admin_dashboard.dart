@@ -32,7 +32,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   @override
   void initState() {
     super.initState();
+    print('🏗️ AdminDashboard: initState called');
     _loadDashboardData();
+  }
+
+  @override
+  void dispose() {
+    print('🗑️ AdminDashboard: dispose called');
+    super.dispose();
   }
 
   // Load dashboard statistics from Supabase
@@ -101,23 +108,44 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   }
 
   void _toggleSidebar() {
+    print('🔄 AdminDashboard: Toggling sidebar. Current state: $_isSidebarOpen');
     setState(() {
       _isSidebarOpen = !_isSidebarOpen;
     });
+    print('🔄 AdminDashboard: Sidebar toggled to: $_isSidebarOpen');
   }
 
   void _handleSidebarTap(String label) {
+    print('🎯 AdminDashboard: Sidebar tapped - $label');
     if (label == 'Log Out') {
       _showLogoutDialog();
     } else if (label == 'Catalog') {
-      Navigator.of(context).push(_createRoute(const AllUsersBookRequestCatalogManagementPage()));
+      print('📚 AdminDashboard: Navigating to Catalog page');
+      // Close sidebar BEFORE navigation to prevent state conflicts
       _toggleSidebar();
+      // Add a small delay to ensure sidebar closes completely
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (mounted) {
+          print('🚀 AdminDashboard: Pushing Catalog page');
+          Navigator.of(context).push(_createRoute(const AllUsersBookRequestCatalogManagementPage()));
+        } else {
+          print('❌ AdminDashboard: Widget not mounted, skipping navigation');
+        }
+      });
     } else if (label == 'Books') {
-      Navigator.of(context).push(_createRoute(const BooksAndClubManagementPage()));
       _toggleSidebar();
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (mounted) {
+          Navigator.of(context).push(_createRoute(const BooksAndClubManagementPage()));
+        }
+      });
     } else if (label == 'Users') {
-      Navigator.of(context).push(_createRoute(const UserManagementPage()));
       _toggleSidebar();
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (mounted) {
+          Navigator.of(context).push(_createRoute(const UserManagementPage()));
+        }
+      });
     } else {
       _toggleSidebar();
     }
@@ -125,6 +153,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
   @override
   Widget build(BuildContext context) {
+    print('🔄 AdminDashboard: build called (sidebar: $_isSidebarOpen)');
     final bool isMobile = MediaQuery.of(context).size.width < 768;
     
     return Scaffold(
@@ -160,7 +189,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             bottom: 0,
             child: AdminSidebar(
               onItemTap: _handleSidebarTap,
-              isDashboard: true,
+              activePage: 'Dashboard', // Set Dashboard as active
             ),
           ),
         ],

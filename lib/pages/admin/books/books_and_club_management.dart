@@ -3,6 +3,11 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:file_picker/file_picker.dart';
 import 'dart:io';
 
+import '../../../components/admin_sidebar.dart';
+import '../catalog/all_users_books_reqst_Catalog_management.dart';
+import '../users/user_management.dart';
+import '../../main_home_page/main_page.dart';
+
 class BooksAndClubManagementPage extends StatefulWidget {
   const BooksAndClubManagementPage({Key? key}) : super(key: key);
 
@@ -16,6 +21,9 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
   late TabController _tabController;
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _bookSearchController = TextEditingController();
+  
+  // Sidebar state
+  bool _isSidebarOpen = false;
 
   // Filter categories
   List<String> _bookCategories = [
@@ -166,6 +174,135 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
     super.dispose();
   }
 
+  // Sidebar methods
+  void _toggleSidebar() {
+    setState(() {
+      _isSidebarOpen = !_isSidebarOpen;
+    });
+  }
+
+  // Smooth transition route helper
+  Route _createRoute(Widget page) {
+    return PageRouteBuilder(
+      pageBuilder: (context, animation, secondaryAnimation) => page,
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        const begin = Offset(1.0, 0.0);
+        const end = Offset.zero;
+        const curve = Curves.ease;
+        var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+        return SlideTransition(
+          position: animation.drive(tween),
+          child: child,
+        );
+      },
+    );
+  }
+
+  void _handleSidebarTap(String label) {
+    if (label == 'Dashboard') {
+      _toggleSidebar();
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (mounted) {
+          Navigator.of(context).pop(); // Go back to dashboard
+        }
+      });
+    } else if (label == 'Catalog') {
+      _toggleSidebar();
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (mounted) {
+          Navigator.of(context).pushReplacement(_createRoute(const AllUsersBookRequestCatalogManagementPage()));
+        }
+      });
+    } else if (label == 'Users') {
+      _toggleSidebar();
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (mounted) {
+          Navigator.of(context).pushReplacement(_createRoute(const UserManagementPage()));
+        }
+      });
+    } else if (label == 'Log Out') {
+      _showLogoutDialog();
+    } else {
+      _toggleSidebar();
+    }
+  }
+
+  void _showLogoutDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
+            children: [
+              Icon(
+                Icons.logout,
+                color: Colors.red[600],
+                size: 24,
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Logout',
+                style: GoogleFonts.montserrat(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                ),
+              ),
+            ],
+          ),
+          content: Text(
+            'Are you sure you want to logout from admin panel?',
+            style: GoogleFonts.montserrat(
+              fontSize: 14,
+              color: Colors.grey[600],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(
+                'Cancel',
+                style: GoogleFonts.montserrat(
+                  color: Colors.grey[600],
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+                // Navigate to main page
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (context) => const MainPage()),
+                  (Route<dynamic> route) => false,
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red[600],
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 10,
+                ),
+              ),
+              child: Text(
+                'Logout',
+                style: GoogleFonts.montserrat(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _buildHeader() {
     return Container(
       padding: const EdgeInsets.all(24.0),
@@ -180,6 +317,41 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
         bottom: false,
         child: Column(
           children: [
+            // Top row with hamburger menu and title
+            Row(
+              children: [
+                // Hamburger Menu Button
+                GestureDetector(
+                  onTap: _toggleSidebar,
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.menu,
+                      color: Colors.white,
+                      size: 24,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                // Title
+                Expanded(
+                  child: Text(
+                    'Books & Club Management',
+                    style: GoogleFonts.montserrat(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            // Tab Bar
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
               decoration: BoxDecoration(
@@ -2704,24 +2876,50 @@ class _BooksAndClubManagementPageState extends State<BooksAndClubManagementPage>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF4F8FB),
-      body: Column(
+      body: Stack(
         children: [
-          _buildHeader(),
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                // Book Management Tab
-                Column(
+          // Main Content
+          Column(
+            children: [
+              _buildHeader(),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
                   children: [
-                    _buildSearchAndActions(),
-                    _buildDataTable(),
-                    const SizedBox(height: 24),
+                    // Book Management Tab
+                    Column(
+                      children: [
+                        _buildSearchAndActions(),
+                        _buildDataTable(),
+                        const SizedBox(height: 24),
+                      ],
+                    ),
+                    // Book Club Management Tab
+                    _buildBookClubManagement(),
                   ],
                 ),
-                // Book Club Management Tab
-                _buildBookClubManagement(),
-              ],
+              ),
+            ],
+          ),
+          // Sidebar Overlay
+          if (_isSidebarOpen)
+            GestureDetector(
+              onTap: _toggleSidebar,
+              child: Container(
+                color: Colors.black.withOpacity(0.5),
+                width: double.infinity,
+                height: double.infinity,
+              ),
+            ),
+          // Sidebar
+          AnimatedPositioned(
+            duration: const Duration(milliseconds: 300),
+            left: _isSidebarOpen ? 0 : -280,
+            top: 0,
+            bottom: 0,
+            child: AdminSidebar(
+              onItemTap: _handleSidebarTap,
+              activePage: 'Books', // Set Books as active
             ),
           ),
         ],

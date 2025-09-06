@@ -3,8 +3,8 @@ import 'package:google_fonts/google_fonts.dart';
 
 class AdminSidebar extends StatelessWidget {
   final Function(String label)? onItemTap;
-  final bool isDashboard;
-  const AdminSidebar({Key? key, this.onItemTap, this.isDashboard = false}) : super(key: key);
+  final String activePage; // Track which page is currently active
+  const AdminSidebar({Key? key, this.onItemTap, this.activePage = 'Dashboard'}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -111,10 +111,10 @@ class AdminSidebar extends StatelessWidget {
           Expanded(
             child: Column(
               children: [
-                _sidebarItem(context, Icons.dashboard, 'Dashboard', isDashboard),
-                _sidebarItem(context, Icons.menu_book, 'Catalog'),
-                _sidebarItem(context, Icons.book, 'Books'),
-                _sidebarItem(context, Icons.people, 'Users'),
+                _sidebarItem(context, Icons.dashboard, 'Dashboard', activePage == 'Dashboard'),
+                _sidebarItem(context, Icons.menu_book, 'Catalog', activePage == 'Catalog'),
+                _sidebarItem(context, Icons.book, 'Books', activePage == 'Books'),
+                _sidebarItem(context, Icons.people, 'Users', activePage == 'Users'),
               ],
             ),
           ),
@@ -134,17 +134,21 @@ class AdminSidebar extends StatelessWidget {
       decoration: BoxDecoration(
         color: isSelected ? Colors.white.withOpacity(0.2) : Colors.transparent,
         borderRadius: BorderRadius.circular(12),
+        border: isSelected ? Border.all(
+          color: Colors.white.withOpacity(0.3),
+          width: 1,
+        ) : null,
       ),
       child: ListTile(
         leading: Icon(
           icon,
-          color: Colors.white,
+          color: isSelected ? Colors.white : Colors.white.withOpacity(0.8),
           size: 24,
         ),
         title: Text(
           label,
           style: GoogleFonts.montserrat(
-            color: Colors.white,
+            color: isSelected ? Colors.white : Colors.white.withOpacity(0.8),
             fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
             fontSize: 16,
           ),
