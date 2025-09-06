@@ -1,3 +1,4 @@
+
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -29,6 +30,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     'requests': 0,
   };
 
+  // Real user data
+  List<Map<String, dynamic>> _recentUsers = [];
+  List<Map<String, dynamic>> _currentReaders = [];
+  Map<String, dynamic> _analyticsData = {};
+
   @override
   void initState() {
     super.initState();
@@ -46,6 +52,32 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   Future<void> _loadDashboardData() async {
     setState(() => _isLoading = true);
     
+    try {
+      // Load all data in parallel
+      await Future.wait([
+        _loadBasicStats(),
+        _loadRecentUsers(),
+        _loadCurrentReaders(),
+        _loadAnalyticsData(),
+      ]);
+    } catch (e) {
+      print('Error loading dashboard data: $e');
+      // Set default values on error
+      setState(() {
+        _stats = {
+          'users': 150,
+          'authors': 25,
+          'books': 1500,
+          'requests': 67,
+        };
+      });
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  // Load basic statistics
+  Future<void> _loadBasicStats() async {
     try {
       // Load users count
       final usersData = await supabase
@@ -68,25 +100,121 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           .toSet()
           .length;
 
+      // Load real borrow requests count
+      final requestsData = await supabase
+          .from('borrow_requests')
+          .select();
+
       setState(() {
         _stats['users'] = usersData.length;
         _stats['books'] = booksData.length;
         _stats['authors'] = uniqueAuthors;
-        _stats['requests'] = 67; // Placeholder - add actual requests table query
+        _stats['requests'] = requestsData.length;
       });
     } catch (e) {
-      print('Error loading dashboard data: $e');
-      // Set default values on error
+      print('Error loading basic stats: $e');
+    }
+  }
+
+  // Load recent users (last 5)
+  Future<void> _loadRecentUsers() async {
+    try {
+      final response = await supabase
+          .from('users')
+          .select('id, first_name, last_name, email, created_at')
+          .order('created_at', ascending: false)
+          .limit(5);
+      
       setState(() {
-        _stats = {
-          'users': 150,
-          'authors': 25,
-          'books': 1500,
-          'requests': 67,
+        _recentUsers = List<Map<String, dynamic>>.from(response);
+      });
+    } catch (e) {
+      print('Error loading recent users: $e');
+    }
+  }
+
+  // Load current readers (from borrow_requests with accepted status)
+  Future<void> _loadCurrentReaders() async {
+    try {
+      final response = await supabase
+          .from('borrow_requests')
+          .select('''
+            id,
+            user_id,
+            book_id,
+            start_date,
+            end_date,
+            status,
+            users:user_id (first_name, last_name, email),
+            books:book_id (title, id)
+          ''')
+          .eq('status', 'accepted')
+          .gte('end_date', DateTime.now().toIso8601String().split('T')[0])
+          .order('start_date', ascending: false)
+          .limit(5);
+      
+      setState(() {
+        _currentReaders = List<Map<String, dynamic>>.from(response);
+      });
+    } catch (e) {
+      print('Error loading current readers: $e');
+    }
+  }
+
+  // Load analytics data
+  Future<void> _loadAnalyticsData() async {
+    try {
+      // Get overdue books count
+      final overdueResponse = await supabase
+          .from('borrow_requests')
+          .select('id')
+          .eq('status', 'accepted')
+          .lt('end_date', DateTime.now().toIso8601String().split('T')[0]);
+
+      // Get current borrows count (full count, not limited)
+      final currentResponse = await supabase
+          .from('borrow_requests')
+          .select('id')
+          .eq('status', 'accepted')
+          .gte('end_date', DateTime.now().toIso8601String().split('T')[0]);
+
+      // Get books borrowed this month
+      final thisMonth = DateTime.now();
+      final firstDayOfMonth = DateTime(thisMonth.year, thisMonth.month, 1);
+      
+      final monthlyBorrowsResponse = await supabase
+          .from('borrow_requests')
+          .select('id')
+          .eq('status', 'accepted')
+          .gte('created_at', firstDayOfMonth.toIso8601String());
+
+      // Get most popular category
+      final categoriesResponse = await supabase
+          .from('books')
+          .select('category')
+          .not('category', 'is', null);
+
+      // Count categories
+      final categoryCount = <String, int>{};
+      for (final book in categoriesResponse) {
+        final category = book['category']?.toString() ?? 'Unknown';
+        categoryCount[category] = (categoryCount[category] ?? 0) + 1;
+      }
+      
+      final mostPopularCategory = categoryCount.entries
+          .reduce((a, b) => a.value > b.value ? a : b);
+
+      setState(() {
+        _analyticsData = {
+          'overdue_books': overdueResponse.length,
+          'current_borrows': currentResponse.length,
+          'monthly_borrows': monthlyBorrowsResponse.length,
+          'popular_category': mostPopularCategory.key,
+          'total_categories': categoryCount.length,
         };
       });
-    } finally {
-      setState(() => _isLoading = false);
+    } catch (e) {
+      print('Error loading analytics data: $e');
     }
   }
 
@@ -390,63 +518,70 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   }
 
   Widget _buildMobileContent() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        children: [
-          // Pie Chart Section
-          Container(
-            key: const ValueKey('mobile_pie_chart'),
-            margin: const EdgeInsets.only(bottom: 24),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
+    return RefreshIndicator(
+      onRefresh: _loadDashboardData,
+      color: const Color(0xFF0096C7),
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            // Pie Chart Section
+            Container(
+              key: const ValueKey('mobile_pie_chart'),
+              margin: const EdgeInsets.only(bottom: 24),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                Text(
+                  '📊 Book Status Overview',
+                  style: GoogleFonts.montserrat(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: const Color(0xFF2D3748),
+                  ),
                 ),
-              ],
-            ),
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              children: [
+                const SizedBox(height: 16),
                 AspectRatio(
                   aspectRatio: 1.0,
                   child: PieChart(
                     PieChartData(
-                      sections: [
-                        PieChartSectionData(
-                          color: const Color(0xFF0096C7),
-                          value: _stats['books']!.toDouble(),
-                          title: '',
-                          radius: 60,
-                        ),
-                        PieChartSectionData(
-                          color: const Color(0xFF2D3748),
-                          value: (_stats['books']! * 0.3).toDouble(),
-                          title: '',
-                          radius: 60,
-                        ),
-                      ],
+                      sections: _getPieChartSections(),
                       sectionsSpace: 0,
-                      centerSpaceRadius: 0,
+                      centerSpaceRadius: 40,
                       borderData: FlBorderData(show: false),
                     ),
                   ),
                 ),
                 const SizedBox(height: 16),
                 Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _buildLegendItem(
-                      color: const Color(0xFF0096C7),
-                      label: 'Total Readable Books',
+                      color: Colors.green,
+                      label: '✅ Available Books',
                     ),
                     const SizedBox(height: 8),
                     _buildLegendItem(
-                      color: const Color(0xFF2D3748),
-                      label: 'Most Readable Books',
+                      color: const Color(0xFF0096C7),
+                      label: '📖 Currently Borrowed',
+                    ),
+                    const SizedBox(height: 8),
+                    _buildLegendItem(
+                      color: Colors.red,
+                      label: '⚠️ Overdue Books',
                     ),
                   ],
                 ),
@@ -457,32 +592,46 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           // Stats Cards Section
           Column(
             children: [
-              // First row - User Base and Book Count side by side
+              // First row - Users and Authors
               Row(
                 children: [
                   Expanded(
                     child: _buildStatCard(
-                      icon: Icons.person,
+                      icon: Icons.people,
                       value: _stats['users'].toString().padLeft(4, '0'),
-                      label: 'Total User Base',
+                      label: 'Total Users',
                     ),
                   ),
                   const SizedBox(width: 16),
                   Expanded(
                     child: _buildStatCard(
-                      icon: Icons.menu_book,
-                      value: _stats['books'].toString().padLeft(5, '0'),
-                      label: 'Total Book Count',
+                      icon: Icons.person_outline,
+                      value: _stats['authors'].toString().padLeft(3, '0'),
+                      label: 'Total Authors',
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 16),
-              // Second row - Book Borrow Requests full width
-              _buildStatCard(
-                icon: Icons.request_page,
-                value: _stats['requests'].toString().padLeft(3, '0'),
-                label: 'Total Book Borrow Requests',
+              // Second row - Books and Requests
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildStatCard(
+                      icon: Icons.library_books,
+                      value: _stats['books'].toString().padLeft(5, '0'),
+                      label: 'Total Books',
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: _buildStatCard(
+                      icon: Icons.request_page,
+                      value: _stats['requests'].toString().padLeft(3, '0'),
+                      label: 'Borrow Requests',
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -493,18 +642,64 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           Column(
             children: [
               _buildInfoCard(
-                title: 'User Details',
-                items: List.generate(4, (index) => _buildUserDetailItem()),
+                title: '👥 Recent Users',
+                content: _recentUsers.isEmpty
+                    ? const Center(child: Padding(
+                        padding: EdgeInsets.all(20.0),
+                        child: Text('No recent users found', 
+                                   style: TextStyle(color: Colors.grey)),
+                      ))
+                    : Column(
+                        children: _recentUsers.map((user) => _buildUserDetailItem(user: user)).toList(),
+                      ),
               ),
               const SizedBox(height: 16),
               _buildInfoCard(
-                title: 'Book Readers Update',
-                items: List.generate(5, (index) => _buildBookReaderItem()),
+                title: '📚 Current Readers',
+                content: _currentReaders.isEmpty
+                    ? const Center(child: Padding(
+                        padding: EdgeInsets.all(20.0),
+                        child: Text('No current readers found',
+                                   style: TextStyle(color: Colors.grey)),
+                      ))
+                    : Column(
+                        children: _currentReaders.map((reader) => _buildBookReaderItem(reader: reader)).toList(),
+                      ),
+              ),
+              const SizedBox(height: 16),
+              // Analytics Card for Mobile
+              _buildInfoCard(
+                title: '📊 Analytics Overview',
+                content: Column(
+                  children: [
+                    _buildAnalyticsItem(
+                      '🔴 Overdue Books',
+                      '${_analyticsData['overdue_books'] ?? 0}',
+                      Colors.red,
+                    ),
+                    _buildAnalyticsItem(
+                      '📖 Current Borrows',
+                      '${_analyticsData['current_borrows'] ?? 0}',
+                      Colors.blue,
+                    ),
+                    _buildAnalyticsItem(
+                      '📈 Monthly Borrows',
+                      '${_analyticsData['monthly_borrows'] ?? 0}',
+                      Colors.green,
+                    ),
+                    _buildAnalyticsItem(
+                      '🏷️ Popular Category',
+                      '${_analyticsData['popular_category'] ?? 'N/A'}',
+                      Colors.orange,
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
         ],
       ),
+    ),
     );
   }
 
@@ -532,41 +727,44 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               ),
               padding: const EdgeInsets.all(24),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Text(
+                    '📊 Book Status Overview',
+                    style: GoogleFonts.montserrat(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                      color: const Color(0xFF2D3748),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                   Expanded(
                     child: PieChart(
                       PieChartData(
-                        sections: [
-                          PieChartSectionData(
-                            color: const Color(0xFF0096C7),
-                            value: _stats['books']!.toDouble(),
-                            title: '',
-                            radius: 80,
-                          ),
-                          PieChartSectionData(
-                            color: const Color(0xFF2D3748),
-                            value: (_stats['books']! * 0.3).toDouble(),
-                            title: '',
-                            radius: 80,
-                          ),
-                        ],
+                        sections: _getPieChartSections(),
                         sectionsSpace: 0,
-                        centerSpaceRadius: 0,
+                        centerSpaceRadius: 60,
                         borderData: FlBorderData(show: false),
                       ),
                     ),
                   ),
                   const SizedBox(height: 16),
                   Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       _buildLegendItem(
-                        color: const Color(0xFF0096C7),
-                        label: 'Total Readable Books',
+                        color: Colors.green,
+                        label: '✅ Available Books',
                       ),
                       const SizedBox(height: 8),
                       _buildLegendItem(
-                        color: const Color(0xFF2D3748),
-                        label: 'Most Readable Books',
+                        color: const Color(0xFF0096C7),
+                        label: '📖 Currently Borrowed',
+                      ),
+                      const SizedBox(height: 8),
+                      _buildLegendItem(
+                        color: Colors.red,
+                        label: '⚠️ Overdue Books',
                       ),
                     ],
                   ),
@@ -585,17 +783,25 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                   children: [
                     Expanded(
                       child: _buildStatCard(
-                        icon: Icons.person,
+                        icon: Icons.people,
                         value: _stats['users'].toString().padLeft(4, '0'),
-                        label: 'Total User Base',
+                        label: 'Total Users',
                       ),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
                       child: _buildStatCard(
-                        icon: Icons.menu_book,
+                        icon: Icons.person_outline,
+                        value: _stats['authors'].toString().padLeft(3, '0'),
+                        label: 'Total Authors',
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: _buildStatCard(
+                        icon: Icons.library_books,
                         value: _stats['books'].toString().padLeft(5, '0'),
-                        label: 'Total Book Count',
+                        label: 'Total Books',
                       ),
                     ),
                     const SizedBox(width: 16),
@@ -603,7 +809,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                       child: _buildStatCard(
                         icon: Icons.request_page,
                         value: _stats['requests'].toString().padLeft(3, '0'),
-                        label: 'Total Book Borrow Requests',
+                        label: 'Borrow Requests',
                       ),
                     ),
                   ],
@@ -616,15 +822,55 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                     children: [
                       Expanded(
                         child: _buildInfoCard(
-                          title: 'User Details',
-                          items: List.generate(4, (index) => _buildUserDetailItem()),
+                          title: '👥 Recent Users',
+                          content: _recentUsers.isEmpty
+                              ? const Center(child: Text('No recent users found',
+                                               style: TextStyle(color: Colors.grey)))
+                              : ListView(
+                                  children: _recentUsers.map((user) => _buildUserDetailItem(user: user)).toList(),
+                                ),
                         ),
                       ),
                       const SizedBox(width: 16),
                       Expanded(
                         child: _buildInfoCard(
-                          title: 'Book Readers Update',
-                          items: List.generate(5, (index) => _buildBookReaderItem()),
+                          title: '📚 Current Readers',
+                          content: _currentReaders.isEmpty
+                              ? const Center(child: Text('No current readers found',
+                                               style: TextStyle(color: Colors.grey)))
+                              : ListView(
+                                  children: _currentReaders.map((reader) => _buildBookReaderItem(reader: reader)).toList(),
+                                ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: _buildInfoCard(
+                          title: '📊 Analytics',
+                          content: ListView(
+                            children: [
+                              _buildAnalyticsItem(
+                                '🔴 Overdue Books',
+                                '${_analyticsData['overdue_books'] ?? 0}',
+                                Colors.red,
+                              ),
+                              _buildAnalyticsItem(
+                                '📖 Current Borrows',
+                                '${_analyticsData['current_borrows'] ?? 0}',
+                                const Color(0xFF0096C7),
+                              ),
+                              _buildAnalyticsItem(
+                                '📈 Monthly Borrows',
+                                '${_analyticsData['monthly_borrows'] ?? 0}',
+                                Colors.green,
+                              ),
+                              _buildAnalyticsItem(
+                                '🏷️ Popular Category',
+                                '${_analyticsData['popular_category'] ?? 'N/A'}',
+                                Colors.orange,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ],
@@ -672,15 +918,22 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     return Container(
       padding: EdgeInsets.all(isMobile ? 16 : 20),
       decoration: BoxDecoration(
-        color: const Color(0xFFE3F4F6),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: isMobile ? Column(
         children: [
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: const Color(0xFFE3F4F6),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(
@@ -713,7 +966,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: const Color(0xFFE3F4F6),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(
@@ -752,12 +1005,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
   Widget _buildInfoCard({
     required String title,
-    required List<Widget> items,
+    required Widget content,
   }) {
     final bool isMobile = MediaQuery.of(context).size.width < 768;
     
     return Container(
-      height: isMobile ? null : 400,
+      constraints: isMobile 
+          ? null 
+          : const BoxConstraints(minHeight: 300),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -771,6 +1026,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: isMobile ? MainAxisSize.min : MainAxisSize.max,
         children: [
           Padding(
             padding: EdgeInsets.all(isMobile ? 16 : 20),
@@ -783,30 +1039,33 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               ),
             ),
           ),
-          isMobile ? Column(
-            children: items.map((item) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: item,
-            )).toList(),
-          ) : Expanded(
-            child: ListView.separated(
+          if (isMobile)
+            Padding(
               padding: const EdgeInsets.only(bottom: 20),
-              itemCount: items.length,
-              separatorBuilder: (context, index) => const SizedBox(height: 8),
-              itemBuilder: (context, index) => items[index],
+              child: content,
+            )
+          else
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 20),
+                child: content,
+              ),
             ),
-          ),
-          if (isMobile) const SizedBox(height: 16),
         ],
       ),
     );
   }
 
-  Widget _buildUserDetailItem() {
+  Widget _buildUserDetailItem({required Map<String, dynamic> user}) {
     final bool isMobile = MediaQuery.of(context).size.width < 768;
     
+    final userName = '${user['first_name'] ?? ''} ${user['last_name'] ?? ''}'.trim();
+    final userEmail = user['email'] ?? 'No email';
+    final joinedDate = _formatJoinedDate(user['created_at']);
+    final isOnline = _isRecentlyJoined(user['created_at']);
+    
     return Container(
-      margin: EdgeInsets.symmetric(horizontal: isMobile ? 16 : 20),
+      margin: EdgeInsets.only(bottom: 8, left: isMobile ? 16 : 20, right: isMobile ? 16 : 20),
       padding: EdgeInsets.all(isMobile ? 12 : 16),
       decoration: BoxDecoration(
         color: const Color(0xFFF8F9FA),
@@ -833,18 +1092,27 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Nisal Gunasekara',
+                  userName.isEmpty ? 'Unknown User' : userName,
                   style: GoogleFonts.montserrat(
                     fontWeight: FontWeight.w600,
                     fontSize: isMobile ? 12 : 14,
                     color: const Color(0xFF2D3748),
                   ),
                 ),
+                const SizedBox(height: 2),
                 Text(
-                  'User ID: 1',
+                  userEmail,
                   style: GoogleFonts.montserrat(
                     fontSize: isMobile ? 10 : 12,
-                    color: const Color(0xFF4A5568),
+                    color: Colors.grey[600],
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Joined: $joinedDate',
+                  style: GoogleFonts.montserrat(
+                    fontSize: isMobile ? 9 : 11,
+                    color: Colors.grey[500],
                   ),
                 ),
               ],
@@ -857,17 +1125,17 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                 Container(
                   width: 8,
                   height: 8,
-                  decoration: const BoxDecoration(
-                    color: Colors.green,
+                  decoration: BoxDecoration(
+                    color: isOnline ? Colors.green : Colors.grey,
                     shape: BoxShape.circle,
                   ),
                 ),
                 const SizedBox(width: 4),
                 Text(
-                  'Active',
+                  isOnline ? 'Recent' : 'Offline',
                   style: GoogleFonts.montserrat(
                     fontSize: 12,
-                    color: Colors.green,
+                    color: isOnline ? Colors.green : Colors.grey,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -892,11 +1160,41 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     );
   }
 
-  Widget _buildBookReaderItem() {
+  Widget _buildBookReaderItem({required Map<String, dynamic> reader}) {
     final bool isMobile = MediaQuery.of(context).size.width < 768;
     
+    final userInfo = reader['users'] as Map<String, dynamic>?;
+    final bookInfo = reader['books'] as Map<String, dynamic>?;
+    
+    final userName = userInfo != null 
+        ? '${userInfo['first_name'] ?? ''} ${userInfo['last_name'] ?? ''}'.trim()
+        : 'Unknown User';
+    
+    final bookTitle = bookInfo?['title'] ?? 'Unknown Book';
+    final endDate = reader['end_date'] as String?;
+    
+    // Calculate days remaining
+    String daysRemaining = 'Unknown';
+    if (endDate != null) {
+      try {
+        final endDateTime = DateTime.parse(endDate);
+        final now = DateTime.now();
+        final difference = endDateTime.difference(now).inDays;
+        
+        if (difference < 0) {
+          daysRemaining = 'Overdue';
+        } else if (difference == 0) {
+          daysRemaining = 'Due today';
+        } else {
+          daysRemaining = '$difference days left';
+        }
+      } catch (e) {
+        daysRemaining = 'Unknown';
+      }
+    }
+    
     return Container(
-      margin: EdgeInsets.symmetric(horizontal: isMobile ? 16 : 20),
+      margin: EdgeInsets.only(bottom: 8, left: isMobile ? 16 : 20, right: isMobile ? 16 : 20),
       padding: EdgeInsets.all(isMobile ? 12 : 16),
       decoration: BoxDecoration(
         color: const Color(0xFFF8F9FA),
@@ -923,23 +1221,68 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Sasmith Gunasekara',
+                  userName.isEmpty ? 'Unknown User' : userName,
                   style: GoogleFonts.montserrat(
                     fontWeight: FontWeight.w600,
                     fontSize: isMobile ? 12 : 14,
                     color: const Color(0xFF2D3748),
                   ),
                 ),
+                const SizedBox(height: 2),
                 Text(
-                  'Book ID: 10',
+                  bookTitle.length > 30 
+                      ? '${bookTitle.substring(0, 30)}...'
+                      : bookTitle,
                   style: GoogleFonts.montserrat(
                     fontSize: isMobile ? 10 : 12,
-                    color: const Color(0xFF4A5568),
+                    color: Colors.grey[600],
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  daysRemaining,
+                  style: GoogleFonts.montserrat(
+                    fontSize: isMobile ? 9 : 11,
+                    color: daysRemaining.contains('Overdue') 
+                        ? Colors.red 
+                        : daysRemaining.contains('Due today')
+                            ? Colors.orange
+                            : Colors.grey[500],
+                    fontWeight: daysRemaining.contains('Overdue') || daysRemaining.contains('Due today')
+                        ? FontWeight.w600
+                        : FontWeight.normal,
                   ),
                 ),
               ],
             ),
           ),
+          if (!isMobile) ...[
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: daysRemaining.contains('Overdue') 
+                        ? Colors.red 
+                        : Colors.green,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  'Reading',
+                  style: GoogleFonts.montserrat(
+                    fontSize: 12,
+                    color: Colors.green,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(width: 12),
+          ],
           Container(
             padding: EdgeInsets.all(isMobile ? 2 : 4),
             decoration: BoxDecoration(
@@ -947,7 +1290,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               borderRadius: BorderRadius.circular(4),
             ),
             child: Icon(
-              Icons.sync,
+              Icons.book,
               color: const Color(0xFF0096C7),
               size: isMobile ? 12 : 16,
             ),
@@ -1061,4 +1404,130 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       }
     }
   }
+
+  // Helper methods for date formatting and status checking
+  String _formatJoinedDate(String? createdAt) {
+    if (createdAt == null) return 'Unknown';
+    
+    try {
+      final date = DateTime.parse(createdAt);
+      final now = DateTime.now();
+      final difference = now.difference(date).inDays;
+      
+      if (difference == 0) {
+        return 'Today';
+      } else if (difference == 1) {
+        return 'Yesterday';
+      } else if (difference < 7) {
+        return '$difference days ago';
+      } else {
+        final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        return '${months[date.month - 1]} ${date.day}, ${date.year}';
+      }
+    } catch (e) {
+      return 'Unknown';
+    }
+  }
+
+  bool _isRecentlyJoined(String? createdAt) {
+    if (createdAt == null) return false;
+    
+    try {
+      final date = DateTime.parse(createdAt);
+      final now = DateTime.now();
+      final difference = now.difference(date).inDays;
+      
+      return difference <= 7; // Consider users joined within 7 days as "recent/online"
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // Get pie chart sections with real analytics data
+  List<PieChartSectionData> _getPieChartSections() {
+    final overdueBooks = _analyticsData['overdue_books'] as int? ?? 0;
+    final currentBorrows = _analyticsData['current_borrows'] as int? ?? 0;
+    final totalBooks = _stats['books'] ?? 0;
+    final availableBooks = totalBooks - (overdueBooks + currentBorrows);
+
+    return [
+      PieChartSectionData(
+        color: Colors.green,
+        value: availableBooks.toDouble(),
+        title: '',
+        radius: 60,
+      ),
+      PieChartSectionData(
+        color: const Color(0xFF0096C7),
+        value: currentBorrows.toDouble(),
+        title: '',
+        radius: 60,
+      ),
+      PieChartSectionData(
+        color: Colors.red,
+        value: overdueBooks.toDouble(),
+        title: '',
+        radius: 60,
+      ),
+    ];
+  }
+
+  // Build analytics item for mobile view
+  Widget _buildAnalyticsItem(String label, String value, Color color) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12, left: 16, right: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              label.contains('Overdue') ? Icons.warning
+                : label.contains('Current') ? Icons.book
+                : label.contains('Monthly') ? Icons.trending_up
+                : Icons.category,
+              color: color,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: GoogleFonts.montserrat(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF2D3748),
+                  ),
+                ),
+                Text(
+                  value,
+                  style: GoogleFonts.montserrat(
+                    fontSize: 12,
+                    color: color,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
+

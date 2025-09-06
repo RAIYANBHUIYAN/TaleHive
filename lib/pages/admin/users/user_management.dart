@@ -440,7 +440,7 @@ void _showEditAuthorDialog(AuthorModel.Author author) {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  author.fullDisplayName,
+                                  "${author.firstName ?? ''} ${author.lastName ?? ''}".trim(),
                                   style: GoogleFonts.montserrat(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w700,
