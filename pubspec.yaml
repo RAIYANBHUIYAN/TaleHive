@@ -37,6 +37,7 @@ dependencies:
   permission_handler: ^12.0.1
   open_file: ^3.5.10
   flutter_email_sender: ^7.0.0
+  flutter_sslcommerz: ^2.2.2-nullsafety.0
 
 
 dev_dependencies:

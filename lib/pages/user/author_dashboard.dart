@@ -1,19 +1,24 @@
 import 'package:flutter/material.dart';
-import 'package:fl_chart/fl_chart.dart';
-import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:url_launcher/url_launcher.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as path;
-import 'package:mime/mime.dart';
 
 import '../main_home_page/main_page.dart';
 import '../pdf_preview/pdf_viewer_page.dart';
+
+// Club system imports
+import '../../services/club_service.dart';
+import '../../models/club_model.dart';
+import '../../models/author_earnings_model.dart';
+import 'club_members_page.dart';
+import 'club_books_page.dart';
+import 'club_payments_page.dart';
+import 'club_analytics_page.dart';
 
 class AuthorDashboardPage extends StatefulWidget {
   const AuthorDashboardPage({Key? key}) : super(key: key);
@@ -25,6 +30,7 @@ class AuthorDashboardPage extends StatefulWidget {
 class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
   final supabase = Supabase.instance.client;
   final ImagePicker _imagePicker = ImagePicker();
+  final ClubService _clubService = ClubService();
 
   final author = {
   'first_name': 'Md Raiyan',
@@ -39,6 +45,12 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
   String search = '';
   Map<String, dynamic>? authorData;
 
+  // Club system variables
+  List<Club> _authorClubs = [];
+  AuthorEarnings? _authorEarnings;
+  bool _isLoadingClubs = false;
+  bool _isLoadingEarnings = false;
+
   final List<String> accessTypes = ['free', 'borrow'];
   String selectedAccessType = 'free';
 
@@ -47,6 +59,8 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
     super.initState();
     _loadAuthorData();
     _loadBooksFromSupabase();
+    _loadAuthorClubs();
+    _loadAuthorEarnings();
   }
 
   Future<void> _loadAuthorData() async {
@@ -102,6 +116,58 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
     } finally {
       setState(() {
         _isLoadingBooks = false;
+      });
+    }
+  }
+
+  // Load author's clubs
+  Future<void> _loadAuthorClubs() async {
+    setState(() {
+      _isLoadingClubs = true;
+    });
+
+    try {
+      final user = supabase.auth.currentUser;
+      if (user != null) {
+        final clubs = await _clubService.getClubsByAuthor(user.id);
+        setState(() {
+          _authorClubs = clubs;
+        });
+      }
+    } catch (e) {
+      print('Error loading clubs: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error loading clubs: $e'), backgroundColor: Colors.red),
+      );
+    } finally {
+      setState(() {
+        _isLoadingClubs = false;
+      });
+    }
+  }
+
+  // Load author's earnings
+  Future<void> _loadAuthorEarnings() async {
+    setState(() {
+      _isLoadingEarnings = true;
+    });
+
+    try {
+      final user = supabase.auth.currentUser;
+      if (user != null) {
+        final earnings = await _clubService.getAuthorEarnings(user.id);
+        setState(() {
+          _authorEarnings = earnings;
+        });
+      }
+    } catch (e) {
+      print('Error loading earnings: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error loading earnings: $e'), backgroundColor: Colors.red),
+      );
+    } finally {
+      setState(() {
+        _isLoadingEarnings = false;
       });
     }
   }
@@ -742,17 +808,33 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                   // Supabase Storage Status
                
 
-                  // Publish Book Button
-                  ElevatedButton.icon(
-                    onPressed: _showPublishBookDialog, 
-                    icon: const Icon(Icons.add_box_rounded),
-                    label: const Text('Upload Book'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF6C63FF),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
+                  // Action Buttons Row
+                  Row(
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed: _showPublishBookDialog, 
+                        icon: const Icon(Icons.add_box_rounded),
+                        label: const Text('Upload Book'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF6C63FF),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      ElevatedButton.icon(
+                        onPressed: _showCreateClubDialog, 
+                        icon: const Icon(Icons.group_add),
+                        label: const Text('Create Club'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF10B981),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 24),
 
@@ -766,13 +848,27 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                   // Stats Cards
                   Row(
                     children: [
-                      // _statCard('Total Books', '${books.length}', Icons.menu_book, Colors.blue),
-                      // const SizedBox(width: 8),
                       _statCard('Published', '${_getPublishedCount()}', Icons.publish, Colors.green),
                       const SizedBox(width: 8),
                       _statCard('Categories', '${_getUniqueCategories().length}', Icons.category, Colors.orange),
+                      const SizedBox(width: 8),
+                      _statCard('Clubs', '${_authorClubs.length}', Icons.groups, Colors.purple),
                     ],
                   ),
+                  const SizedBox(height: 16),
+
+                  // Earnings Cards
+                  if (_authorEarnings != null) ...[
+                    Row(
+                      children: [
+                        _earningsCard('Total Earnings', '৳${_authorEarnings!.totalEarnings.toStringAsFixed(2)}', Icons.account_balance_wallet, Colors.blue),
+                        const SizedBox(width: 8),
+                        _earningsCard('This Month', '৳${_authorEarnings!.monthlyEarnings.toStringAsFixed(2)}', Icons.trending_up, Colors.green),
+                        const SizedBox(width: 8),
+                        _earningsCard('Members', '${_authorEarnings!.totalMembers}', Icons.people, Colors.indigo),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 32),
 
                   // Books List Header
@@ -917,6 +1013,204 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                             },
                           ),
                         ),
+
+                  const SizedBox(height: 32),
+
+                  // Clubs Section
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('My Book Clubs', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
+                      if (_authorClubs.isNotEmpty)
+                        TextButton(
+                          onPressed: () {
+                            // Navigate to detailed clubs view
+                          },
+                          child: const Text('View All'),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Clubs List
+                  _isLoadingClubs
+                      ? const Center(child: CircularProgressIndicator())
+                      : (_authorClubs.isEmpty)
+                          ? Card(
+                              child: Container(
+                                padding: const EdgeInsets.all(40),
+                                child: Column(
+                                  children: [
+                                    Icon(Icons.groups, size: 64, color: Colors.grey[400]),
+                                    const SizedBox(height: 16),
+                                    Text('No clubs created yet', style: TextStyle(fontSize: 18, color: Colors.grey[600], fontWeight: FontWeight.bold)),
+                                    const SizedBox(height: 8),
+                                    Text('Create your first book club to connect with readers!', style: TextStyle(fontSize: 14, color: Colors.grey[500])),
+                                    const SizedBox(height: 16),
+                                    ElevatedButton.icon(
+                                      onPressed: _showCreateClubDialog,
+                                      icon: const Icon(Icons.add),
+                                      label: const Text('Create Club'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(0xFF10B981),
+                                        foregroundColor: Colors.white,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )
+                          : Card(
+                              child: ListView.separated(
+                                shrinkWrap: true,
+                                physics: const NeverScrollableScrollPhysics(),
+                                itemCount: _authorClubs.length > 3 ? 3 : _authorClubs.length, // Show max 3
+                                separatorBuilder: (context, i) => const Divider(height: 1),
+                                itemBuilder: (context, i) {
+                                  final club = _authorClubs[i];
+                                  return Container(
+                                    padding: const EdgeInsets.all(16),
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          width: 60,
+                                          height: 60,
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFF10B981).withOpacity(0.1),
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          child: club.coverImageUrl != null
+                                              ? ClipRRect(
+                                                  borderRadius: BorderRadius.circular(12),
+                                                  child: Image.network(
+                                                    club.coverImageUrl!,
+                                                    fit: BoxFit.cover,
+                                                    errorBuilder: (context, error, stackTrace) {
+                                                      return Icon(
+                                                        Icons.groups,
+                                                        color: const Color(0xFF10B981),
+                                                        size: 30,
+                                                      );
+                                                    },
+                                                  ),
+                                                )
+                                              : Icon(
+                                                  Icons.groups,
+                                                  color: const Color(0xFF10B981),
+                                                  size: 30,
+                                                ),
+                                        ),
+                                        const SizedBox(width: 16),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                club.name,
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 16,
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                club.description,
+                                                style: TextStyle(
+                                                  color: Colors.grey[600],
+                                                  fontSize: 14,
+                                                ),
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                              const SizedBox(height: 8),
+                                              Row(
+                                                children: [
+                                                  if (club.isPremium)
+                                                    Container(
+                                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.amber[100],
+                                                        borderRadius: BorderRadius.circular(12),
+                                                      ),
+                                                      child: Text(
+                                                        'Premium',
+                                                        style: TextStyle(
+                                                          color: Colors.amber[800],
+                                                          fontSize: 12,
+                                                          fontWeight: FontWeight.w500,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  if (club.isPremium) const SizedBox(width: 8),
+                                                  Text(
+                                                    club.isPremium ? '৳${club.membershipPrice}/month' : 'Free',
+                                                    style: TextStyle(
+                                                      color: Colors.grey[600],
+                                                      fontSize: 12,
+                                                      fontWeight: FontWeight.w500,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        PopupMenuButton(
+                                          icon: const Icon(Icons.more_vert),
+                                          onSelected: (value) {
+                                            switch (value) {
+                                              case 'edit':
+                                                _showEditClubDialog(club);
+                                                break;
+                                              case 'manage':
+                                                _showManageClubDialog(club);
+                                                break;
+                                              case 'delete':
+                                                _showDeleteClubDialog(club);
+                                                break;
+                                            }
+                                          },
+                                          itemBuilder: (context) => [
+                                            const PopupMenuItem(
+                                              value: 'edit',
+                                              child: Row(
+                                                children: [
+                                                  Icon(Icons.edit, size: 18),
+                                                  SizedBox(width: 8),
+                                                  Text('Edit'),
+                                                ],
+                                              ),
+                                            ),
+                                            const PopupMenuItem(
+                                              value: 'manage',
+                                              child: Row(
+                                                children: [
+                                                  Icon(Icons.settings, size: 18),
+                                                  SizedBox(width: 8),
+                                                  Text('Manage'),
+                                                ],
+                                              ),
+                                            ),
+                                            const PopupMenuItem(
+                                              value: 'delete',
+                                              child: Row(
+                                                children: [
+                                                  Icon(Icons.delete, size: 18, color: Colors.red),
+                                                  SizedBox(width: 8),
+                                                  Text('Delete', style: TextStyle(color: Colors.red)),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
                 ],
               ),
             ),
@@ -935,6 +1229,43 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
               Text(value, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: color)),
               const SizedBox(height: 4),
               Text(label, style: const TextStyle(color: Colors.blueGrey, fontSize: 13)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _earningsCard(String label, String value, IconData icon, Color color) {
+    return Expanded(
+      child: Card(
+        elevation: 2,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              Icon(icon, color: color, size: 32),
+              const SizedBox(height: 8),
+              Text(
+                value, 
+                style: TextStyle(
+                  fontWeight: FontWeight.bold, 
+                  fontSize: 16, 
+                  color: color,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                label, 
+                style: const TextStyle(
+                  color: Colors.blueGrey, 
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
             ],
           ),
         ),
@@ -1865,6 +2196,496 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
       print('❌ Error extracting filename from URL: $e');
       return null;
     }
+  }
+
+  // ============= CLUB MANAGEMENT METHODS =============
+
+  void _showCreateClubDialog() {
+    final nameController = TextEditingController();
+    final descriptionController = TextEditingController();
+    final priceController = TextEditingController();
+    
+    bool isPremium = false;
+    bool isCreating = false;
+    String? coverImageUrl;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: const Text('Create New Book Club'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Club Name*',
+                      hintText: 'Enter club name',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: descriptionController,
+                    decoration: const InputDecoration(
+                      labelText: 'Description*',
+                      hintText: 'Describe your book club',
+                      border: OutlineInputBorder(),
+                    ),
+                    maxLines: 3,
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Cover Image Section
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey[300]!),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.image, color: Colors.grey[600]),
+                            const SizedBox(width: 8),
+                            const Text('Club Cover Image (Optional)'),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        if (coverImageUrl == null)
+                          ElevatedButton.icon(
+                            onPressed: () async {
+                              final url = await _uploadCoverImage();
+                              if (url != null) {
+                                setDialogState(() => coverImageUrl = url);
+                              }
+                            },
+                            icon: const Icon(Icons.upload),
+                            label: const Text('Upload Cover'),
+                          )
+                        else
+                          Column(
+                            children: [
+                              const Text('✓ Cover uploaded successfully', 
+                                style: TextStyle(color: Colors.green)),
+                              TextButton(
+                                onPressed: () => setDialogState(() => coverImageUrl = null),
+                                child: const Text('Remove'),
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Premium Settings
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.amber[50],
+                      border: Border.all(color: Colors.amber[200]!),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.star, color: Colors.amber[700]),
+                            const SizedBox(width: 8),
+                            const Text('Premium Club Settings'),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        CheckboxListTile(
+                          title: const Text('Make this a Premium Club'),
+                          subtitle: const Text('Members will pay to join and access exclusive features'),
+                          value: isPremium,
+                          onChanged: (value) => setDialogState(() => isPremium = value!),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                        if (isPremium) ...[
+                          TextField(
+                            controller: priceController,
+                            decoration: const InputDecoration(
+                              labelText: 'Monthly Price (BDT)*',
+                              hintText: 'Enter price in BDT',
+                              border: OutlineInputBorder(),
+                              prefixText: '৳',
+                            ),
+                            keyboardType: TextInputType.number,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: isCreating ? null : () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: isCreating ? null : () async {
+                  if (nameController.text.trim().isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Please enter a club name')),
+                    );
+                    return;
+                  }
+                  if (descriptionController.text.trim().isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Please enter a description')),
+                    );
+                    return;
+                  }
+                  if (isPremium && priceController.text.trim().isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Please enter a price for premium club')),
+                    );
+                    return;
+                  }
+
+                  setDialogState(() => isCreating = true);
+
+                  try {
+                    final user = supabase.auth.currentUser;
+                    if (user != null) {
+                      final club = await _clubService.createClub(
+                        name: nameController.text.trim(),
+                        description: descriptionController.text.trim(),
+                        authorId: user.id,
+                        coverImageUrl: coverImageUrl,
+                        isPremium: isPremium,
+                        membershipPrice: isPremium ? double.tryParse(priceController.text) ?? 0.0 : 0.0,
+                      );
+
+                      if (club != null) {
+                        await _loadAuthorClubs(); // Refresh clubs list
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Club "${club.name}" created successfully!'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Failed to create club. Please try again.'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    }
+                  } catch (e) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Error creating club: $e'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  } finally {
+                    setDialogState(() => isCreating = false);
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF10B981),
+                  foregroundColor: Colors.white,
+                ),
+                child: isCreating 
+                    ? const SizedBox(
+                        width: 20, 
+                        height: 20, 
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)
+                      )
+                    : const Text('Create Club'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _showEditClubDialog(Club club) {
+    final nameController = TextEditingController(text: club.name);
+    final descriptionController = TextEditingController(text: club.description);
+    final priceController = TextEditingController(text: club.membershipPrice.toString());
+    
+    bool isPremium = club.isPremium;
+    bool isUpdating = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: const Text('Edit Book Club'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Club Name*',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: descriptionController,
+                    decoration: const InputDecoration(
+                      labelText: 'Description*',
+                      border: OutlineInputBorder(),
+                    ),
+                    maxLines: 3,
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Premium Settings
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.amber[50],
+                      border: Border.all(color: Colors.amber[200]!),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      children: [
+                        CheckboxListTile(
+                          title: const Text('Premium Club'),
+                          value: isPremium,
+                          onChanged: (value) => setDialogState(() => isPremium = value!),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                        if (isPremium) ...[
+                          TextField(
+                            controller: priceController,
+                            decoration: const InputDecoration(
+                              labelText: 'Monthly Price (BDT)*',
+                              border: OutlineInputBorder(),
+                              prefixText: '৳',
+                            ),
+                            keyboardType: TextInputType.number,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: isUpdating ? null : () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: isUpdating ? null : () async {
+                  if (nameController.text.trim().isEmpty || descriptionController.text.trim().isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Please fill all required fields')),
+                    );
+                    return;
+                  }
+
+                  setDialogState(() => isUpdating = true);
+
+                  try {
+                    final updatedClub = club.copyWith(
+                      name: nameController.text.trim(),
+                      description: descriptionController.text.trim(),
+                      isPremium: isPremium,
+                      membershipPrice: isPremium ? double.tryParse(priceController.text) ?? 0.0 : 0.0,
+                      updatedAt: DateTime.now(),
+                    );
+
+                    final success = await _clubService.updateClub(updatedClub);
+                    
+                    if (success) {
+                      await _loadAuthorClubs();
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Club updated successfully!'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Failed to update club'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  } catch (e) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Error updating club: $e'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  } finally {
+                    setDialogState(() => isUpdating = false);
+                  }
+                },
+                child: isUpdating 
+                    ? const SizedBox(
+                        width: 20, 
+                        height: 20, 
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)
+                      )
+                    : const Text('Update'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _showManageClubDialog(Club club) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Manage ${club.name}'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.people),
+              title: const Text('View Members'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ClubMembersPage(club: club),
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.book),
+              title: const Text('Manage Books'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ClubBooksPage(club: club),
+                  ),
+                );
+              },
+            ),
+            if (club.isPremium)
+              ListTile(
+                leading: const Icon(Icons.payment),
+                title: const Text('View Payments'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ClubPaymentsPage(club: club),
+                    ),
+                  );
+                },
+              ),
+            ListTile(
+              leading: const Icon(Icons.analytics),
+              title: const Text('Analytics'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ClubAnalyticsPage(club: club),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDeleteClubDialog(Club club) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Club'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Are you sure you want to delete "${club.name}"?',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            const Text('This will:'),
+            const Text('• Remove all members from the club'),
+            const Text('• Delete all club data'),
+            const Text('• This action cannot be undone'),
+            if (club.isPremium)
+              const Text('• Cancel all active subscriptions', style: TextStyle(color: Colors.red)),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              
+              final success = await _clubService.deleteClub(club.id);
+              if (success) {
+                await _loadAuthorClubs();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Club "${club.name}" deleted successfully'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Failed to delete club'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
   }
 }
 
