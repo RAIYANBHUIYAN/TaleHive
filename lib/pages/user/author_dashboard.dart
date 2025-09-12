@@ -57,10 +57,45 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
   @override
   void initState() {
     super.initState();
-    _loadAuthorData();
-    _loadBooksFromSupabase();
-    _loadAuthorClubs();
-    _loadAuthorEarnings();
+    _initializeData();
+  }
+
+  Future<void> _initializeData() async {
+    await _loadAuthorData();
+    await _loadBooksFromSupabase();
+    await _syncBooksPublishedCount();
+    await _loadAuthorClubs();
+    await _loadAuthorEarnings();
+  }
+
+  Future<void> _syncBooksPublishedCount() async {
+    try {
+      final user = supabase.auth.currentUser;
+      if (user != null && authorData != null) {
+        final dbCount = authorData?['books_published'] ?? 0;
+        final actualCount = books.length;
+        
+        if (dbCount != actualCount) {
+          print('🔄 Syncing books_published count: DB=$dbCount, Actual=$actualCount');
+          
+          await supabase
+              .from('authors')
+              .update({'books_published': actualCount})
+              .eq('id', user.id);
+          
+          // Update local author data
+          setState(() {
+            authorData?['books_published'] = actualCount;
+          });
+          
+          print('✅ Books count synchronized: $actualCount');
+        } else {
+          print('✅ Books count already in sync: $actualCount');
+        }
+      }
+    } catch (e) {
+      print('⚠️ Error syncing books count: $e');
+    }
   }
 
   Future<void> _loadAuthorData() async {
@@ -603,27 +638,39 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
     }
   }
 
-  // Get unique categories
-  Set<String> _getUniqueCategories() {
-    return books.map((book) => book['category']?.toString() ?? 'Unknown').toSet();
-  }
-
-  // Get published books count with debugging
+  // Get published books count with proper synchronization
   String _getPublishedCount() {
-    final dbCount = authorData?['books_published'];
+    // Always use the local books count as it's the most accurate
     final localCount = books.length;
+    final dbCount = authorData?['books_published'];
     
     print('📊 Stats Card Debug:');
     print('   - Database count: $dbCount');
     print('   - Local books count: $localCount');
     print('   - Author data: ${authorData != null ? "loaded" : "null"}');
     
-    if (dbCount != null) {
-      return dbCount.toString();
-    } else {
-      print('⚠️ Using fallback count (local books): $localCount');
-      return localCount.toString();
+    // If there's a mismatch, log it but use local count
+    if (dbCount != null && dbCount != localCount) {
+      print('⚠️ Count mismatch detected: DB=$dbCount, Local=$localCount');
+      print('⚠️ Using local count as source of truth: $localCount');
     }
+    
+    return localCount.toString();
+  }
+
+  // Get categories information - show most popular category or count
+  String _getCategoriesInfo() {
+    if (books.isEmpty) return '0';
+    
+    // Count books per category
+    Map<String, int> categoryCount = {};
+    for (var book in books) {
+      String category = book['category']?.toString() ?? 'Unknown';
+      categoryCount[category] = (categoryCount[category] ?? 0) + 1;
+    }
+    
+    // Return the count of unique categories
+    return categoryCount.length.toString();
   }
 
   // Add this method to test URLs:
@@ -668,8 +715,8 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white),
-            tooltip: 'Refresh Books',
-            onPressed: _loadBooksFromSupabase,
+            tooltip: 'Refresh Dashboard',
+            onPressed: _initializeData,
           ),
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.white),
@@ -850,7 +897,7 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                     children: [
                       _statCard('Published', '${_getPublishedCount()}', Icons.publish, Colors.green),
                       const SizedBox(width: 8),
-                      _statCard('Categories', '${_getUniqueCategories().length}', Icons.category, Colors.orange),
+                      _statCard('Categories', '${_getCategoriesInfo()}', Icons.category, Colors.orange),
                       const SizedBox(width: 8),
                       _statCard('Clubs', '${_authorClubs.length}', Icons.groups, Colors.purple),
                     ],
@@ -1068,145 +1115,217 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                                 separatorBuilder: (context, i) => const Divider(height: 1),
                                 itemBuilder: (context, i) {
                                   final club = _authorClubs[i];
-                                  return Container(
-                                    padding: const EdgeInsets.all(16),
-                                    child: Row(
-                                      children: [
-                                        Container(
-                                          width: 60,
-                                          height: 60,
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xFF10B981).withOpacity(0.1),
-                                            borderRadius: BorderRadius.circular(12),
-                                          ),
-                                          child: club.coverImageUrl != null
-                                              ? ClipRRect(
-                                                  borderRadius: BorderRadius.circular(12),
-                                                  child: Image.network(
-                                                    club.coverImageUrl!,
-                                                    fit: BoxFit.cover,
-                                                    errorBuilder: (context, error, stackTrace) {
-                                                      return Icon(
-                                                        Icons.groups,
-                                                        color: const Color(0xFF10B981),
-                                                        size: 30,
-                                                      );
-                                                    },
-                                                  ),
-                                                )
-                                              : Icon(
-                                                  Icons.groups,
-                                                  color: const Color(0xFF10B981),
-                                                  size: 30,
-                                                ),
-                                        ),
-                                        const SizedBox(width: 16),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                club.name,
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 16,
-                                                ),
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
+                                  return Column(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(16),
+                                        child: Row(
+                                          children: [
+                                            Container(
+                                              width: 60,
+                                              height: 60,
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFF10B981).withOpacity(0.1),
+                                                borderRadius: BorderRadius.circular(12),
                                               ),
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                club.description,
-                                                style: TextStyle(
-                                                  color: Colors.grey[600],
-                                                  fontSize: 14,
-                                                ),
-                                                maxLines: 2,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                              const SizedBox(height: 8),
-                                              Row(
-                                                children: [
-                                                  if (club.isPremium)
-                                                    Container(
-                                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                                      decoration: BoxDecoration(
-                                                        color: Colors.amber[100],
-                                                        borderRadius: BorderRadius.circular(12),
+                                              child: club.coverImageUrl != null
+                                                  ? ClipRRect(
+                                                      borderRadius: BorderRadius.circular(12),
+                                                      child: Image.network(
+                                                        club.coverImageUrl!,
+                                                        fit: BoxFit.cover,
+                                                        errorBuilder: (context, error, stackTrace) {
+                                                          return Icon(
+                                                            Icons.groups,
+                                                            color: const Color(0xFF10B981),
+                                                            size: 30,
+                                                          );
+                                                        },
                                                       ),
-                                                      child: Text(
-                                                        'Premium',
+                                                    )
+                                                  : Icon(
+                                                      Icons.groups,
+                                                      color: const Color(0xFF10B981),
+                                                      size: 30,
+                                                    ),
+                                            ),
+                                            const SizedBox(width: 16),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    club.name,
+                                                    style: const TextStyle(
+                                                      fontWeight: FontWeight.bold,
+                                                      fontSize: 16,
+                                                    ),
+                                                    maxLines: 1,
+                                                    overflow: TextOverflow.ellipsis,
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  Text(
+                                                    club.description,
+                                                    style: TextStyle(
+                                                      color: Colors.grey[600],
+                                                      fontSize: 14,
+                                                    ),
+                                                    maxLines: 2,
+                                                    overflow: TextOverflow.ellipsis,
+                                                  ),
+                                                  const SizedBox(height: 8),
+                                                  Row(
+                                                    children: [
+                                                      if (club.isPremium)
+                                                        Container(
+                                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                                          decoration: BoxDecoration(
+                                                            color: Colors.amber[100],
+                                                            borderRadius: BorderRadius.circular(12),
+                                                          ),
+                                                          child: Text(
+                                                            'Premium',
+                                                            style: TextStyle(
+                                                              color: Colors.amber[800],
+                                                              fontSize: 12,
+                                                              fontWeight: FontWeight.w500,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      if (club.isPremium) const SizedBox(width: 8),
+                                                      Text(
+                                                        club.isPremium ? '৳${club.membershipPrice}/month' : 'Free',
                                                         style: TextStyle(
-                                                          color: Colors.amber[800],
+                                                          color: Colors.grey[600],
                                                           fontSize: 12,
                                                           fontWeight: FontWeight.w500,
                                                         ),
                                                       ),
-                                                    ),
-                                                  if (club.isPremium) const SizedBox(width: 8),
-                                                  Text(
-                                                    club.isPremium ? '৳${club.membershipPrice}/month' : 'Free',
-                                                    style: TextStyle(
-                                                      color: Colors.grey[600],
-                                                      fontSize: 12,
-                                                      fontWeight: FontWeight.w500,
-                                                    ),
+                                                    ],
                                                   ),
                                                 ],
                                               ),
-                                            ],
-                                          ),
-                                        ),
-                                        PopupMenuButton(
-                                          icon: const Icon(Icons.more_vert),
-                                          onSelected: (value) {
-                                            switch (value) {
-                                              case 'edit':
-                                                _showEditClubDialog(club);
-                                                break;
-                                              case 'manage':
-                                                _showManageClubDialog(club);
-                                                break;
-                                              case 'delete':
-                                                _showDeleteClubDialog(club);
-                                                break;
-                                            }
-                                          },
-                                          itemBuilder: (context) => [
-                                            const PopupMenuItem(
-                                              value: 'edit',
-                                              child: Row(
-                                                children: [
-                                                  Icon(Icons.edit, size: 18),
-                                                  SizedBox(width: 8),
-                                                  Text('Edit'),
-                                                ],
-                                              ),
                                             ),
-                                            const PopupMenuItem(
-                                              value: 'manage',
-                                              child: Row(
-                                                children: [
-                                                  Icon(Icons.settings, size: 18),
-                                                  SizedBox(width: 8),
-                                                  Text('Manage'),
-                                                ],
-                                              ),
-                                            ),
-                                            const PopupMenuItem(
-                                              value: 'delete',
-                                              child: Row(
-                                                children: [
-                                                  Icon(Icons.delete, size: 18, color: Colors.red),
-                                                  SizedBox(width: 8),
-                                                  Text('Delete', style: TextStyle(color: Colors.red)),
-                                                ],
-                                              ),
+                                            PopupMenuButton(
+                                              icon: const Icon(Icons.more_vert),
+                                              onSelected: (value) {
+                                                switch (value) {
+                                                  case 'edit':
+                                                    _showEditClubDialog(club);
+                                                    break;
+                                                  case 'delete':
+                                                    _showDeleteClubDialog(club);
+                                                    break;
+                                                }
+                                              },
+                                              itemBuilder: (context) => [
+                                                const PopupMenuItem(
+                                                  value: 'edit',
+                                                  child: Row(
+                                                    children: [
+                                                      Icon(Icons.edit, size: 18),
+                                                      SizedBox(width: 8),
+                                                      Text('Edit'),
+                                                    ],
+                                                  ),
+                                                ),
+                                                const PopupMenuItem(
+                                                  value: 'delete',
+                                                  child: Row(
+                                                    children: [
+                                                      Icon(Icons.delete, size: 18, color: Colors.red),
+                                                      SizedBox(width: 8),
+                                                      Text('Delete', style: TextStyle(color: Colors.red)),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ],
                                             ),
                                           ],
                                         ),
-                                      ],
+                                      ),
+                                      // Add manage action buttons below
+                                      Padding(
+                                        padding: const EdgeInsets.only(left: 16, right: 16, bottom: 16, top: 8),
+                                      child: Column(
+                                        children: [
+                                          const Divider(height: 1),
+                                          const SizedBox(height: 12),
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: _clubActionButton(
+                                                  icon: Icons.people,
+                                                  label: 'Members',
+                                                  color: Colors.blue,
+                                                  onTap: () {
+                                                    Navigator.push(
+                                                      context,
+                                                      MaterialPageRoute(
+                                                        builder: (context) => ClubMembersPage(club: club),
+                                                      ),
+                                                    );
+                                                  },
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Expanded(
+                                                child: _clubActionButton(
+                                                  icon: Icons.book,
+                                                  label: 'Books',
+                                                  color: Colors.green,
+                                                  onTap: () {
+                                                    Navigator.push(
+                                                      context,
+                                                      MaterialPageRoute(
+                                                        builder: (context) => ClubBooksPage(club: club),
+                                                      ),
+                                                    );
+                                                  },
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Expanded(
+                                                child: _clubActionButton(
+                                                  icon: Icons.analytics,
+                                                  label: 'Analytics',
+                                                  color: Colors.purple,
+                                                  onTap: () {
+                                                    Navigator.push(
+                                                      context,
+                                                      MaterialPageRoute(
+                                                        builder: (context) => ClubAnalyticsPage(club: club),
+                                                      ),
+                                                    );
+                                                  },
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          if (club.isPremium) ...[
+                                            const SizedBox(height: 8),
+                                            SizedBox(
+                                              width: double.infinity,
+                                              child: _clubActionButton(
+                                                icon: Icons.payment,
+                                                label: 'View Payments',
+                                                color: Colors.orange,
+                                                onTap: () {
+                                                  Navigator.push(
+                                                    context,
+                                                    MaterialPageRoute(
+                                                      builder: (context) => ClubPaymentsPage(club: club),
+                                                    ),
+                                                  );
+                                                },
+                                                fullWidth: true,
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
                                     ),
+                                    ],
                                   );
                                 },
                               ),
@@ -1268,6 +1387,42 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _clubActionButton({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+    bool fullWidth = false,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withOpacity(0.2)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: color, size: 18),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -2551,79 +2706,6 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
             ],
           );
         },
-      ),
-    );
-  }
-
-  void _showManageClubDialog(Club club) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Manage ${club.name}'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.people),
-              title: const Text('View Members'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => ClubMembersPage(club: club),
-                  ),
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.book),
-              title: const Text('Manage Books'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => ClubBooksPage(club: club),
-                  ),
-                );
-              },
-            ),
-            if (club.isPremium)
-              ListTile(
-                leading: const Icon(Icons.payment),
-                title: const Text('View Payments'),
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => ClubPaymentsPage(club: club),
-                    ),
-                  );
-                },
-              ),
-            ListTile(
-              leading: const Icon(Icons.analytics),
-              title: const Text('Analytics'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => ClubAnalyticsPage(club: club),
-                  ),
-                );
-              },
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
       ),
     );
   }

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/club_model.dart';
 import '../../models/club_membership_model.dart';
 import '../../services/club_service.dart';
@@ -24,7 +23,6 @@ class _ClubMembersPageState extends State<ClubMembersPage> {
   void initState() {
     super.initState();
     _loadMembers();
-    _checkDatabaseState(); // Check database on load
   }
 
   Future<void> _loadMembers() async {
@@ -204,13 +202,6 @@ class _ClubMembersPageState extends State<ClubMembersPage> {
                               style: const TextStyle(fontSize: 14, color: Colors.grey),
                               textAlign: TextAlign.center,
                             ),
-                            if (_members.isEmpty) ...[
-                              const SizedBox(height: 16),
-                              ElevatedButton(
-                                onPressed: _createSampleMembership,
-                                child: const Text('Create Sample Membership (Debug)'),
-                              ),
-                            ],
                           ],
                         ),
                       )
@@ -287,7 +278,7 @@ class _ClubMembersPageState extends State<ClubMembersPage> {
         padding: const EdgeInsets.all(16),
         child: Row(
           children: [
-            // Avatar
+            // Avatar with photo
             CircleAvatar(
               radius: 24,
               backgroundColor: isCancelled 
@@ -295,17 +286,22 @@ class _ClubMembersPageState extends State<ClubMembersPage> {
                   : isPremium 
                       ? Colors.amber[100] 
                       : Colors.blue[100],
-              child: Text(
-                displayName.substring(0, 1).toUpperCase(),
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: isCancelled 
-                      ? Colors.grey[600]
-                      : isPremium 
-                          ? Colors.amber[700] 
-                          : Colors.blue[700],
-                ),
-              ),
+              backgroundImage: member.userPhotoUrl != null && member.userPhotoUrl!.isNotEmpty
+                  ? NetworkImage(member.userPhotoUrl!)
+                  : null,
+              child: member.userPhotoUrl == null || member.userPhotoUrl!.isEmpty
+                  ? Text(
+                      displayName.substring(0, 1).toUpperCase(),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: isCancelled 
+                            ? Colors.grey[600]
+                            : isPremium 
+                                ? Colors.amber[700] 
+                                : Colors.blue[700],
+                      ),
+                    )
+                  : null,
             ),
             const SizedBox(width: 16),
             
@@ -420,26 +416,8 @@ class _ClubMembersPageState extends State<ClubMembersPage> {
               PopupMenuButton<String>(
                 onSelected: (value) => _handleMemberAction(value, member),
                 itemBuilder: (context) => [
-                  const PopupMenuItem(
-                    value: 'view_profile',
-                    child: Row(
-                      children: [
-                        Icon(Icons.person, size: 16),
-                        SizedBox(width: 8),
-                        Text('View Profile'),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'send_message',
-                    child: Row(
-                      children: [
-                        Icon(Icons.message, size: 16),
-                        SizedBox(width: 8),
-                        Text('Send Message'),
-                      ],
-                    ),
-                  ),
+                
+  
                   const PopupMenuItem(
                     value: 'remove_member',
                     child: Row(
@@ -463,91 +441,6 @@ class _ClubMembersPageState extends State<ClubMembersPage> {
         ),
       ),
     );
-  }
-
-  Future<void> _createSampleMembership() async {
-    try {
-      final currentUser = Supabase.instance.client.auth.currentUser;
-      if (currentUser == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No user logged in'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
-
-      print('Current user ID: ${currentUser.id}');
-      print('Creating membership for club: ${widget.club.id}');
-
-      // First check if club_memberships table exists and if there's any data
-      await _checkDatabaseState();
-
-      // Create a sample membership
-      final membership = await _clubService.joinClub(
-        clubId: widget.club.id,
-        userId: currentUser.id,
-        membershipType: MembershipType.free,
-      );
-
-      if (membership != null) {
-        print('Sample membership created: ${membership.id}');
-        await _loadMembers(); // Refresh the list
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Sample membership created successfully!'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
-      } else {
-        throw Exception('Failed to create sample membership');
-      }
-    } catch (e) {
-      print('Error creating sample membership: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _checkDatabaseState() async {
-    try {
-      // Check if there are any club memberships at all
-      final response = await Supabase.instance.client
-          .from('club_memberships')
-          .select('*');
-      
-      print('Total club memberships in database: ${response.length}');
-
-      // Check if there are memberships for this specific club
-      final clubResponse = await Supabase.instance.client
-          .from('club_memberships')
-          .select('*')
-          .eq('club_id', widget.club.id);
-      
-      print('Memberships for this club: ${clubResponse.length}');
-      
-    } catch (e) {
-      print('Error checking database state: $e');
-      // Table might not exist
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Database error: $e\nMake sure to run the database migration first!'),
-            backgroundColor: Colors.orange,
-            duration: const Duration(seconds: 5),
-          ),
-        );
-      }
-    }
   }
 
   String _formatDate(DateTime date) {
@@ -579,11 +472,8 @@ class _ClubMembersPageState extends State<ClubMembersPage> {
 
   Future<void> _removeMemberFromClub(ClubMembership member) async {
     try {
-      // Update member status to 'cancelled' instead of deleting
-      final success = await _clubService.updateMembershipStatus(
-        membershipId: member.id,
-        status: MembershipStatus.cancelled,
-      );
+      // Completely remove member from database
+      final success = await _clubService.deleteMembershipById(member.id);
 
       if (success) {
         await _loadMembers(); // Refresh the list
@@ -592,7 +482,7 @@ class _ClubMembersPageState extends State<ClubMembersPage> {
           final displayName = fullName.isEmpty ? 'Unknown User' : fullName;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('$displayName has been removed from the club'),
+              content: Text('$displayName has been permanently removed from the club'),
               backgroundColor: Colors.green,
             ),
           );
@@ -621,7 +511,7 @@ class _ClubMembersPageState extends State<ClubMembersPage> {
       builder: (context) => AlertDialog(
         title: const Text('Remove Member'),
         content: Text(
-          'Are you sure you want to remove $displayName from ${widget.club.name}?\n\nThis action will cancel their membership.'
+          'Are you sure you want to permanently remove $displayName from ${widget.club.name}?\n\nThis action will delete their membership record and cannot be undone.'
         ),
         actions: [
           TextButton(
@@ -634,7 +524,7 @@ class _ClubMembersPageState extends State<ClubMembersPage> {
               await _removeMemberFromClub(member);
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Remove', style: TextStyle(color: Colors.white)),
+            child: const Text('Remove Permanently', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),

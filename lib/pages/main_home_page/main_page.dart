@@ -94,11 +94,30 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
     try {
       print('Loading books from Supabase...');
 
-      // Query books from Supabase
+      // First, get all book IDs that are in club_books table
+      final clubBooksResponse = await supabase
+          .from('club_books')
+          .select('book_id')
+          .timeout(const Duration(seconds: 10));
+
+      print('Club books response: $clubBooksResponse');
+
+      // Extract book IDs that are in clubs
+      Set<String> clubBookIds = {};
+      for (var clubBook in clubBooksResponse) {
+        if (clubBook['book_id'] != null) {
+          clubBookIds.add(clubBook['book_id'].toString());
+        }
+      }
+
+      print('Books in clubs: ${clubBookIds.length} books');
+
+      // Query books from Supabase, excluding club books
       final response = await supabase
           .from('books')
           .select()
           .eq('is_active', true)
+          .not('id', 'in', clubBookIds.isNotEmpty ? clubBookIds.toList() : [])
           .order('created_at', ascending: false)
           .timeout(const Duration(seconds: 10));
 
@@ -107,19 +126,15 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
       List<Map<String, dynamic>> loadedBooks = [];
       Set<String> categories = {'All'};
 
-      if (response is List) {
-        for (var bookData in response) {
-          if (bookData is Map<String, dynamic>) {
-            // Process the book data for display
-            Map<String, dynamic> processedBook = _processBookForDisplay(bookData);
-            loadedBooks.add(processedBook);
-            
-            // Collect categories
-            if (processedBook['category'] != null && 
-                processedBook['category'].toString().trim().isNotEmpty) {
-              categories.add(processedBook['category']);
-            }
-          }
+      for (var bookData in response) {
+        // Process the book data for display
+        Map<String, dynamic> processedBook = _processBookForDisplay(bookData);
+        loadedBooks.add(processedBook);
+        
+        // Collect categories
+        if (processedBook['category'] != null && 
+            processedBook['category'].toString().trim().isNotEmpty) {
+          categories.add(processedBook['category']);
         }
       }
 
@@ -128,7 +143,7 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
         _categories = categories.toList()..sort();
       });
 
-      print('Loaded ${_supabaseBooks.length} books from Supabase');
+      print('Loaded ${_supabaseBooks.length} normal books from Supabase (excluding ${clubBookIds.length} club books)');
 
     } catch (error) {
       print('Error loading books from Supabase: $error');

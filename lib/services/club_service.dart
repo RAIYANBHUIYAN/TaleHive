@@ -150,7 +150,7 @@ class ClubService {
           .from('club_books')
           .select('''
             *,
-            books!club_books_book_id_fkey(title, cover_image_url, author_id, category, price, summary)
+            books!club_books_book_id_fkey(title, cover_image_url, pdf_url, author_id, category, price, summary)
           ''')
           .eq('club_id', clubId)
           .order('added_at', ascending: false);
@@ -160,6 +160,7 @@ class ClubService {
           ...json,
           'book_title': json['books']?['title'],
           'book_cover_url': json['books']?['cover_image_url'],
+          'book_pdf_url': json['books']?['pdf_url'],
           'book_author_id': json['books']?['author_id'],
           'book_category': json['books']?['category'],
           'book_price': json['books']?['price'],
@@ -172,12 +173,13 @@ class ClubService {
     }
   }
 
-  Future<bool> addBookToClub(String clubId, String bookId) async {
+  Future<bool> addBookToClub(String clubId, String bookId, {String accessLevel = 'free'}) async {
     try {
       await _supabase.from('club_books').insert({
         'club_id': clubId,
         'book_id': bookId,
-        'added_at': DateTime.now().toIso8601String(),
+        'access_level': accessLevel,
+        // added_at will be set automatically by the table default
       });
       return true;
     } catch (e) {
@@ -188,14 +190,36 @@ class ClubService {
 
   Future<bool> removeBookFromClub(String clubId, String bookId) async {
     try {
+      print('🗑️ Attempting to remove book $bookId from club $clubId');
+      
+      // First verify the record exists
+      final existingRecord = await _supabase
+          .from('club_books')
+          .select()
+          .eq('club_id', clubId)
+          .eq('book_id', bookId)
+          .maybeSingle();
+      
+      if (existingRecord == null) {
+        print('⚠️ No club_books record found for club $clubId and book $bookId');
+        return false;
+      }
+      
+      print('✓ Found existing record: ${existingRecord['id']}');
+      
+      // Perform the deletion
       await _supabase
           .from('club_books')
           .delete()
           .eq('club_id', clubId)
           .eq('book_id', bookId);
+      
+      print('✅ Successfully removed book from club');
       return true;
     } catch (e) {
-      print('Error removing book from club: $e');
+      print('❌ Error removing book from club: $e');
+      print('Club ID: $clubId');
+      print('Book ID: $bookId');
       return false;
     }
   }
@@ -204,7 +228,7 @@ class ClubService {
 Future<List<ClubMembership>> getClubMembers(String clubId, {bool activeOnly = false}) async {
   try {
     print('Loading members for club ID: $clubId');
-
+    
     var query = _supabase
         .from('club_memberships')
         .select('''
@@ -540,6 +564,38 @@ Future<ClubMembership?> joinClub({
       return true;
     } catch (e) {
       print('Error removing member from club: $e');
+      return false;
+    }
+  }
+
+  Future<bool> deleteMemberFromClub({
+    required String clubId,
+    required String userId,
+  }) async {
+    try {
+      await _supabase
+          .from('club_memberships')
+          .delete()
+          .eq('club_id', clubId)
+          .eq('user_id', userId);
+
+      return true;
+    } catch (e) {
+      print('Error deleting member from club: $e');
+      return false;
+    }
+  }
+
+  Future<bool> deleteMembershipById(String membershipId) async {
+    try {
+      await _supabase
+          .from('club_memberships')
+          .delete()
+          .eq('id', membershipId);
+
+      return true;
+    } catch (e) {
+      print('Error deleting membership: $e');
       return false;
     }
   }

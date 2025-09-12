@@ -7,6 +7,7 @@ class ClubBook {
   // Book info (joined from books table)
   final String? bookTitle;
   final String? bookCoverUrl;
+  final String? bookPdfUrl;
   final String? bookAuthorId;
   final String? bookCategory;
   final double? bookPrice;
@@ -19,6 +20,7 @@ class ClubBook {
     required this.addedAt,
     this.bookTitle,
     this.bookCoverUrl,
+    this.bookPdfUrl,
     this.bookAuthorId,
     this.bookCategory,
     this.bookPrice,
@@ -33,6 +35,7 @@ class ClubBook {
       addedAt: DateTime.parse(json['added_at']),
       bookTitle: json['book_title'] as String?,
       bookCoverUrl: json['book_cover_url'] as String?,
+      bookPdfUrl: json['book_pdf_url'] as String?,
       bookAuthorId: json['book_author_id'] as String?,
       bookCategory: json['book_category'] as String?,
       bookPrice: json['book_price'] != null ? (json['book_price'] as num).toDouble() : null,
@@ -56,6 +59,7 @@ class ClubBook {
     DateTime? addedAt,
     String? bookTitle,
     String? bookCoverUrl,
+    String? bookPdfUrl,
     String? bookAuthorId,
     String? bookCategory,
     double? bookPrice,
@@ -68,6 +72,7 @@ class ClubBook {
       addedAt: addedAt ?? this.addedAt,
       bookTitle: bookTitle ?? this.bookTitle,
       bookCoverUrl: bookCoverUrl ?? this.bookCoverUrl,
+      bookPdfUrl: bookPdfUrl ?? this.bookPdfUrl,
       bookAuthorId: bookAuthorId ?? this.bookAuthorId,
       bookCategory: bookCategory ?? this.bookCategory,
       bookPrice: bookPrice ?? this.bookPrice,

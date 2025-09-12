@@ -71,14 +71,54 @@ class _BookClubPageState extends State<BookClubPage> {
   
   // Track user's club memberships
   List<String> _userJoinedClubs = [];
+  
+  // Add user data properties
+  Map<String, dynamic>? _userData;
+  bool _isLoadingUser = false;
 
   final List<String> _filters = ['All', 'Free', 'Premium', 'My Clubs'];
 
   @override
   void initState() {
     super.initState();
+    _loadUserData();
     _loadClubs();
     _loadUserMemberships();
+  }
+
+  Future<void> _loadUserData() async {
+    setState(() => _isLoadingUser = true);
+    try {
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user != null) {
+        try {
+          final response = await Supabase.instance.client
+              .from('users')
+              .select()
+              .eq('id', user.id)
+              .single();
+          
+          setState(() {
+            _userData = response;
+          });
+          print('Successfully loaded user data from users table');
+        } catch (userError) {
+          print('Could not load from users table: $userError');
+          // Fallback to auth metadata
+          setState(() {
+            _userData = {
+              'full_name': user.userMetadata?['full_name'] ?? user.userMetadata?['name'] ?? 'User',
+              'email': user.email,
+              'photo_url': user.userMetadata?['avatar_url'],
+            };
+          });
+        }
+      }
+    } catch (e) {
+      print('Error loading user data: $e');
+    } finally {
+      setState(() => _isLoadingUser = false);
+    }
   }
 
   Future<void> _loadClubs() async {
@@ -341,6 +381,105 @@ class _BookClubPageState extends State<BookClubPage> {
     super.dispose();
   }
 
+  Widget _buildUserAvatar() {
+    final user = Supabase.instance.client.auth.currentUser;
+    
+    if (_isLoadingUser) {
+      return Container(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: const Color(0xFF0096C7),
+            width: 3,
+          ),
+          boxShadow: const [
+            BoxShadow(
+              color: Colors.black12,
+              blurRadius: 8,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: const CircleAvatar(
+          radius: 36,
+          backgroundColor: Colors.white,
+          child: CircularProgressIndicator(
+            color: Color(0xFF0096C7),
+            strokeWidth: 2,
+          ),
+        ),
+      );
+    }
+
+    String? photoURL = _userData?['photo_url'] ?? 
+                      _userData?['avatar_url'] ?? 
+                      user?.userMetadata?['avatar_url'];
+    
+    return Container(
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: const Color(0xFF0096C7),
+          width: 3,
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 8,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: CircleAvatar(
+        radius: 36,
+        backgroundColor: Colors.white,
+        backgroundImage: photoURL != null && photoURL.isNotEmpty 
+            ? NetworkImage(photoURL) 
+            : null,
+        onBackgroundImageError: photoURL != null ? (exception, stackTrace) {
+          print('Failed to load profile image: $exception');
+        } : null,
+        child: photoURL == null || photoURL.isEmpty
+            ? Icon(
+                Icons.person,
+                size: 36,
+                color: const Color(0xFF0096C7),
+              )
+            : null,
+      ),
+    );
+  }
+
+  String _getPersonalizedGreeting() {
+    if (_isLoadingUser) {
+      return 'Loading...';
+    }
+    
+    final user = Supabase.instance.client.auth.currentUser;
+    String userName = 'Explorer';
+    
+    if (user != null) {
+      // Try to get name from user data
+      if (_userData?['first_name'] != null || _userData?['last_name'] != null) {
+        final firstName = _userData?['first_name'] ?? '';
+        final lastName = _userData?['last_name'] ?? '';
+        userName = '$firstName $lastName'.trim();
+      } else if (_userData?['full_name'] != null) {
+        userName = _userData!['full_name'];
+      } else if (user.userMetadata?['full_name'] != null) {
+        userName = user.userMetadata!['full_name'];
+      } else if (user.userMetadata?['name'] != null) {
+        userName = user.userMetadata!['name'];
+      } else if (user.email != null) {
+        userName = user.email!.split('@')[0].replaceAll(RegExp(r'[^a-zA-Z]'), ' ').trim();
+      }
+    }
+    
+    // Get only first name for greeting
+    final firstName = userName.split(' ').first;
+    return 'Hi $firstName, Discover Book Clubs';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -357,34 +496,14 @@ class _BookClubPageState extends State<BookClubPage> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Container(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: const Color(0xFF0096C7),
-                          width: 3,
-                        ),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Colors.black12,
-                            blurRadius: 8,
-                            offset: Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: const CircleAvatar(
-                        radius: 36,
-                        backgroundColor: Colors.white,
-                        backgroundImage: AssetImage('Asset/images/parvez.jpg'),
-                      ),
-                    ),
+                    _buildUserAvatar(),
                     const SizedBox(width: 24),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Discover Book Clubs',
+                            _getPersonalizedGreeting(),
                             style: GoogleFonts.montserrat(
                               fontWeight: FontWeight.bold,
                               fontSize: 26,
@@ -563,119 +682,139 @@ class _BookClubPageState extends State<BookClubPage> {
       color: Colors.white,
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Club Cover Image
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: club.coverImageUrl != null
-                  ? Image.network(
-                      club.coverImageUrl!,
-                      width: 90,
-                      height: 130,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) =>
-                          _buildClubPlaceholder(),
-                    )
-                  : _buildClubPlaceholder(),
-            ),
-            const SizedBox(width: 18),
-            Expanded(
-              child: SizedBox(
-                height: 130,
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Club Cover Image
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: club.coverImageUrl != null
+                    ? Image.network(
+                        club.coverImageUrl!,
+                        width: 80,
+                        height: 110,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) =>
+                            _buildClubPlaceholder(),
+                      )
+                    : _buildClubPlaceholder(),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                club.name,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 18,
-                                  color: Color(0xFF0077B6),
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            if (club.isPremium)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFFFD700),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Text(
-                                  'PREMIUM',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                    color: Color(0xFF023E8A),
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'by ${club.authorFullName}',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w500,
-                            fontSize: 15,
-                            color: Colors.black54,
-                          ),
-                        ),
-                      ],
-                    ),
-                    Text(
-                      club.description,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: Colors.black87,
-                        height: 1.4,
-                      ),
-                    ),
+                    // Club name and premium badge
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        if (club.isPremium)
-                          Text(
-                            '৳${club.membershipPrice.toStringAsFixed(0)}/month',
+                        Expanded(
+                          child: Text(
+                            club.name,
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 16,
                               color: Color(0xFF0077B6),
                             ),
-                          )
-                        else
-                          const Text(
-                            'FREE',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                              color: Colors.green,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (club.isPremium) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFD700),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Text(
+                              'PREMIUM',
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF023E8A),
+                              ),
                             ),
                           ),
-                        _buildActionButton(club),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    
+                    // Author name
+                    Text(
+                      'by ${club.authorFullName}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w500,
+                        fontSize: 13,
+                        color: Colors.black54,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 8),
+                    
+                    // Description
+                    Flexible(
+                      child: Text(
+                        club.description,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Colors.black87,
+                          height: 1.3,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    
+                    // Price and action button
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        // Price section
+                        Flexible(
+                          flex: 1,
+                          child: club.isPremium
+                              ? Text(
+                                  '৳${club.membershipPrice.toStringAsFixed(0)}/mo',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                    color: Color(0xFF0077B6),
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                )
+                              : const Text(
+                                  'FREE',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                    color: Colors.green,
+                                  ),
+                                ),
+                        ),
+                        const SizedBox(width: 8),
+                        
+                        // Action button
+                        Flexible(
+                          flex: 1,
+                          child: _buildActionButton(club),
+                        ),
                       ],
                     ),
                   ],
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -687,40 +826,51 @@ class _BookClubPageState extends State<BookClubPage> {
     
     if (isJoined) {
       // User is already a member - show "Visit Club" button
-      return ElevatedButton.icon(
-        onPressed: () => _visitClub(club),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF28A745), // Green for joined
-          foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
+      return Flexible(
+        child: ElevatedButton(
+          onPressed: () => _visitClub(club),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF28A745), // Green for joined
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 8,
+              vertical: 6,
+            ),
+            minimumSize: const Size(0, 32),
           ),
-          padding: const EdgeInsets.symmetric(
-            horizontal: 12,
-            vertical: 8,
+          child: const Text(
+            'Visit',
+            style: TextStyle(fontSize: 12),
           ),
         ),
-        icon: const Icon(Icons.check_circle, size: 16),
-        label: const Text('Visit Club'),
       );
     } else {
       // User is not a member - show join button
-      return ElevatedButton(
-        onPressed: () => _joinClub(club),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: club.isPremium 
-              ? const Color(0xFFFFD700)
-              : const Color(0xFFADE8F4),
-          foregroundColor: const Color(0xFF023E8A),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
+      return Flexible(
+        child: ElevatedButton(
+          onPressed: () => _joinClub(club),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: club.isPremium 
+                ? const Color(0xFFFFD700)
+                : const Color(0xFFADE8F4),
+            foregroundColor: const Color(0xFF023E8A),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 8,
+              vertical: 6,
+            ),
+            minimumSize: const Size(0, 32),
           ),
-          padding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 8,
+          child: Text(
+            club.isPremium ? 'Join' : 'Join',
+            style: const TextStyle(fontSize: 12),
           ),
         ),
-        child: Text(club.isPremium ? 'Join Premium' : 'Join Free'),
       );
     }
   }
@@ -728,15 +878,15 @@ class _BookClubPageState extends State<BookClubPage> {
   // Placeholder for club cover image
   Widget _buildClubPlaceholder() {
     return Container(
-      width: 90,
-      height: 130,
+      width: 80,
+      height: 110,
       decoration: BoxDecoration(
         color: const Color(0xFFADE8F4),
         borderRadius: BorderRadius.circular(12),
       ),
       child: const Icon(
         Icons.groups,
-        size: 40,
+        size: 35,
         color: Color(0xFF0077B6),
       ),
     );
