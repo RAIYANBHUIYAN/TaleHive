@@ -13,20 +13,27 @@ class PaymentService {
   static const String _storePassword = 'wrist6830197f2308c@ssl';
   
   Future<ClubPayment?> createPayment({
-    required String membershipId,
+    required String membershipId, // We'll keep this parameter for compatibility but won't use it in DB
     required String userId,
     required String clubId,
     required double amount,
     required PaymentMethod paymentMethod,
+    String? transactionId,
   }) async {
     try {
+      // Calculate author share (80%) and platform share (20%)
+      final authorShare = amount * 0.8;
+      final platformShare = amount * 0.2;
+      
       final paymentData = {
-        'membership_id': membershipId,
         'user_id': userId,
         'club_id': clubId,
+        'transaction_id': transactionId ?? 'PENDING_${DateTime.now().millisecondsSinceEpoch}',
         'amount': amount,
-        'status': 'pending',
+        'author_share': authorShare,
+        'platform_share': platformShare,
         'payment_method': _paymentMethodToString(paymentMethod),
+        'status': 'pending',
         'created_at': DateTime.now().toIso8601String(),
       };
 
@@ -35,16 +42,19 @@ class PaymentService {
           .insert(paymentData)
           .select('''
             *,
-            users!club_payments_user_id_fkey(first_name, last_name, email),
             clubs!club_payments_club_id_fkey(name)
           ''')
           .single();
 
+      // Get user info separately from auth.users via the Supabase client
+      final user = _supabase.auth.currentUser;
+      
       return ClubPayment.fromJson({
         ...response,
-        'user_first_name': response['users']?['first_name'],
-        'user_last_name': response['users']?['last_name'],
-        'user_email': response['users']?['email'],
+        'membership_id': membershipId, // Add this for model compatibility
+        'user_first_name': user?.userMetadata?['first_name'] ?? 'User',
+        'user_last_name': user?.userMetadata?['last_name'] ?? '',
+        'user_email': user?.email ?? '',
         'club_name': response['clubs']?['name'],
       });
     } catch (e) {
@@ -100,11 +110,15 @@ class PaymentService {
       final response = await sslcommerz.payNow();
 
       if (response.status == 'VALID') {
-        // Update payment with transaction details
+        // Determine actual payment method used based on card_type from response
+        String actualPaymentMethod = _getActualPaymentMethod(response.cardType ?? '', paymentMethod);
+        
+        // Update payment with transaction details and actual payment method
         await _supabase
             .from('club_payments')
             .update({
               'transaction_id': response.tranId,
+              'payment_method': actualPaymentMethod,
               'payment_data': {
                 'bank_tran_id': response.bankTranId,
                 'card_type': response.cardType,
@@ -144,34 +158,35 @@ class PaymentService {
     Map<String, dynamic>? additionalData,
   }) async {
     try {
-      // Update payment status
+      // Update payment status and transaction ID
       await _supabase
           .from('club_payments')
           .update({
             'status': 'completed',
             'transaction_id': transactionId,
-            'completed_at': DateTime.now().toIso8601String(),
-            'payment_data': additionalData,
           })
           .eq('id', paymentId);
 
       // Get the payment details to activate membership
       final paymentResponse = await _supabase
           .from('club_payments')
-          .select('membership_id, user_id, club_id')
+          .select('user_id, club_id')
           .eq('id', paymentId)
           .single();
 
-      // Activate or upgrade the membership
-      final membershipId = paymentResponse['membership_id'];
+      // Set membership to pending status after payment completion
+      final userId = paymentResponse['user_id'];
+      final clubId = paymentResponse['club_id'];
+      
       await _supabase
           .from('club_memberships')
           .update({
             'membership_type': 'premium',
-            'status': 'active',
+            'status': 'pending', // Set to pending for author approval
             'expires_at': DateTime.now().add(const Duration(days: 30)).toIso8601String(),
           })
-          .eq('id', membershipId);
+          .eq('user_id', userId)
+          .eq('club_id', clubId);
 
       return true;
     } catch (e) {
@@ -229,7 +244,6 @@ class PaymentService {
           .from('club_payments')
           .select('''
             *,
-            users!club_payments_user_id_fkey(first_name, last_name, email),
             clubs!club_payments_club_id_fkey(name)
           ''')
           .eq('club_id', clubId)
@@ -238,9 +252,9 @@ class PaymentService {
       return response.map<ClubPayment>((json) {
         return ClubPayment.fromJson({
           ...json,
-          'user_first_name': json['users']?['first_name'],
-          'user_last_name': json['users']?['last_name'],
-          'user_email': json['users']?['email'],
+          'user_first_name': 'User', // Default values since we can't join with auth.users
+          'user_last_name': '',
+          'user_email': '',
           'club_name': json['clubs']?['name'],
         });
       }).toList();
@@ -263,6 +277,23 @@ class PaymentService {
         return 'card';
       case PaymentMethod.bank_transfer:
         return 'bank_transfer';
+    }
+  }
+
+  // Helper method to determine actual payment method from SSL Commerz response
+  String _getActualPaymentMethod(String cardType, PaymentMethod originalMethod) {
+    // Check the card_type from SSL Commerz response to determine actual payment method
+    if (cardType.toLowerCase().contains('bkash')) {
+      return 'bkash';
+    } else if (cardType.toLowerCase().contains('nagad')) {
+      return 'nagad';
+    } else if (cardType.toLowerCase().contains('rocket')) {
+      return 'rocket';
+    } else if (cardType.toLowerCase().contains('visa') || cardType.toLowerCase().contains('master')) {
+      return 'card';
+    } else {
+      // If we can't determine from cardType, use the original method
+      return _paymentMethodToString(originalMethod);
     }
   }
 }

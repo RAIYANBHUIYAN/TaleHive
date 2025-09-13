@@ -1,6 +1,6 @@
 enum MembershipType { free, premium }
 
-enum MembershipStatus { active, expired, cancelled }
+enum MembershipStatus { active, expired, cancelled, pending }
 
 class ClubMembership {
   final String id;
@@ -95,6 +95,8 @@ class ClubMembership {
         return MembershipStatus.expired;
       case 'cancelled':
         return MembershipStatus.cancelled;
+      case 'pending':
+        return MembershipStatus.pending;
       case 'active':
       default:
         return MembershipStatus.active;
@@ -107,6 +109,8 @@ class ClubMembership {
         return 'expired';
       case MembershipStatus.cancelled:
         return 'cancelled';
+      case MembershipStatus.pending:
+        return 'pending';
       case MembershipStatus.active:
         return 'active';
     }
@@ -122,6 +126,7 @@ class ClubMembership {
   bool get isActive => status == MembershipStatus.active;
   bool get isPremium => membershipType == MembershipType.premium;
   bool get isExpired => expiresAt != null && DateTime.now().isAfter(expiresAt!);
+  bool get isPending => status == MembershipStatus.pending;
 
   ClubMembership copyWith({
     String? id,

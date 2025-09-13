@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_sslcommerz/model/SSLCSdkType.dart';
+import 'package:flutter_sslcommerz/model/SSLCommerzInitialization.dart';
+import 'package:flutter_sslcommerz/model/SSLCurrencyType.dart';
+import 'package:flutter_sslcommerz/sslcommerz.dart';
 import '../../models/club_model.dart';
 import '../../models/club_membership_model.dart';
 import '../../models/club_payment_model.dart';
@@ -71,6 +75,8 @@ class _BookClubPageState extends State<BookClubPage> {
   
   // Track user's club memberships
   List<String> _userJoinedClubs = [];
+  // Track user's pending memberships
+  List<String> _userPendingClubs = [];
   
   // Add user data properties
   Map<String, dynamic>? _userData;
@@ -147,12 +153,33 @@ class _BookClubPageState extends State<BookClubPage> {
       final currentUser = Supabase.instance.client.auth.currentUser;
       if (currentUser != null) {
         final memberships = await _clubService.getUserMemberships(currentUser.id);
+        print('📋 Loaded ${memberships.length} memberships for user');
+        
+        // Debug: Print all memberships
+        for (var membership in memberships) {
+          print('   📝 Membership: club=${membership.clubId}, status=${membership.status}, type=${membership.membershipType}');
+          print('      isActive=${membership.isActive}, isPending=${membership.isPending}');
+        }
+        
         setState(() {
+          // Track active memberships (can access club)
           _userJoinedClubs = memberships
               .where((membership) => membership.isActive)
               .map((membership) => membership.clubId)
               .toList();
+          
+          // Track pending memberships (waiting for approval)
+          _userPendingClubs = memberships
+              .where((membership) => membership.isPending)
+              .map((membership) => membership.clubId)
+              .toList();
         });
+        
+        print('✅ Active clubs: ${_userJoinedClubs.length}');
+        print('⏳ Pending clubs: ${_userPendingClubs.length}');
+        for (var clubId in _userPendingClubs) {
+          print('   - Pending: $clubId');
+        }
       }
     } catch (e) {
       print('Error loading user memberships: $e');
@@ -161,6 +188,10 @@ class _BookClubPageState extends State<BookClubPage> {
 
   bool _isUserJoinedClub(String clubId) {
     return _userJoinedClubs.contains(clubId);
+  }
+
+  bool _hasUserPendingMembership(String clubId) {
+    return _userPendingClubs.contains(clubId);
   }
 
   void _applyFilters() {
@@ -248,55 +279,139 @@ class _BookClubPageState extends State<BookClubPage> {
 
   Future<void> _visitClub(Club club) async {
     // Navigate to club detail page showing club books
-    Navigator.push(
+    final result = await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => ClubDetailPage(club: club),
       ),
     );
+    
+    // If user left the club, refresh the memberships
+    if (result == 'left_club') {
+      print('🔄 User left club, refreshing memberships...');
+      await _loadUserMemberships();
+      setState(() {
+        // Force rebuild to update button states
+      });
+    }
   }
 
   Future<void> _showPaymentDialog(Club club) async {
+    bool isProcessing = false;
+    
     return showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Join ${club.name}'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Membership Fee: ৳${club.membershipPrice.toStringAsFixed(2)}'),
-            const SizedBox(height: 16),
-            const Text('Payment Methods:'),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: Text('Join ${club.name}'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Chip(label: Text('bKash'), backgroundColor: Colors.pink[100]),
-                Chip(label: Text('Nagad'), backgroundColor: Colors.orange[100]),
-                Chip(label: Text('Rocket'), backgroundColor: Colors.purple[100]),
-                Chip(label: Text('Card'), backgroundColor: Colors.blue[100]),
+                Text(
+                  'Membership Fee: ৳${club.membershipPrice.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF023E8A),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Payment Methods:',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    Chip(
+                      label: const Text('bKash'),
+                      backgroundColor: Colors.pink[100],
+                      avatar: const Icon(Icons.payment, size: 16),
+                    ),
+                    Chip(
+                      label: const Text('Nagad'),
+                      backgroundColor: Colors.orange[100],
+                      avatar: const Icon(Icons.payment, size: 16),
+                    ),
+                    Chip(
+                      label: const Text('Rocket'),
+                      backgroundColor: Colors.purple[100],
+                      avatar: const Icon(Icons.payment, size: 16),
+                    ),
+                    Chip(
+                      label: const Text('Card'),
+                      backgroundColor: Colors.blue[100],
+                      avatar: const Icon(Icons.credit_card, size: 16),
+                    ),
+                  ],
+                ),
+                if (isProcessing) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.blue[50],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.blue[200]!),
+                    ),
+                    child: const Row(
+                      children: [
+                        SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                        SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Processing payment...\nPlease complete the payment in the SSL Commerz window.',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              await _processPayment(club);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF0096C7),
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Pay Now'),
-          ),
-        ],
+            actions: [
+              TextButton(
+                onPressed: isProcessing ? null : () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: isProcessing ? null : () async {
+                  setDialogState(() => isProcessing = true);
+                  
+                  Navigator.pop(context);
+                  await _processPayment(club);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0096C7),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                ),
+                child: isProcessing
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Text(
+                        'Pay Now',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -305,70 +420,183 @@ class _BookClubPageState extends State<BookClubPage> {
     try {
       final currentUser = Supabase.instance.client.auth.currentUser!;
       
-      // First create a club membership
+      // Generate a unique transaction ID using timestamp
+      final tranId = "CLUB_${club.id.substring(0, 8)}_${DateTime.now().millisecondsSinceEpoch}";
+      
+      // First create a club membership record with pending status for premium clubs
       final membership = await _clubService.joinClub(
         clubId: club.id,
         userId: currentUser.id,
         membershipType: MembershipType.premium,
+        isPendingApproval: true, // Premium clubs require approval
       );
 
       if (membership == null) {
         throw Exception('Failed to create club membership');
       }
 
-      // Create payment record
+      // Create payment record in database
       final payment = await _paymentService.createPayment(
         membershipId: membership.id,
         userId: currentUser.id,
         clubId: club.id,
         amount: club.membershipPrice,
-        paymentMethod: PaymentMethod.card, // Default to card, user can change in payment gateway
+        paymentMethod: PaymentMethod.card,
       );
 
       if (payment == null) {
         throw Exception('Failed to create payment record');
       }
 
-      // Initiate SSLCommerz payment
-      final paymentResponse = await _paymentService.initiateSSLCommerzPayment(
-        paymentId: payment.id,
-        amount: club.membershipPrice,
-        customerName: currentUser.userMetadata?['full_name'] ?? 'Club Member',
-        customerEmail: currentUser.email!,
-        customerPhone: currentUser.userMetadata?['phone'] ?? '01700000000',
-        paymentMethod: PaymentMethod.card,
+      // Initialize SSL Commerz payment
+      Sslcommerz sslcommerz = Sslcommerz(
+        initializer: SSLCommerzInitialization(
+          multi_card_name: "visa,master,bkash,nagad,rocket",
+          currency: SSLCurrencyType.BDT,
+          product_category: "Club Membership",
+          sdkType: SSLCSdkType.TESTBOX, // Use TESTBOX for development
+          store_id: "wrist6830197f2308c",
+          store_passwd: "wrist6830197f2308c@ssl",
+          total_amount: club.membershipPrice,
+          tran_id: tranId,
+        ),
       );
 
-      if (paymentResponse != null && paymentResponse['status'] == 'SUCCESS') {
-        // Refresh user memberships
-        await _loadUserMemberships();
-        
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Successfully joined ${club.name}!'),
-              backgroundColor: Colors.green,
-            ),
+      // Process payment with SSL Commerz
+      final response = await sslcommerz.payNow();
+
+      if (mounted) {
+        if (response.status == 'VALID') {
+          // Payment successful
+          try {
+            // Update payment record with transaction details
+            await _paymentService.completePayment(
+              paymentId: payment.id,
+              transactionId: response.tranId!,
+              additionalData: {
+                'bank_tran_id': response.bankTranId,
+                'card_type': response.cardType,
+                'card_no': response.cardNo,
+                'amount': response.amount,
+                'status': response.status,
+              },
+            );
+
+            // Refresh user memberships BEFORE showing success message
+            await _loadUserMemberships();
+            
+            // Show success message with pending approval notice
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Row(
+                  children: [
+                    const Icon(Icons.payment, color: Colors.white),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('Payment successful for ${club.name}!'),
+                          Text(
+                            'Your membership is pending author approval.',
+                            style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.9)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                backgroundColor: Colors.blue,
+                behavior: SnackBarBehavior.floating,
+                duration: const Duration(seconds: 5),
+              ),
+            );
+
+            // Force a state update to refresh the UI
+            setState(() {
+              // This will trigger a rebuild and show the pending status
+            });
+
+          } catch (e) {
+            print('Error completing payment: $e');
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Row(
+                  children: [
+                    const Icon(Icons.warning, color: Colors.white),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text('Payment successful but there was an issue: $e'),
+                    ),
+                  ],
+                ),
+                backgroundColor: Colors.orange,
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+          
+        } else if (response.status == 'FAILED') {
+          // Payment failed
+          await _paymentService.failPayment(
+            paymentId: payment.id,
+            reason: 'Payment failed in SSL Commerz',
           );
-        }
-      } else {
-        // Payment failed or cancelled
-        if (mounted) {
+          
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Payment was cancelled or failed'),
+              content: Row(
+                children: [
+                  Icon(Icons.error_outline, color: Colors.white),
+                  SizedBox(width: 10),
+                  Text('Payment failed. Please try again.'),
+                ],
+              ),
+              backgroundColor: Colors.red,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          
+        } else if (response.status == 'CLOSED') {
+          // Payment window closed
+          await _paymentService.failPayment(
+            paymentId: payment.id,
+            reason: 'Payment window closed by user',
+          );
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Row(
+                children: [
+                  Icon(Icons.info_outline, color: Colors.white),
+                  SizedBox(width: 10),
+                  Text('Payment window closed. You can try again anytime.'),
+                ],
+              ),
               backgroundColor: Colors.orange,
+              behavior: SnackBarBehavior.floating,
             ),
           );
         }
       }
+      
     } catch (e) {
       print('Error processing payment: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error processing payment: $e'),
+            content: Row(
+              children: [
+                const Icon(Icons.error_outline, color: Colors.white),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text('Error processing payment: ${e.toString()}'),
+                ),
+              ],
+            ),
             backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
           ),
         );
       }
@@ -823,34 +1051,65 @@ class _BookClubPageState extends State<BookClubPage> {
   // Build action button based on membership status
   Widget _buildActionButton(Club club) {
     final isJoined = _isUserJoinedClub(club.id);
+    final hasPending = _hasUserPendingMembership(club.id);
+    
+    print('🔍 Club ${club.name} (${club.id}):');
+    print('   - isJoined: $isJoined');
+    print('   - hasPending: $hasPending');
     
     if (isJoined) {
       // User is already a member - show "Visit Club" button
-      return Flexible(
-        child: ElevatedButton(
-          onPressed: () => _visitClub(club),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF28A745), // Green for joined
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-            padding: const EdgeInsets.symmetric(
-              horizontal: 8,
-              vertical: 6,
-            ),
-            minimumSize: const Size(0, 32),
+      return ElevatedButton(
+        onPressed: () => _visitClub(club),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF28A745), // Green for joined
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
           ),
-          child: const Text(
-            'Visit',
-            style: TextStyle(fontSize: 12),
+          padding: const EdgeInsets.symmetric(
+            horizontal: 8,
+            vertical: 6,
           ),
+          minimumSize: const Size(0, 32),
+        ),
+        child: const Text(
+          'Visit',
+          style: TextStyle(fontSize: 12),
         ),
       );
     } else {
-      // User is not a member - show join button
-      return Flexible(
-        child: ElevatedButton(
+      // Check if user has pending membership for this club
+      final hasPendingMembership = _hasUserPendingMembership(club.id);
+      
+      if (hasPendingMembership) {
+        // User has pending membership - show pending status
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.orange[100],
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.orange[300]!),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.hourglass_empty, size: 12, color: Colors.orange[700]),
+              const SizedBox(width: 4),
+              Text(
+                'Pending',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.orange[700],
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        );
+      } else {
+        // User is not a member - show join button
+        return ElevatedButton(
           onPressed: () => _joinClub(club),
           style: ElevatedButton.styleFrom(
             backgroundColor: club.isPremium 
@@ -870,8 +1129,8 @@ class _BookClubPageState extends State<BookClubPage> {
             club.isPremium ? 'Join' : 'Join',
             style: const TextStyle(fontSize: 12),
           ),
-        ),
-      );
+        );
+      }
     }
   }
 
@@ -1046,9 +1305,21 @@ class _BookClubPageState extends State<BookClubPage> {
                           ),
                         ),
                       OutlinedButton(
-                        onPressed: () => _isUserJoinedClub(club.id) 
-                            ? _visitClub(club) 
-                            : _joinClub(club),
+                        onPressed: () {
+                          if (_isUserJoinedClub(club.id)) {
+                            _visitClub(club);
+                          } else if (_hasUserPendingMembership(club.id)) {
+                            // Show pending status message
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: const Text('Your membership is pending author approval'),
+                                backgroundColor: Colors.orange,
+                              ),
+                            );
+                          } else {
+                            _joinClub(club);
+                          }
+                        },
                         style: OutlinedButton.styleFrom(
                           foregroundColor: Colors.white,
                           side: const BorderSide(color: Colors.white),
@@ -1056,7 +1327,13 @@ class _BookClubPageState extends State<BookClubPage> {
                             borderRadius: BorderRadius.circular(10),
                           ),
                         ),
-                        child: Text(_isUserJoinedClub(club.id) ? 'Visit Club' : 'Join Now'),
+                        child: Text(
+                          _isUserJoinedClub(club.id) 
+                              ? 'Visit Club' 
+                              : _hasUserPendingMembership(club.id)
+                                  ? 'Pending'
+                                  : 'Join Now',
+                        ),
                       ),
                     ],
                   ),

@@ -133,14 +133,34 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
     try {
       final user = supabase.auth.currentUser;
       if (user != null) {
+        // First, get all book IDs that are in club_books table
+        final clubBooksResponse = await supabase
+            .from('club_books')
+            .select('book_id');
+        
+        final clubBookIds = clubBooksResponse
+            .map((item) => item['book_id'] as String)
+            .toSet();
+        
+        print('📚 Found ${clubBookIds.length} books in clubs: $clubBookIds');
+
+        // Then get all books by this author
         final response = await supabase
             .from('books')
             .select()
             .eq('author_id', user.id)
             .order('created_at', ascending: false);
 
+        // Filter out books that are in clubs
+        final filteredBooks = response
+            .where((book) => !clubBookIds.contains(book['id']))
+            .toList();
+
+        print('📖 Total books by author: ${response.length}');
+        print('📖 Books after filtering club books: ${filteredBooks.length}');
+
         setState(() {
-          books = response.map((book) => Map<String, dynamic>.from(book)).toList();
+          books = filteredBooks.map((book) => Map<String, dynamic>.from(book)).toList();
         });
       }
     } catch (e) {
@@ -2713,59 +2733,111 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
   void _showDeleteClubDialog(Club club) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Club'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Are you sure you want to delete "${club.name}"?',
-              style: const TextStyle(fontWeight: FontWeight.bold),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          bool isDeleting = false;
+          
+          return AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.warning, color: Colors.red[600]),
+                const SizedBox(width: 8),
+                const Text('Delete Club'),
+              ],
             ),
-            const SizedBox(height: 8),
-            const Text('This will:'),
-            const Text('• Remove all members from the club'),
-            const Text('• Delete all club data'),
-            const Text('• This action cannot be undone'),
-            if (club.isPremium)
-              const Text('• Cancel all active subscriptions', style: TextStyle(color: Colors.red)),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              
-              final success = await _clubService.deleteClub(club.id);
-              if (success) {
-                await _loadAuthorClubs();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Club "${club.name}" deleted successfully'),
-                    backgroundColor: Colors.green,
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Are you sure you want to delete "${club.name}"?',
+                  style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red[800]),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.red[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.red[200]!),
                   ),
-                );
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Failed to delete club'),
-                    backgroundColor: Colors.red,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.info, color: Colors.red[700], size: 16),
+                          const SizedBox(width: 8),
+                          Text(
+                            'This action will permanently:',
+                            style: TextStyle(
+                              fontSize: 12, 
+                              color: Colors.red[700],
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text('• Cancel all active memberships', style: TextStyle(fontSize: 12, color: Colors.red[700])),
+                      Text('• Remove all books from the club', style: TextStyle(fontSize: 12, color: Colors.red[700])),
+                      Text('• Deactivate the club permanently', style: TextStyle(fontSize: 12, color: Colors.red[700])),
+                      if (club.isPremium)
+                        Text('• Stop all premium subscription billing', style: TextStyle(fontSize: 12, color: Colors.red[700], fontWeight: FontWeight.bold)),
+                    ],
                   ),
-                );
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
+                ),
+              ],
             ),
-            child: const Text('Delete'),
-          ),
-        ],
+            actions: [
+              TextButton(
+                onPressed: isDeleting ? null : () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: isDeleting ? null : () async {
+                  setDialogState(() => isDeleting = true);
+                  
+                  final success = await _clubService.deleteClub(club.id);
+                  
+                  if (mounted) {
+                    Navigator.pop(context);
+                    
+                    if (success) {
+                      await _loadAuthorClubs();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('✅ Club "${club.name}" deleted successfully'),
+                          backgroundColor: Colors.green,
+                          duration: const Duration(seconds: 4),
+                        ),
+                      );
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('❌ Failed to delete club. Please try again.'),
+                          backgroundColor: Colors.red,
+                          duration: const Duration(seconds: 4),
+                        ),
+                      );
+                    }
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                ),
+                child: isDeleting 
+                    ? const SizedBox(
+                        width: 20, 
+                        height: 20, 
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Text('Delete Club'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

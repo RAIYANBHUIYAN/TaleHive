@@ -132,13 +132,61 @@ class ClubService {
 
   Future<bool> deleteClub(String clubId) async {
     try {
+      print('🗑️ Starting comprehensive club deletion process for club ID: $clubId');
+      
+      // Step 1: Delete all club payments related to this club
+      print('💳 Deleting club payments...');
+      await _supabase
+          .from('club_payments')
+          .delete()
+          .eq('club_id', clubId);
+      print('✅ Club payments deleted');
+      
+      // Step 2: Delete all club memberships related to this club
+      print('👥 Deleting club memberships...');
+      await _supabase
+          .from('club_memberships')
+          .delete()
+          .eq('club_id', clubId);
+      print('✅ Club memberships deleted');
+      
+      // Step 3: Delete all club books related to this club
+      print('📚 Deleting club books...');
+      await _supabase
+          .from('club_books')
+          .delete()
+          .eq('club_id', clubId);
+      print('✅ Club books deleted');
+      
+      // Step 4: Delete any club analytics/stats if they exist
+      // Note: Add more tables here if you have additional related tables
+      try {
+        print('📊 Checking for club analytics/stats...');
+        // If you have a club_analytics or club_stats table, delete here
+        // await _supabase.from('club_analytics').delete().eq('club_id', clubId);
+        print('✅ Analytics cleanup completed');
+      } catch (e) {
+        print('⚠️ No analytics tables found or error cleaning up: $e');
+      }
+      
+      // Step 5: Finally delete the club itself
+      print('🏛️ Deleting the club record...');
       await _supabase
           .from('clubs')
-          .update({'is_active': false})
+          .delete()
           .eq('id', clubId);
+      print('✅ Club record deleted');
+      
+      print('🎉 Club deletion completed successfully! All related data removed:');
+      print('   - Club payments ✅');
+      print('   - Club memberships ✅'); 
+      print('   - Club books ✅');
+      print('   - Club record ✅');
+      
       return true;
     } catch (e) {
-      print('Error deleting club: $e');
+      print('❌ Error during club deletion process: $e');
+      print('❌ Club deletion failed. Some data may have been partially deleted.');
       return false;
     }
   }
@@ -229,43 +277,62 @@ Future<List<ClubMembership>> getClubMembers(String clubId, {bool activeOnly = fa
   try {
     print('Loading members for club ID: $clubId');
     
+    // First, get club memberships without joins
     var query = _supabase
         .from('club_memberships')
-        .select('''
-          *,
-          users!fk_club_memberships_user(
-            first_name, last_name, email, photo_url, username, contact_no
-          ),
-          clubs!club_memberships_club_id_fkey(
-            name, cover_image_url, is_premium
-          )
-        ''')
+        .select('*')
         .eq('club_id', clubId);
 
     if (activeOnly) {
       query = query.eq('status', 'active');
     }
 
-    final response = await query.order('joined_at', ascending: false);
+    final membershipResponse = await query.order('joined_at', ascending: false);
+    print('Found ${membershipResponse.length} memberships');
 
-    print('Found ${response.length} members');
+    if (membershipResponse.isEmpty) {
+      return [];
+    }
 
-    return response.map<ClubMembership>((json) {
-      return ClubMembership.fromJson({
-        ...json,
-        'user_first_name': json['users']?['first_name'],
-        'user_last_name': json['users']?['last_name'],
-        'user_email': json['users']?['email'],
-        'user_photo_url': json['users']?['photo_url'],
-        'user_username': json['users']?['username'],
-        'user_contact_no': json['users']?['contact_no'],
-        'club_name': json['clubs']?['name'],
-        'club_cover_url': json['clubs']?['cover_image_url'],
-        'club_is_premium': json['clubs']?['is_premium'],
-      });
-    }).toList();
+    // Get club details
+    final clubResponse = await _supabase
+        .from('clubs')
+        .select('name, cover_image_url, is_premium')
+        .eq('id', clubId)
+        .single();
+
+    List<ClubMembership> memberships = [];
+
+    // For each membership, get user details
+    for (var membership in membershipResponse) {
+      final userId = membership['user_id'];
+      
+      // Get user details from users table
+      final userResponse = await _supabase
+          .from('users')
+          .select('first_name, last_name, email, photo_url, username, contact_no')
+          .eq('id', userId)
+          .maybeSingle();
+
+      memberships.add(ClubMembership.fromJson({
+        ...membership,
+        'user_first_name': userResponse?['first_name'] ?? 'User',
+        'user_last_name': userResponse?['last_name'] ?? '',
+        'user_email': userResponse?['email'] ?? '',
+        'user_photo_url': userResponse?['photo_url'],
+        'user_username': userResponse?['username'],
+        'user_contact_no': userResponse?['contact_no'],
+        'club_name': clubResponse['name'],
+        'club_cover_url': clubResponse['cover_image_url'],
+        'club_is_premium': clubResponse['is_premium'],
+      }));
+    }
+
+    print('Successfully loaded ${memberships.length} members with user details');
+    return memberships;
   } catch (e) {
     print('Error fetching club members: $e');
+    print('Detailed error: ${e.toString()}');
     return [];
   }
 }
@@ -282,7 +349,7 @@ Future<List<ClubMembership>> getUserMemberships(String userId) async {
           )
         ''')
         .eq('user_id', userId)
-        .eq('status', 'active')
+        // Remove the status filter to get ALL memberships (active, pending, etc.)
         .order('joined_at', ascending: false);
 
     return response.map<ClubMembership>((json) {
@@ -304,6 +371,7 @@ Future<ClubMembership?> joinClub({
   required String clubId,
   required String userId,
   required MembershipType membershipType,
+  bool isPendingApproval = false, // New parameter for pending approval
 }) async {
   try {
     // Check if user is already a member
@@ -318,10 +386,11 @@ Future<ClubMembership?> joinClub({
       print('User is already a member of this club');
       // Reactivate if cancelled
       if (existing['status'] == 'cancelled') {
+        final status = isPendingApproval ? 'pending' : 'active';
         final updated = await _supabase
             .from('club_memberships')
             .update({
-              'status': 'active',
+              'status': status,
               'membership_type': membershipType == MembershipType.premium ? 'premium' : 'free',
               'joined_at': DateTime.now().toIso8601String(),
               'expires_at': membershipType == MembershipType.premium
@@ -348,11 +417,12 @@ Future<ClubMembership?> joinClub({
     }
 
     // Create new membership
+    final status = isPendingApproval ? 'pending' : 'active';
     final membershipData = {
       'club_id': clubId,
       'user_id': userId,
       'membership_type': membershipType == MembershipType.premium ? 'premium' : 'free',
-      'status': 'active',
+      'status': status,
       'joined_at': DateTime.now().toIso8601String(),
       'expires_at': membershipType == MembershipType.premium
           ? DateTime.now().add(const Duration(days: 30)).toIso8601String()
@@ -411,7 +481,6 @@ Future<ClubMembership?> joinClub({
           .from('club_payments')
           .select('''
             *,
-            users!club_payments_user_id_fkey(first_name, last_name),
             clubs!club_payments_club_id_fkey(name)
           ''')
           .inFilter('club_id', clubIds)
@@ -536,7 +605,6 @@ Future<ClubMembership?> joinClub({
           .from('club_memberships')
           .update({
             'status': _membershipStatusToString(status),
-            'updated_at': DateTime.now().toIso8601String(),
           })
           .eq('id', membershipId);
 
@@ -556,7 +624,6 @@ Future<ClubMembership?> joinClub({
           .from('club_memberships')
           .update({
             'status': 'cancelled',
-            'updated_at': DateTime.now().toIso8601String(),
           })
           .eq('club_id', clubId)
           .eq('user_id', userId);
@@ -600,6 +667,96 @@ Future<ClubMembership?> joinClub({
     }
   }
 
+  // New methods for membership approval/rejection
+  Future<bool> approveMembership(String membershipId) async {
+    try {
+      await _supabase
+          .from('club_memberships')
+          .update({
+            'status': 'active',
+            'joined_at': DateTime.now().toIso8601String(), // Update join date to approval date
+          })
+          .eq('id', membershipId);
+
+      print('✅ Membership approved: $membershipId');
+      return true;
+    } catch (e) {
+      print('❌ Error approving membership: $e');
+      return false;
+    }
+  }
+
+  Future<bool> rejectMembership(String membershipId) async {
+    try {
+      // When rejecting, we can either delete the membership or mark as cancelled
+      // For audit purposes, let's mark as cancelled
+      await _supabase
+          .from('club_memberships')
+          .update({
+            'status': 'cancelled',
+          })
+          .eq('id', membershipId);
+
+      print('✅ Membership rejected: $membershipId');
+      return true;
+    } catch (e) {
+      print('❌ Error rejecting membership: $e');
+      return false;
+    }
+  }
+
+  // Get payment information for a member
+  Future<Map<String, dynamic>?> getMemberPaymentInfo(String userId, String clubId) async {
+    try {
+      final paymentResponse = await _supabase
+          .from('club_payments')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('club_id', clubId)
+          .eq('status', 'completed')
+          .order('created_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+
+      return paymentResponse;
+    } catch (e) {
+      print('Error getting member payment info: $e');
+      return null;
+    }
+  }
+
+  // New method to handle user leaving a club
+  Future<bool> leaveClub({
+    required String clubId,
+    required String userId,
+  }) async {
+    try {
+      print('🚪 User $userId leaving club $clubId');
+
+      // First, delete payment records for this user-club combination
+      await _supabase
+          .from('club_payments')
+          .delete()
+          .eq('user_id', userId)
+          .eq('club_id', clubId);
+      
+      print('💳 Deleted payment records');
+
+      // Then, delete the membership record
+      await _supabase
+          .from('club_memberships')
+          .delete()
+          .eq('user_id', userId)
+          .eq('club_id', clubId);
+
+      print('✅ User successfully left the club');
+      return true;
+    } catch (e) {
+      print('❌ Error leaving club: $e');
+      return false;
+    }
+  }
+
   String _membershipStatusToString(MembershipStatus status) {
     switch (status) {
       case MembershipStatus.active:
@@ -608,6 +765,8 @@ Future<ClubMembership?> joinClub({
         return 'expired';
       case MembershipStatus.cancelled:
         return 'cancelled';
+      case MembershipStatus.pending:
+        return 'pending';
     }
   }
 }

@@ -35,8 +35,15 @@ class _ClubMembersPageState extends State<ClubMembersPage> {
       final members = await _clubService.getClubMembers(widget.club.id);
       
       print('Found ${members.length} members');
+      if (members.isEmpty) {
+        print('No members found. Checking if club exists and has any data...');
+        // Let's also check if the club itself exists
+        print('Club ID being searched: ${widget.club.id}');
+      }
       for (var member in members) {
         print('Member: ${member.userFirstName} ${member.userLastName}, Status: ${member.status}');
+        print('Member user_id: ${member.userId}');
+        print('Member club_id: ${member.clubId}');
       }
       
       setState(() {
@@ -67,6 +74,7 @@ class _ClubMembersPageState extends State<ClubMembersPage> {
                            (_selectedFilter == 'Premium' && member.membershipType == MembershipType.premium) ||
                            (_selectedFilter == 'Free' && member.membershipType == MembershipType.free) ||
                            (_selectedFilter == 'Active' && member.status == MembershipStatus.active) ||
+                           (_selectedFilter == 'Pending' && member.status == MembershipStatus.pending) ||
                            (_selectedFilter == 'Expired' && member.status == MembershipStatus.expired) ||
                            (_selectedFilter == 'Cancelled' && member.status == MembershipStatus.cancelled);
       
@@ -134,10 +142,10 @@ class _ClubMembersPageState extends State<ClubMembersPage> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: _buildStatCard(
-                        'Cancelled',
-                        _members.where((m) => m.status == MembershipStatus.cancelled).length.toString(),
-                        Icons.cancel_outlined,
-                        Colors.grey,
+                        'Pending',
+                        _members.where((m) => m.status == MembershipStatus.pending).length.toString(),
+                        Icons.hourglass_empty,
+                        Colors.orange,
                       ),
                     ),
                   ],
@@ -163,7 +171,7 @@ class _ClubMembersPageState extends State<ClubMembersPage> {
                     const SizedBox(width: 12),
                     DropdownButton<String>(
                       value: _selectedFilter,
-                      items: ['All', 'Premium', 'Free', 'Active', 'Expired', 'Cancelled']
+                      items: ['All', 'Premium', 'Free', 'Active', 'Pending', 'Expired', 'Cancelled']
                           .map((filter) => DropdownMenuItem(
                                 value: filter,
                                 child: Text(filter),
@@ -256,6 +264,7 @@ class _ClubMembersPageState extends State<ClubMembersPage> {
     final isExpired = member.status == MembershipStatus.expired;
     final isCancelled = member.status == MembershipStatus.cancelled;
     final isActive = member.status == MembershipStatus.active;
+    final isPending = member.status == MembershipStatus.pending;
     final isPremium = member.membershipType == MembershipType.premium;
     final fullName = '${member.userFirstName ?? ''} ${member.userLastName ?? ''}'.trim();
     final displayName = fullName.isEmpty ? 'Unknown User' : fullName;
@@ -263,9 +272,17 @@ class _ClubMembersPageState extends State<ClubMembersPage> {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: isCancelled ? Colors.grey[50] : Colors.white,
+        color: isCancelled 
+            ? Colors.grey[50] 
+            : isPending 
+                ? Colors.orange[50] 
+                : Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: isCancelled ? Border.all(color: Colors.grey[300]!, width: 1) : null,
+        border: isCancelled 
+            ? Border.all(color: Colors.grey[300]!, width: 1) 
+            : isPending 
+                ? Border.all(color: Colors.orange[300]!, width: 1)
+                : null,
         boxShadow: isCancelled ? [] : [
           BoxShadow(
             color: Colors.black.withOpacity(0.05),
@@ -276,68 +293,170 @@ class _ClubMembersPageState extends State<ClubMembersPage> {
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Row(
+        child: Column(
           children: [
-            // Avatar with photo
-            CircleAvatar(
-              radius: 24,
-              backgroundColor: isCancelled 
-                  ? Colors.grey[300]
-                  : isPremium 
-                      ? Colors.amber[100] 
-                      : Colors.blue[100],
-              backgroundImage: member.userPhotoUrl != null && member.userPhotoUrl!.isNotEmpty
-                  ? NetworkImage(member.userPhotoUrl!)
-                  : null,
-              child: member.userPhotoUrl == null || member.userPhotoUrl!.isEmpty
-                  ? Text(
-                      displayName.substring(0, 1).toUpperCase(),
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: isCancelled 
-                            ? Colors.grey[600]
-                            : isPremium 
-                                ? Colors.amber[700] 
-                                : Colors.blue[700],
-                      ),
-                    )
-                  : null,
-            ),
-            const SizedBox(width: 16),
-            
-            // Member info
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          displayName,
+            Row(
+              children: [
+                // Avatar with photo
+                CircleAvatar(
+                  radius: 24,
+                  backgroundColor: isCancelled 
+                      ? Colors.grey[300]
+                      : isPending 
+                          ? Colors.orange[100]
+                          : isPremium 
+                              ? Colors.amber[100] 
+                              : Colors.blue[100],
+                  backgroundImage: member.userPhotoUrl != null && member.userPhotoUrl!.isNotEmpty
+                      ? NetworkImage(member.userPhotoUrl!)
+                      : null,
+                  child: member.userPhotoUrl == null || member.userPhotoUrl!.isEmpty
+                      ? Text(
+                          displayName.substring(0, 1).toUpperCase(),
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            color: isCancelled ? Colors.grey[600] : Colors.black87,
+                            color: isCancelled 
+                                ? Colors.grey[600]
+                                : isPending 
+                                    ? Colors.orange[700]
+                                    : isPremium 
+                                        ? Colors.amber[700] 
+                                        : Colors.blue[700],
                           ),
+                        )
+                      : null,
+                ),
+                const SizedBox(width: 16),
+                
+                // Member info
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              displayName,
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                                color: isCancelled ? Colors.grey[600] : Colors.black87,
+                              ),
+                            ),
+                          ),
+                          if (isPremium && !isCancelled)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: isPending ? Colors.orange : Colors.amber,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    isPending ? Icons.hourglass_empty : Icons.star, 
+                                    size: 14, 
+                                    color: Colors.white
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    isPending ? 'Pending' : 'Premium',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        member.userEmail ?? 'No email',
+                        style: TextStyle(
+                          color: isCancelled ? Colors.grey[500] : Colors.grey,
                         ),
                       ),
-                      if (isPremium && !isCancelled)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.amber,
-                            borderRadius: BorderRadius.circular(12),
+                      const SizedBox(height: 8),
+                      
+                      // Status and dates
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: isCancelled 
+                                  ? Colors.grey[200]
+                                  : isPending 
+                                      ? Colors.orange[100]
+                                      : isExpired 
+                                          ? Colors.red[100] 
+                                          : Colors.green[100],
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              member.status.toString().split('.').last.toUpperCase(),
+                              style: TextStyle(
+                                color: isCancelled 
+                                    ? Colors.grey[700]
+                                    : isPending 
+                                        ? Colors.orange[700]
+                                        : isExpired 
+                                            ? Colors.red[700] 
+                                            : Colors.green[700],
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
+                          const Spacer(),
+                          Text(
+                            'Joined: ${_formatDate(member.joinedAt)}',
+                            style: TextStyle(
+                              fontSize: 12, 
+                              color: isCancelled ? Colors.grey[500] : Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                      
+                      if (isPremium && member.expiresAt != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          'Expires: ${_formatDate(member.expiresAt!)}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isExpired 
+                                ? Colors.red 
+                                : isCancelled 
+                                    ? Colors.grey[500] 
+                                    : Colors.grey,
+                          ),
+                        ),
+                      ],
+                      
+                      // Show payment info for pending premium members
+                      if (isPending && isPremium) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.green[50],
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.green[200]!),
+                          ),
+                          child: Row(
                             children: [
-                              Icon(Icons.star, size: 14, color: Colors.white),
-                              SizedBox(width: 4),
+                              Icon(Icons.payment, color: Colors.green[700], size: 16),
+                              const SizedBox(width: 8),
                               Text(
-                                'Premium',
+                                'Payment Completed',
                                 style: TextStyle(
-                                  color: Colors.white,
+                                  color: Colors.green[700],
                                   fontSize: 12,
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -345,98 +464,113 @@ class _ClubMembersPageState extends State<ClubMembersPage> {
                             ],
                           ),
                         ),
+                      ],
                     ],
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    member.userEmail ?? 'No email',
-                    style: TextStyle(
-                      color: isCancelled ? Colors.grey[500] : Colors.grey,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  
-                  // Status and dates
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: isCancelled 
-                              ? Colors.grey[200]
-                              : isExpired 
-                                  ? Colors.red[100] 
-                                  : Colors.green[100],
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          member.status.toString().split('.').last.toUpperCase(),
+                ),
+              ],
+            ),
+            
+            // Approval actions for pending members
+            if (isPending) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.orange[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange[200]!),
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.pending_actions, color: Colors.orange[700], size: 16),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Membership Pending Approval',
                           style: TextStyle(
-                            color: isCancelled 
-                                ? Colors.grey[700]
-                                : isExpired 
-                                    ? Colors.red[700] 
-                                    : Colors.green[700],
+                            color: Colors.orange[700],
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                      ),
-                      const Spacer(),
-                      Text(
-                        'Joined: ${_formatDate(member.joinedAt)}',
-                        style: TextStyle(
-                          fontSize: 12, 
-                          color: isCancelled ? Colors.grey[500] : Colors.grey,
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () => _approveMembership(member),
+                            icon: const Icon(Icons.check, size: 16),
+                            label: const Text('Approve'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () => _rejectMembership(member),
+                            icon: const Icon(Icons.close, size: 16),
+                            label: const Text('Reject'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.red,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            
+            // Regular actions for active members
+            if (isActive) ...[
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  PopupMenuButton<String>(
+                    onSelected: (value) => _handleMemberAction(value, member),
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(
+                        value: 'remove_member',
+                        child: Row(
+                          children: [
+                            Icon(Icons.remove_circle, size: 16, color: Colors.red),
+                            SizedBox(width: 8),
+                            Text('Remove Member', style: TextStyle(color: Colors.red)),
+                          ],
                         ),
                       ),
                     ],
                   ),
-                  
-                  if (isPremium && member.expiresAt != null) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      'Expires: ${_formatDate(member.expiresAt!)}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: isExpired 
-                            ? Colors.red 
-                            : isCancelled 
-                                ? Colors.grey[500] 
-                                : Colors.grey,
-                      ),
-                    ),
-                  ],
                 ],
               ),
-            ),
+            ],
             
-            // Actions - only show for active members
-            if (isActive)
-              PopupMenuButton<String>(
-                onSelected: (value) => _handleMemberAction(value, member),
-                itemBuilder: (context) => [
-                
-  
-                  const PopupMenuItem(
-                    value: 'remove_member',
-                    child: Row(
-                      children: [
-                        Icon(Icons.remove_circle, size: 16, color: Colors.red),
-                        SizedBox(width: 8),
-                        Text('Remove Member', style: TextStyle(color: Colors.red)),
-                      ],
-                    ),
+            // Show status icon for inactive members (but not pending)
+            if (!isActive && !isPending) ...[
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Icon(
+                    isCancelled ? Icons.cancel_outlined : Icons.access_time,
+                    color: Colors.grey[400],
+                    size: 20,
                   ),
                 ],
-              )
-            else
-              // Show status icon for inactive members
-              Icon(
-                isCancelled ? Icons.cancel_outlined : Icons.access_time,
-                color: Colors.grey[400],
-                size: 20,
               ),
+            ],
           ],
         ),
       ),
@@ -529,5 +663,111 @@ class _ClubMembersPageState extends State<ClubMembersPage> {
         ],
       ),
     );
+  }
+
+  // New methods for membership approval/rejection
+  Future<void> _approveMembership(ClubMembership member) async {
+    try {
+      final success = await _clubService.approveMembership(member.id);
+      
+      if (success) {
+        await _loadMembers(); // Refresh the list
+        if (mounted) {
+          final fullName = '${member.userFirstName ?? ''} ${member.userLastName ?? ''}'.trim();
+          final displayName = fullName.isEmpty ? 'Unknown User' : fullName;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.check_circle, color: Colors.white),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text('$displayName\'s membership has been approved'),
+                  ),
+                ],
+              ),
+              backgroundColor: Colors.green,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      } else {
+        throw Exception('Failed to approve membership');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error approving membership: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _rejectMembership(ClubMembership member) async {
+    final fullName = '${member.userFirstName ?? ''} ${member.userLastName ?? ''}'.trim();
+    final displayName = fullName.isEmpty ? 'Unknown User' : fullName;
+    
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Reject Membership'),
+        content: Text(
+          'Are you sure you want to reject $displayName\'s membership request?\n\nThis will cancel their membership and they won\'t be able to access the club.'
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Reject', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        final success = await _clubService.rejectMembership(member.id);
+        
+        if (success) {
+          await _loadMembers(); // Refresh the list
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Row(
+                  children: [
+                    const Icon(Icons.cancel, color: Colors.white),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text('$displayName\'s membership has been rejected'),
+                    ),
+                  ],
+                ),
+                backgroundColor: Colors.orange,
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+        } else {
+          throw Exception('Failed to reject membership');
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error rejecting membership: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
   }
 }

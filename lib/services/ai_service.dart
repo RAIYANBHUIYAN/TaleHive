@@ -4,58 +4,87 @@ import 'dart:convert';
 class AIService {
   // Your Gemini API key
   static const String _apiKey = 'AIzaSyBt0ZlI2P91w0931rKmuC67xPL3VKeGpAA';
-  static const String _baseUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent';
+  static const String _baseUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
 
   Future<String?> getChatResponse({
     required String message,
     String? bookContext,
     String? clubContext,
+    int maxRetries = 2,
   }) async {
-    try {
-      // Build the prompt with context
-      String prompt = _buildPrompt(message, bookContext, clubContext);
+    for (int attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        // Build the prompt with context
+        String prompt = _buildPrompt(message, bookContext, clubContext);
 
-      final response = await http.post(
-        Uri.parse('$_baseUrl?key=$_apiKey'),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: json.encode({
-          'contents': [{
-            'parts': [{
-              'text': prompt
-            }]
-          }],
-          'generationConfig': {
-            'temperature': 0.7,
-            'topK': 40,
-            'topP': 0.95,
-            'maxOutputTokens': 1024,
-          }
-        }),
-      );
+        final response = await http.post(
+          Uri.parse('$_baseUrl?key=$_apiKey'),
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: json.encode({
+            'contents': [{
+              'parts': [{
+                'text': prompt
+              }]
+            }],
+            'generationConfig': {
+              'temperature': 0.7,
+              'topK': 40,
+              'topP': 0.95,
+              'maxOutputTokens': 1024,
+            }
+          }),
+        ).timeout(Duration(seconds: 30));
 
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final candidates = data['candidates'] as List?;
-        
-        if (candidates != null && candidates.isNotEmpty) {
-          final content = candidates[0]['content'];
-          final parts = content['parts'] as List;
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          final candidates = data['candidates'] as List?;
           
-          if (parts.isNotEmpty) {
-            return parts[0]['text'] as String;
+          if (candidates != null && candidates.isNotEmpty) {
+            final content = candidates[0]['content'];
+            final parts = content['parts'] as List;
+            
+            if (parts.isNotEmpty) {
+              return parts[0]['text'] as String;
+            }
+          }
+        } else if (response.statusCode == 503 && attempt < maxRetries) {
+          // Service unavailable - retry after delay
+          print('Gemini API overloaded (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${(attempt + 1) * 2} seconds...');
+          await Future.delayed(Duration(seconds: (attempt + 1) * 2));
+          continue;
+        } else {
+          print('Gemini API error: ${response.statusCode}');
+          print('Response body: ${response.body}');
+          
+          // Return user-friendly error messages based on status code
+          if (response.statusCode == 503) {
+            return 'I\'m currently experiencing high demand. Please try again in a few moments. 🤖';
+          } else if (response.statusCode == 429) {
+            return 'I\'m receiving too many requests. Please wait a moment before asking again. ⏳';
+          } else if (response.statusCode >= 500) {
+            return 'I\'m temporarily unavailable due to server issues. Please try again later. 🔧';
+          } else {
+            return 'I encountered an issue processing your request. Please try rephrasing your question. 💭';
           }
         }
-      } else {
-        print('Gemini API error: ${response.statusCode}');
-        print('Response body: ${response.body}');
+      } catch (e) {
+        print('Error getting AI response (attempt ${attempt + 1}): $e');
+        if (attempt == maxRetries) {
+          if (e.toString().contains('TimeoutException')) {
+            return 'The request timed out. Please check your internet connection and try again. 📶';
+          } else {
+            return 'I\'m having trouble connecting right now. Please try again in a moment. 🔄';
+          }
+        } else if (attempt < maxRetries) {
+          // Wait before retrying
+          await Future.delayed(Duration(seconds: (attempt + 1) * 2));
+        }
       }
-    } catch (e) {
-      print('Error getting AI response: $e');
     }
     
-    return null;
+    return 'I\'m currently unavailable. Please try again later. 😔';
   }
 
   String _buildPrompt(String userMessage, String? bookContext, String? clubContext) {
@@ -113,10 +142,10 @@ Focus on well-regarded books that match the user's preferences. Include a mix of
     return [];
   }
 
-  Future<String?> generateBookSummary(String bookTitle, String authorName) async {
+  Future<String?> generateBookSummary(String bookTitle) async {
     try {
       String prompt = '''
-Please provide a concise but informative summary of "$bookTitle" by $authorName. 
+Please provide a concise but informative summary of "$bookTitle". 
 
 Include:
 1. Main plot/theme (2-3 sentences)
@@ -136,12 +165,11 @@ Keep the summary engaging and spoiler-free.
 
   Future<List<String>> generateDiscussionQuestions({
     required String bookTitle,
-    required String authorName,
     int questionCount = 5,
   }) async {
     try {
       String prompt = '''
-Generate $questionCount thoughtful discussion questions for "$bookTitle" by $authorName.
+Generate $questionCount thoughtful discussion questions for "$bookTitle".
 
 The questions should:
 - Encourage deep thinking about themes, characters, and plot
@@ -171,12 +199,11 @@ Format each question on a new line starting with "Q: "
 
   Future<String?> getReadingInsight({
     required String bookTitle,
-    required String authorName,
     required String userQuestion,
   }) async {
     try {
       String prompt = '''
-You are discussing "$bookTitle" by $authorName with a book club member.
+You are discussing the book "$bookTitle" with a book club member.
 
 User's question or comment: $userQuestion
 
@@ -185,13 +212,14 @@ Provide a thoughtful, insightful response that:
 - Offers literary analysis or interpretation
 - Encourages further discussion
 - Remains respectful of different viewpoints
+- Focuses on the book's content, themes, and plot
 
 Keep your response conversational but informative.
 ''';
 
       return await getChatResponse(
         message: prompt,
-        bookContext: '$bookTitle by $authorName',
+        bookContext: bookTitle,
       );
     } catch (e) {
       print('Error getting reading insight: $e');

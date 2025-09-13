@@ -112,7 +112,18 @@ class _UserHomePageState extends State<UserHomePage> {
   Future<void> _loadBooksFromSupabase() async {
     setState(() => _isLoadingBooks = true);
     try {
-      print('📚 Loading books with author information...');
+      print('📚 Loading books with author information (excluding club books)...');
+      
+      // First, get all book IDs that are in clubs
+      final clubBooksResponse = await supabase
+          .from('club_books')
+          .select('book_id');
+      
+      final clubBookIds = clubBooksResponse
+          .map((cb) => cb['book_id'].toString())
+          .toSet();
+      
+      print('📚 Found ${clubBookIds.length} books in clubs to exclude');
       
       final response = await supabase
           .from('books')
@@ -120,13 +131,20 @@ class _UserHomePageState extends State<UserHomePage> {
           .eq('is_active', true)
           .order('created_at', ascending: false);
 
-      print('📚 Found ${response.length} books');
+      print('📚 Found ${response.length} total books');
 
-      // Process each book to add author information
+      // Process each book to add author information and filter out club books
       final List<Map<String, dynamic>> booksWithAuthors = [];
       
       for (final bookData in response) {
         final book = Map<String, dynamic>.from(bookData);
+        final bookId = book['id'].toString();
+        
+        // Skip books that are in clubs
+        if (clubBookIds.contains(bookId)) {
+          print('📚 Skipping club book: ${book['title']}');
+          continue;
+        }
         
         // Get author information for this book
         if (book['author_id'] != null) {
@@ -166,7 +184,7 @@ class _UserHomePageState extends State<UserHomePage> {
         _books = booksWithAuthors;
       });
 
-      print('📚 Successfully loaded ${_books.length} books with author information');
+      print('📚 Successfully loaded ${_books.length} books (excluding club books) with author information');
 
       // Load recent readings from reading history
       setState(() {

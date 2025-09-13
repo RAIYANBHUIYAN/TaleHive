@@ -6,6 +6,8 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../pdf_preview/pdf_viewer_page.dart';
 import '../pdf_preview/pdf_service.dart';
+import '../../services/ai_service.dart'; // Add AI service import
+import 'ai_chat_page.dart'; // Add AI chat page import
 // Helper to fetch related books for BookDetails
 
 
@@ -17,7 +19,7 @@ Future<List<BookRecommendation>> fetchRelatedBooks(String bookId, String? catego
 
     final response = await supabase
         .from('books')
-        .select('id, title, author_name, cover_image_url')
+        .select('id, title, cover_image_url')
             .eq('category', category)
         .neq('id', bookId) // Exclude current book
         .eq('is_active', true)
@@ -503,9 +505,9 @@ class BookRecommendation {
   });
   factory BookRecommendation.fromJson(Map<String, dynamic> json) => BookRecommendation(
     id: json['id'].toString(),
-    title: json['title'],
-    author: json['author_name'],
-    cover: json['cover_image_url'],
+    title: json['title'] ?? 'Unknown Title',
+    author: json['author_name'] ?? 'Unknown Author',
+    cover: json['cover_image_url'] ?? '',
     rating: (json['rating'] as num?)?.toDouble() ?? 0.0,
     reviews: json['review'] ?? 0,
   );
@@ -704,11 +706,19 @@ Future<BookDetails> fetchBookDetails(String bookId) async {
 class BookDetailsPage extends StatefulWidget {
   final String bookId;
   final VoidCallback? onFavoriteChanged; // Add this callback
+  final bool? isFromPremiumClub; // New parameter to identify premium club books
+  final String? clubId; // Club ID for context
+  final String? bookTitle; // Book title for AI context
+  final String? authorName; // Author name for AI context
   
   const BookDetailsPage({
     Key? key, 
     required this.bookId,
     this.onFavoriteChanged,
+    this.isFromPremiumClub = false,
+    this.clubId,
+    this.bookTitle,
+    this.authorName,
   }) : super(key: key);
 
   @override
@@ -723,6 +733,11 @@ class _BookDetailsPageState extends State<BookDetailsPage> {
   void initState() {
     super.initState();
     _checkFavoriteStatus();
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
   }
 
   // ✅ Check if the book is in the user's favorites
@@ -831,6 +846,113 @@ class _BookDetailsPageState extends State<BookDetailsPage> {
         ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+
+  Widget _buildAIChatWelcome() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0077B6).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(50),
+              ),
+              child: const Icon(
+                Icons.smart_toy,
+                size: 48,
+                color: Color(0xFF0077B6),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Ask AI about this book!',
+              style: GoogleFonts.montserrat(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: const Color(0xFF0077B6),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'You can ask about:\n• Plot summary and themes\n• Character analysis\n• Writing style and techniques\n• Discussion questions',
+              style: GoogleFonts.montserrat(
+                fontSize: 14,
+                color: Colors.grey[600],
+                height: 1.5,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChatMessage(Map<String, dynamic> message) {
+    final isUser = message['type'] == 'user';
+    final messageText = message['message'] as String;
+    final timestamp = message['timestamp'] as DateTime;
+    
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        children: [
+          if (!isUser) ...[
+            CircleAvatar(
+              backgroundColor: const Color(0xFF0077B6),
+              radius: 16,
+              child: const Icon(Icons.smart_toy, color: Colors.white, size: 16),
+            ),
+            const SizedBox(width: 12),
+          ],
+          Flexible(
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: isUser ? const Color(0xFF0077B6) : Colors.grey[100],
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    messageText,
+                    style: GoogleFonts.montserrat(
+                      color: isUser ? Colors.white : Colors.black87,
+                      fontSize: 14,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    DateFormat('HH:mm').format(timestamp),
+                    style: GoogleFonts.montserrat(
+                      color: isUser ? Colors.white70 : Colors.grey[500],
+                      fontSize: 10,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (isUser) ...[
+            const SizedBox(width: 12),
+            CircleAvatar(
+              backgroundColor: Colors.grey[300],
+              radius: 16,
+              child: const Icon(Icons.person, color: Colors.grey, size: 16),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -1029,6 +1151,45 @@ class _BookDetailsPageState extends State<BookDetailsPage> {
           },
         ),
       ),
+      floatingActionButton: widget.isFromPremiumClub == true 
+          ? FloatingActionButton.extended(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  PageRouteBuilder(
+                    pageBuilder: (context, animation, secondaryAnimation) => AIChatPage(
+                      bookTitle: widget.bookTitle ?? 'Unknown Title',
+                      clubId: widget.clubId ?? '',
+                    ),
+                    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                      const begin = Offset(1.0, 0.0);
+                      const end = Offset.zero;
+                      const curve = Curves.easeInOut;
+
+                      var tween = Tween(begin: begin, end: end).chain(
+                        CurveTween(curve: curve),
+                      );
+
+                      return SlideTransition(
+                        position: animation.drive(tween),
+                        child: child,
+                      );
+                    },
+                    transitionDuration: const Duration(milliseconds: 300),
+                  ),
+                );
+              },
+              backgroundColor: const Color(0xFF0077B6),
+              icon: const Icon(Icons.smart_toy, color: Colors.white),
+              label: Text(
+                'Ask AI',
+                style: GoogleFonts.montserrat(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            )
+          : null,
     );
   }
 
@@ -3095,4 +3256,6 @@ class _BorrowRequestDialogState extends State<BorrowRequestDialog> {
       ),
     );
   }
+
+
 }

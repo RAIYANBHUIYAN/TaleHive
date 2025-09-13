@@ -20,6 +20,7 @@ class _ClubDetailPageState extends State<ClubDetailPage> with SingleTickerProvid
   final supabase = Supabase.instance.client;
   List<ClubBook> _clubBooks = [];
   bool _isLoading = true;
+  bool _isUserMember = false;
   AnimationController? _animationController;
 
   @override
@@ -31,6 +32,7 @@ class _ClubDetailPageState extends State<ClubDetailPage> with SingleTickerProvid
     );
     _animationController!.forward();
     _loadClubBooks();
+    _checkUserMembership();
   }
 
   @override
@@ -56,6 +58,156 @@ class _ClubDetailPageState extends State<ClubDetailPage> with SingleTickerProvid
           SnackBar(content: Text('Error loading books: $e')),
         );
       }
+    }
+  }
+
+  Future<void> _checkUserMembership() async {
+    try {
+      final currentUser = supabase.auth.currentUser;
+      if (currentUser != null) {
+        final memberships = await _clubService.getUserMemberships(currentUser.id);
+        setState(() {
+          _isUserMember = memberships.any((membership) => 
+            membership.clubId == widget.club.id && membership.isActive);
+        });
+      }
+    } catch (e) {
+      print('Error checking user membership: $e');
+    }
+  }
+
+  Future<void> _showLeaveClubDialog() async {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
+            children: [
+              Icon(
+                Icons.exit_to_app,
+                color: Colors.red[600],
+              ),
+              const SizedBox(width: 8),
+              const Text('Leave Club'),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: ListBody(
+              children: <Widget>[
+                Text(
+                  'Are you sure you want to leave "${widget.club.name}"?',
+                  style: const TextStyle(fontSize: 16),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.red[200]!),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'This action will:',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.red[700],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text('• Remove your membership from this club', 
+                        style: TextStyle(color: Colors.red[700])),
+                      Text('• Delete your payment records for this club', 
+                        style: TextStyle(color: Colors.red[700])),
+                      Text('• Remove access to all club content', 
+                        style: TextStyle(color: Colors.red[700])),
+                      const SizedBox(height: 8),
+                      Text(
+                        'This action cannot be undone.',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.red[800],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Cancel'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red[600],
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Leave Club'),
+              onPressed: () {
+                Navigator.of(context).pop();
+                _leaveClub();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _leaveClub() async {
+    try {
+      // Show loading indicator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+
+      final currentUser = supabase.auth.currentUser;
+      if (currentUser == null) {
+        Navigator.pop(context); // Close loading
+        _showSnackBar('Please login to perform this action');
+        return;
+      }
+
+      // Remove user from club (this will delete membership and related data)
+      final success = await _clubService.leaveClub(
+        clubId: widget.club.id,
+        userId: currentUser.id,
+      );
+
+      Navigator.pop(context); // Close loading dialog
+
+      if (success) {
+        setState(() {
+          _isUserMember = false;
+        });
+        
+        _showSnackBar('Successfully left ${widget.club.name}');
+        
+        // Navigate back to the previous page with result indicating user left the club
+        Navigator.pop(context, 'left_club');
+      } else {
+        _showSnackBar('Failed to leave club. Please try again.');
+      }
+
+    } catch (e) {
+      Navigator.pop(context); // Close loading dialog
+      print('Error leaving club: $e');
+      _showSnackBar('Error leaving club: $e');
     }
   }
 
@@ -94,6 +246,32 @@ class _ClubDetailPageState extends State<ClubDetailPage> with SingleTickerProvid
                   fontSize: 18,
                 ),
               ),
+              actions: [
+                if (_isUserMember)
+                  PopupMenuButton<String>(
+                    icon: const Icon(Icons.more_vert, color: Colors.white),
+                    onSelected: (String value) {
+                      if (value == 'leave') {
+                        _showLeaveClubDialog();
+                      }
+                    },
+                    itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                      PopupMenuItem<String>(
+                        value: 'leave',
+                        child: Row(
+                          children: [
+                            Icon(Icons.exit_to_app, color: Colors.red[600]),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Leave Club',
+                              style: TextStyle(color: Colors.red[600]),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
               flexibleSpace: FlexibleSpaceBar(
                 background: _buildClubHeader(),
               ),
@@ -763,12 +941,16 @@ class _ClubDetailPageState extends State<ClubDetailPage> with SingleTickerProvid
 
   void _handleBookTap(ClubBook book) {
     if (book.bookId.isNotEmpty) {
-      // Navigate to Book Details page
+      // Navigate to Book Details page with premium club information
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (context) => BookDetailsPage(
             bookId: book.bookId,
+            isFromPremiumClub: widget.club.isPremium,
+            clubId: widget.club.id,
+            bookTitle: book.bookTitle,
+            authorName: book.bookAuthorId, // Note: You might need to pass actual author name
           ),
         ),
       );
