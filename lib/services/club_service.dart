@@ -725,38 +725,6 @@ Future<ClubMembership?> joinClub({
     }
   }
 
-  // New method to handle user leaving a club
-  Future<bool> leaveClub({
-    required String clubId,
-    required String userId,
-  }) async {
-    try {
-      print('🚪 User $userId leaving club $clubId');
-
-      // First, delete payment records for this user-club combination
-      await _supabase
-          .from('club_payments')
-          .delete()
-          .eq('user_id', userId)
-          .eq('club_id', clubId);
-      
-      print('💳 Deleted payment records');
-
-      // Then, delete the membership record
-      await _supabase
-          .from('club_memberships')
-          .delete()
-          .eq('user_id', userId)
-          .eq('club_id', clubId);
-
-      print('✅ User successfully left the club');
-      return true;
-    } catch (e) {
-      print('❌ Error leaving club: $e');
-      return false;
-    }
-  }
-
   String _membershipStatusToString(MembershipStatus status) {
     switch (status) {
       case MembershipStatus.active:

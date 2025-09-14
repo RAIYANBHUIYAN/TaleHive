@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -6,7 +5,6 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../pdf_preview/pdf_viewer_page.dart';
 import '../pdf_preview/pdf_service.dart';
-import '../../services/ai_service.dart'; // Add AI service import
 import 'ai_chat_page.dart'; // Add AI chat page import
 // Helper to fetch related books for BookDetails
 
@@ -25,11 +23,50 @@ Future<List<BookRecommendation>> fetchRelatedBooks(String bookId, String? catego
         .eq('is_active', true)
         .limit(10);
 
-    // Defensive: If response is null, return empty list
-    if (response == null || response is! List) return [];
     return response.map((book) => BookRecommendation.fromJson(book)).toList();
   } catch (e) {
     print('Error fetching related books: $e');
+    return [];
+  }
+}
+
+// Helper to fetch premium club books for premium book details
+Future<List<BookRecommendation>> fetchPremiumClubBooks(String bookId, String? category) async {
+  try {
+    if (category == null || category.isEmpty) {
+      return [];
+    }
+
+    // Query club_books table joined with books to get only premium club books
+    final response = await supabase
+        .from('club_books')
+        .select('''
+          book_id,
+          books!club_books_book_id_fkey(id, title, cover_image_url, category),
+          clubs!club_books_club_id_fkey(is_premium)
+        ''')
+        .eq('books.category', category)
+        .neq('book_id', bookId) // Exclude current book
+        .eq('books.is_active', true)
+        .eq('clubs.is_premium', true) // Only premium clubs
+        .limit(10);
+
+    // Extract unique books (remove duplicates if same book is in multiple clubs)
+    final Map<String, BookRecommendation> uniqueBooks = {};
+    
+    for (var item in response) {
+      final book = item['books'];
+      if (book != null && book['id'] != null) {
+        final bookId = book['id'] as String;
+        if (!uniqueBooks.containsKey(bookId)) {
+          uniqueBooks[bookId] = BookRecommendation.fromJson(book);
+        }
+      }
+    }
+    
+    return uniqueBooks.values.toList();
+  } catch (e) {
+    print('Error fetching premium club books: $e');
     return [];
   }
 }
@@ -528,7 +565,7 @@ class ReviewBreakdown {
 
 final supabase = Supabase.instance.client;
 
-Future<BookDetails> fetchBookDetails(String bookId) async {
+Future<BookDetails> fetchBookDetails(String bookId, {bool isFromPremiumClub = false}) async {
   try {
     if (bookId.isEmpty) {
       throw Exception('No bookId provided.');
@@ -654,8 +691,18 @@ Future<BookDetails> fetchBookDetails(String bookId) async {
   accessType: response['access_type'] ?? response['access'] ?? 'free',
     );
 
-    // Fetch related books
-    final relatedBooks = await fetchRelatedBooks(bookId, response['category']);
+    // Fetch related books - use premium club books if this is a premium club book
+    List<BookRecommendation> relatedBooks;
+    
+    if (isFromPremiumClub) {
+      // For premium club books, show only other premium club books
+      relatedBooks = await fetchPremiumClubBooks(bookId, response['category']);
+      print('Fetched ${relatedBooks.length} premium club books for premium book');
+    } else {
+      // For regular books, show regular related books
+      relatedBooks = await fetchRelatedBooks(bookId, response['category']);
+      print('Fetched ${relatedBooks.length} regular related books');
+    }
 
     print('Current book category: ${response['category']}');
     print('Related books found: ${relatedBooks.length}');
@@ -710,6 +757,7 @@ class BookDetailsPage extends StatefulWidget {
   final String? clubId; // Club ID for context
   final String? bookTitle; // Book title for AI context
   final String? authorName; // Author name for AI context
+  final String? bookCategory; // Book category for AI context
   
   const BookDetailsPage({
     Key? key, 
@@ -719,6 +767,7 @@ class BookDetailsPage extends StatefulWidget {
     this.clubId,
     this.bookTitle,
     this.authorName,
+    this.bookCategory,
   }) : super(key: key);
 
   @override
@@ -850,113 +899,6 @@ class _BookDetailsPageState extends State<BookDetailsPage> {
     );
   }
 
-
-  Widget _buildAIChatWelcome() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0077B6).withOpacity(0.1),
-                borderRadius: BorderRadius.circular(50),
-              ),
-              child: const Icon(
-                Icons.smart_toy,
-                size: 48,
-                color: Color(0xFF0077B6),
-              ),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'Ask AI about this book!',
-              style: GoogleFonts.montserrat(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFF0077B6),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'You can ask about:\n• Plot summary and themes\n• Character analysis\n• Writing style and techniques\n• Discussion questions',
-              style: GoogleFonts.montserrat(
-                fontSize: 14,
-                color: Colors.grey[600],
-                height: 1.5,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildChatMessage(Map<String, dynamic> message) {
-    final isUser = message['type'] == 'user';
-    final messageText = message['message'] as String;
-    final timestamp = message['timestamp'] as DateTime;
-    
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
-        children: [
-          if (!isUser) ...[
-            CircleAvatar(
-              backgroundColor: const Color(0xFF0077B6),
-              radius: 16,
-              child: const Icon(Icons.smart_toy, color: Colors.white, size: 16),
-            ),
-            const SizedBox(width: 12),
-          ],
-          Flexible(
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: isUser ? const Color(0xFF0077B6) : Colors.grey[100],
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    messageText,
-                    style: GoogleFonts.montserrat(
-                      color: isUser ? Colors.white : Colors.black87,
-                      fontSize: 14,
-                      height: 1.4,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    DateFormat('HH:mm').format(timestamp),
-                    style: GoogleFonts.montserrat(
-                      color: isUser ? Colors.white70 : Colors.grey[500],
-                      fontSize: 10,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (isUser) ...[
-            const SizedBox(width: 12),
-            CircleAvatar(
-              backgroundColor: Colors.grey[300],
-              radius: 16,
-              child: const Icon(Icons.person, color: Colors.grey, size: 16),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
   // ✅ Add the missing build method
   @override
   Widget build(BuildContext context) {
@@ -1004,7 +946,7 @@ class _BookDetailsPageState extends State<BookDetailsPage> {
       ),
       body: SafeArea(
         child: FutureBuilder<BookDetails>(
-          future: fetchBookDetails(widget.bookId),
+          future: fetchBookDetails(widget.bookId, isFromPremiumClub: widget.isFromPremiumClub ?? false),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(
@@ -1160,6 +1102,7 @@ class _BookDetailsPageState extends State<BookDetailsPage> {
                     pageBuilder: (context, animation, secondaryAnimation) => AIChatPage(
                       bookTitle: widget.bookTitle ?? 'Unknown Title',
                       clubId: widget.clubId ?? '',
+                      category: widget.bookCategory,
                     ),
                     transitionsBuilder: (context, animation, secondaryAnimation, child) {
                       const begin = Offset(1.0, 0.0);

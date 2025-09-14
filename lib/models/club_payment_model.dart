@@ -4,16 +4,15 @@ enum PaymentMethod { bkash, nagad, rocket, card, bank_transfer }
 
 class ClubPayment {
   final String id;
-  final String membershipId;
   final String userId;
   final String clubId;
+  final String transactionId;
   final double amount;
-  final PaymentStatus status;
+  final double authorShare;
+  final double platformShare;
   final PaymentMethod paymentMethod;
-  final String? transactionId;
-  final Map<String, dynamic>? paymentData;
+  final PaymentStatus status;
   final DateTime createdAt;
-  final DateTime? completedAt;
 
   // User info (joined from users table)
   final String? userFirstName;
@@ -25,16 +24,15 @@ class ClubPayment {
 
   ClubPayment({
     required this.id,
-    required this.membershipId,
     required this.userId,
     required this.clubId,
+    required this.transactionId,
     required this.amount,
-    required this.status,
+    required this.authorShare,
+    required this.platformShare,
     required this.paymentMethod,
-    this.transactionId,
-    this.paymentData,
+    required this.status,
     required this.createdAt,
-    this.completedAt,
     this.userFirstName,
     this.userLastName,
     this.userEmail,
@@ -44,16 +42,15 @@ class ClubPayment {
   factory ClubPayment.fromJson(Map<String, dynamic> json) {
     return ClubPayment(
       id: json['id'] as String,
-      membershipId: json['membership_id'] as String,
       userId: json['user_id'] as String,
       clubId: json['club_id'] as String,
+      transactionId: json['transaction_id'] as String,
       amount: (json['amount'] as num).toDouble(),
-      status: _statusFromString(json['status'] as String),
+      authorShare: (json['author_share'] as num).toDouble(),
+      platformShare: (json['platform_share'] as num).toDouble(),
       paymentMethod: _paymentMethodFromString(json['payment_method'] as String),
-      transactionId: json['transaction_id'] as String?,
-      paymentData: json['payment_data'] as Map<String, dynamic>?,
+      status: _statusFromString(json['status'] as String),
       createdAt: DateTime.parse(json['created_at']),
-      completedAt: json['completed_at'] != null ? DateTime.parse(json['completed_at']) : null,
       userFirstName: json['user_first_name'] as String?,
       userLastName: json['user_last_name'] as String?,
       userEmail: json['user_email'] as String?,
@@ -64,16 +61,15 @@ class ClubPayment {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
-      'membership_id': membershipId,
       'user_id': userId,
       'club_id': clubId,
-      'amount': amount,
-      'status': _statusToString(status),
-      'payment_method': _paymentMethodToString(paymentMethod),
       'transaction_id': transactionId,
-      'payment_data': paymentData,
+      'amount': amount,
+      'author_share': authorShare,
+      'platform_share': platformShare,
+      'payment_method': _paymentMethodToString(paymentMethod),
+      'status': _statusToString(status),
       'created_at': createdAt.toIso8601String(),
-      'completed_at': completedAt?.toIso8601String(),
     };
   }
 
@@ -165,16 +161,15 @@ class ClubPayment {
 
   ClubPayment copyWith({
     String? id,
-    String? membershipId,
     String? userId,
     String? clubId,
-    double? amount,
-    PaymentStatus? status,
-    PaymentMethod? paymentMethod,
     String? transactionId,
-    Map<String, dynamic>? paymentData,
+    double? amount,
+    double? authorShare,
+    double? platformShare,
+    PaymentMethod? paymentMethod,
+    PaymentStatus? status,
     DateTime? createdAt,
-    DateTime? completedAt,
     String? userFirstName,
     String? userLastName,
     String? userEmail,
@@ -182,16 +177,15 @@ class ClubPayment {
   }) {
     return ClubPayment(
       id: id ?? this.id,
-      membershipId: membershipId ?? this.membershipId,
       userId: userId ?? this.userId,
       clubId: clubId ?? this.clubId,
-      amount: amount ?? this.amount,
-      status: status ?? this.status,
-      paymentMethod: paymentMethod ?? this.paymentMethod,
       transactionId: transactionId ?? this.transactionId,
-      paymentData: paymentData ?? this.paymentData,
+      amount: amount ?? this.amount,
+      authorShare: authorShare ?? this.authorShare,
+      platformShare: platformShare ?? this.platformShare,
+      paymentMethod: paymentMethod ?? this.paymentMethod,
+      status: status ?? this.status,
       createdAt: createdAt ?? this.createdAt,
-      completedAt: completedAt ?? this.completedAt,
       userFirstName: userFirstName ?? this.userFirstName,
       userLastName: userLastName ?? this.userLastName,
       userEmail: userEmail ?? this.userEmail,

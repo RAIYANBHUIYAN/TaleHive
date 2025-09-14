@@ -279,21 +279,12 @@ class _BookClubPageState extends State<BookClubPage> {
 
   Future<void> _visitClub(Club club) async {
     // Navigate to club detail page showing club books
-    final result = await Navigator.push(
+    Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => ClubDetailPage(club: club),
       ),
     );
-    
-    // If user left the club, refresh the memberships
-    if (result == 'left_club') {
-      print('🔄 User left club, refreshing memberships...');
-      await _loadUserMemberships();
-      setState(() {
-        // Force rebuild to update button states
-      });
-    }
   }
 
   Future<void> _showPaymentDialog(Club club) async {

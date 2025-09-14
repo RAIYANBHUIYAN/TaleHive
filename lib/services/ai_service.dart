@@ -10,81 +10,52 @@ class AIService {
     required String message,
     String? bookContext,
     String? clubContext,
-    int maxRetries = 2,
   }) async {
-    for (int attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        // Build the prompt with context
-        String prompt = _buildPrompt(message, bookContext, clubContext);
+    try {
+      // Build the prompt with context
+      String prompt = _buildPrompt(message, bookContext, clubContext);
 
-        final response = await http.post(
-          Uri.parse('$_baseUrl?key=$_apiKey'),
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: json.encode({
-            'contents': [{
-              'parts': [{
-                'text': prompt
-              }]
-            }],
-            'generationConfig': {
-              'temperature': 0.7,
-              'topK': 40,
-              'topP': 0.95,
-              'maxOutputTokens': 1024,
-            }
-          }),
-        ).timeout(Duration(seconds: 30));
-
-        if (response.statusCode == 200) {
-          final data = json.decode(response.body);
-          final candidates = data['candidates'] as List?;
-          
-          if (candidates != null && candidates.isNotEmpty) {
-            final content = candidates[0]['content'];
-            final parts = content['parts'] as List;
-            
-            if (parts.isNotEmpty) {
-              return parts[0]['text'] as String;
-            }
+      final response = await http.post(
+        Uri.parse('$_baseUrl?key=$_apiKey'),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: json.encode({
+          'contents': [{
+            'parts': [{
+              'text': prompt
+            }]
+          }],
+          'generationConfig': {
+            'temperature': 0.7,
+            'topK': 40,
+            'topP': 0.95,
+            'maxOutputTokens': 1024,
           }
-        } else if (response.statusCode == 503 && attempt < maxRetries) {
-          // Service unavailable - retry after delay
-          print('Gemini API overloaded (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${(attempt + 1) * 2} seconds...');
-          await Future.delayed(Duration(seconds: (attempt + 1) * 2));
-          continue;
-        } else {
-          print('Gemini API error: ${response.statusCode}');
-          print('Response body: ${response.body}');
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final candidates = data['candidates'] as List?;
+        
+        if (candidates != null && candidates.isNotEmpty) {
+          final content = candidates[0]['content'];
+          final parts = content['parts'] as List;
           
-          // Return user-friendly error messages based on status code
-          if (response.statusCode == 503) {
-            return 'I\'m currently experiencing high demand. Please try again in a few moments. 🤖';
-          } else if (response.statusCode == 429) {
-            return 'I\'m receiving too many requests. Please wait a moment before asking again. ⏳';
-          } else if (response.statusCode >= 500) {
-            return 'I\'m temporarily unavailable due to server issues. Please try again later. 🔧';
-          } else {
-            return 'I encountered an issue processing your request. Please try rephrasing your question. 💭';
+          if (parts.isNotEmpty) {
+            return parts[0]['text'] as String;
           }
         }
-      } catch (e) {
-        print('Error getting AI response (attempt ${attempt + 1}): $e');
-        if (attempt == maxRetries) {
-          if (e.toString().contains('TimeoutException')) {
-            return 'The request timed out. Please check your internet connection and try again. 📶';
-          } else {
-            return 'I\'m having trouble connecting right now. Please try again in a moment. 🔄';
-          }
-        } else if (attempt < maxRetries) {
-          // Wait before retrying
-          await Future.delayed(Duration(seconds: (attempt + 1) * 2));
-        }
+      } else {
+        print('Gemini API error: ${response.statusCode}');
+        print('Response body: ${response.body}');
       }
+    } catch (e) {
+      print('Error getting AI response: $e');
     }
     
-    return 'I\'m currently unavailable. Please try again later. 😔';
+    return null;
   }
 
   String _buildPrompt(String userMessage, String? bookContext, String? clubContext) {
@@ -200,10 +171,15 @@ Format each question on a new line starting with "Q: "
   Future<String?> getReadingInsight({
     required String bookTitle,
     required String userQuestion,
+    String? bookCategory,
   }) async {
     try {
+      final categoryContext = bookCategory != null && bookCategory.isNotEmpty 
+          ? " This is a $bookCategory book." 
+          : "";
+      
       String prompt = '''
-You are discussing the book "$bookTitle" with a book club member.
+You are discussing the book "$bookTitle" with a book club member.$categoryContext
 
 User's question or comment: $userQuestion
 
@@ -213,6 +189,7 @@ Provide a thoughtful, insightful response that:
 - Encourages further discussion
 - Remains respectful of different viewpoints
 - Focuses on the book's content, themes, and plot
+- Consider the genre context when relevant
 
 Keep your response conversational but informative.
 ''';

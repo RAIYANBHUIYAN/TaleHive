@@ -78,13 +78,13 @@ class _ClubAnalyticsPageState extends State<ClubAnalyticsPage> {
     // Revenue calculations
     final completedPayments = _payments.where((p) => p.isCompleted).toList();
     _totalRevenue = completedPayments.fold(0.0, (sum, payment) => sum + payment.amount);
-    _authorEarnings = _totalRevenue * 0.8; // 80% to author
+    _authorEarnings = completedPayments.fold(0.0, (sum, payment) => sum + payment.authorShare);
     
     // Monthly revenue (current month)
     final now = DateTime.now();
     final monthStart = DateTime(now.year, now.month, 1);
     _monthlyRevenue = completedPayments
-        .where((p) => p.completedAt != null && p.completedAt!.isAfter(monthStart))
+        .where((p) => p.createdAt.isAfter(monthStart))
         .fold(0.0, (sum, payment) => sum + payment.amount);
     
     // Average revenue per user
@@ -144,9 +144,8 @@ class _ClubAnalyticsPageState extends State<ClubAnalyticsPage> {
       // Revenue in this month
       _revenueTrends[monthKey] = _payments
           .where((p) => p.isCompleted && 
-                       p.completedAt != null &&
-                       p.completedAt!.isAfter(monthDate) && 
-                       p.completedAt!.isBefore(nextMonth))
+                       p.createdAt.isAfter(monthDate) && 
+                       p.createdAt.isBefore(nextMonth))
           .fold(0.0, (sum, payment) => sum + payment.amount);
     }
   }
@@ -242,7 +241,7 @@ class _ClubAnalyticsPageState extends State<ClubAnalyticsPage> {
                 '৳${_authorEarnings.toStringAsFixed(2)}',
                 Icons.person,
                 Colors.purple,
-                subtitle: '80% of total revenue',
+                subtitle: 'From completed payments',
               ),
             ),
             const SizedBox(width: 12),
@@ -290,9 +289,9 @@ class _ClubAnalyticsPageState extends State<ClubAnalyticsPage> {
             children: [
               _buildRevenueRow('Total Revenue', _totalRevenue, Colors.blue),
               const Divider(height: 20),
-              _buildRevenueRow('Author Earnings (80%)', _authorEarnings, Colors.green),
+              _buildRevenueRow('Author Earnings', _authorEarnings, Colors.green),
               const Divider(height: 20),
-              _buildRevenueRow('Platform Commission (20%)', _totalRevenue * 0.2, Colors.grey),
+              _buildRevenueRow('Platform Commission', _totalRevenue - _authorEarnings, Colors.grey),
             ],
           ),
         ),

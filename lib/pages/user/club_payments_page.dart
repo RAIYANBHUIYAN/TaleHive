@@ -51,14 +51,14 @@ class _ClubPaymentsPageState extends State<ClubPaymentsPage> {
     final completedPayments = payments.where((p) => p.isCompleted).toList();
     
     _totalRevenue = completedPayments.fold(0.0, (sum, payment) => sum + payment.amount);
-    _authorEarnings = _totalRevenue * 0.8; // 80% to author
+    _authorEarnings = completedPayments.fold(0.0, (sum, payment) => sum + payment.authorShare);
     _totalTransactions = completedPayments.length;
     
     final now = DateTime.now();
     final monthStart = DateTime(now.year, now.month, 1);
     
     _monthlyRevenue = completedPayments
-        .where((p) => p.completedAt != null && p.completedAt!.isAfter(monthStart))
+        .where((p) => p.createdAt.isAfter(monthStart))
         .fold(0.0, (sum, payment) => sum + payment.amount);
   }
 
@@ -373,15 +373,6 @@ class _ClubPaymentsPageState extends State<ClubPaymentsPage> {
                 fontSize: 13,
               ),
             ),
-            if (payment.completedAt != null) ...[
-              Text(
-                'Completed: ${_formatDate(payment.completedAt!)}',
-                style: TextStyle(
-                  color: Colors.grey[600],
-                  fontSize: 13,
-                ),
-              ),
-            ],
             if (payment.transactionId != null) ...[
               const SizedBox(height: 4),
               Text(
@@ -479,37 +470,12 @@ class _ClubPaymentsPageState extends State<ClubPaymentsPage> {
             children: [
               _buildDetailRow('Member', payment.userFullName),
               _buildDetailRow('Amount', '৳${payment.amount.toStringAsFixed(2)}'),
-              _buildDetailRow('Author Earnings', '৳${(payment.amount * 0.8).toStringAsFixed(2)}'),
-              _buildDetailRow('Platform Fee', '৳${(payment.amount * 0.2).toStringAsFixed(2)}'),
+              _buildDetailRow('Author Earnings', '৳${payment.authorShare.toStringAsFixed(2)}'),
+              _buildDetailRow('Platform Fee', '৳${payment.platformShare.toStringAsFixed(2)}'),
               _buildDetailRow('Status', payment.status.name.toUpperCase()),
               _buildDetailRow('Payment Method', payment.paymentMethodDisplayName),
               _buildDetailRow('Created', _formatDate(payment.createdAt)),
-              if (payment.completedAt != null)
-                _buildDetailRow('Completed', _formatDate(payment.completedAt!)),
-              if (payment.transactionId != null)
-                _buildDetailRow('Transaction ID', payment.transactionId!),
-              if (payment.paymentData != null) ...[
-                const SizedBox(height: 16),
-                const Text(
-                  'Payment Data:',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[100],
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    payment.paymentData.toString(),
-                    style: const TextStyle(
-                      fontFamily: 'monospace',
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-              ],
+              _buildDetailRow('Transaction ID', payment.transactionId),
             ],
           ),
         ),

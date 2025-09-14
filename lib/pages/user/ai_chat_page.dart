@@ -1,16 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/ai_service.dart';
 
 class AIChatPage extends StatefulWidget {
   final String bookTitle;
   final String clubId;
+  final String? category; // Add category parameter
 
   const AIChatPage({
     Key? key,
     required this.bookTitle,
     required this.clubId,
+    this.category,
   }) : super(key: key);
 
   @override
@@ -26,6 +29,9 @@ class _AIChatPageState extends State<AIChatPage> with TickerProviderStateMixin {
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
+  Map<String, dynamic>? _userData;
+  
+  final supabase = Supabase.instance.client;
 
   @override
   void initState() {
@@ -43,6 +49,7 @@ class _AIChatPageState extends State<AIChatPage> with TickerProviderStateMixin {
     ).animate(CurvedAnimation(parent: _animationController, curve: Curves.easeOut));
     
     _animationController.forward();
+    _loadUserData();
     _addWelcomeMessage();
   }
 
@@ -54,11 +61,43 @@ class _AIChatPageState extends State<AIChatPage> with TickerProviderStateMixin {
     super.dispose();
   }
 
+  Future<void> _loadUserData() async {
+    try {
+      final user = supabase.auth.currentUser;
+      if (user != null) {
+        try {
+          final userResponse = await supabase
+              .from('users')
+              .select()
+              .eq('id', user.id)
+              .single();
+
+          setState(() {
+            _userData = userResponse;
+          });
+        } catch (e) {
+          // Fallback to auth metadata
+          setState(() {
+            _userData = {
+              'photo_url': user.userMetadata?['avatar_url'],
+            };
+          });
+        }
+      }
+    } catch (e) {
+      print('Error loading user data: $e');
+    }
+  }
+
   void _addWelcomeMessage() {
+    final categoryText = widget.category != null && widget.category!.isNotEmpty 
+        ? ', which is a "${widget.category}" book' 
+        : '';
+    
     setState(() {
       _messages.add({
         'type': 'ai',
-        'message': 'Hello! I\'m here to help you discuss "${widget.bookTitle}". Feel free to ask me anything about the book - plot, characters, themes, or any questions you have!',
+        'message': 'Hello! I\'m here to help you discuss "${widget.bookTitle}"$categoryText. Feel free to ask me anything about the book - plot, characters, themes, or any questions you have!',
         'timestamp': DateTime.now(),
       });
     });
@@ -86,6 +125,7 @@ class _AIChatPageState extends State<AIChatPage> with TickerProviderStateMixin {
       final response = await _aiService.getReadingInsight(
         bookTitle: widget.bookTitle,
         userQuestion: message,
+        bookCategory: widget.category,
       );
 
       // Add AI response immediately when received
@@ -374,19 +414,7 @@ class _AIChatPageState extends State<AIChatPage> with TickerProviderStateMixin {
           ),
           if (isUser) ...[
             const SizedBox(width: 12),
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Icon(
-                Icons.person,
-                color: Colors.grey[600],
-                size: 16,
-              ),
-            ),
+            _buildUserAvatar(),
           ],
         ],
       ),
@@ -450,6 +478,45 @@ class _AIChatPageState extends State<AIChatPage> with TickerProviderStateMixin {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildUserAvatar() {
+    final user = supabase.auth.currentUser;
+    final profileImageUrl = _userData?['photo_url'] ?? 
+                           _userData?['avatar_url'] ?? 
+                           user?.userMetadata?['avatar_url'];
+
+    return Container(
+      width: 32,
+      height: 32,
+      decoration: BoxDecoration(
+        color: Colors.grey[300],
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0xFF0077B6),
+          width: 1.5,
+        ),
+      ),
+      child: CircleAvatar(
+        radius: 14,
+        backgroundColor: Colors.transparent,
+        backgroundImage: profileImageUrl != null && profileImageUrl.isNotEmpty
+            ? NetworkImage(profileImageUrl)
+            : null,
+        onBackgroundImageError: profileImageUrl != null && profileImageUrl.isNotEmpty
+            ? (exception, stackTrace) {
+                print('Failed to load user profile image: $exception');
+              }
+            : null,
+        child: profileImageUrl == null || profileImageUrl.isEmpty
+            ? Icon(
+                Icons.person,
+                color: Colors.grey[600],
+                size: 16,
+              )
+            : null,
       ),
     );
   }

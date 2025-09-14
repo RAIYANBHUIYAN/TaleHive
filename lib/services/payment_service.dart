@@ -13,7 +13,7 @@ class PaymentService {
   static const String _storePassword = 'wrist6830197f2308c@ssl';
   
   Future<ClubPayment?> createPayment({
-    required String membershipId, // We'll keep this parameter for compatibility but won't use it in DB
+    required String membershipId, // Keep for compatibility
     required String userId,
     required String clubId,
     required double amount,
@@ -40,22 +40,29 @@ class PaymentService {
       final response = await _supabase
           .from('club_payments')
           .insert(paymentData)
-          .select('''
-            *,
-            clubs!club_payments_club_id_fkey(name)
-          ''')
+          .select()
           .single();
 
-      // Get user info separately from auth.users via the Supabase client
-      final user = _supabase.auth.currentUser;
+      // Get user info from users table
+      final userResponse = await _supabase
+          .from('users')
+          .select('first_name, last_name, email')
+          .eq('id', userId)
+          .maybeSingle();
+
+      // Get club info
+      final clubResponse = await _supabase
+          .from('clubs')
+          .select('name')
+          .eq('id', clubId)
+          .single();
       
       return ClubPayment.fromJson({
         ...response,
-        'membership_id': membershipId, // Add this for model compatibility
-        'user_first_name': user?.userMetadata?['first_name'] ?? 'User',
-        'user_last_name': user?.userMetadata?['last_name'] ?? '',
-        'user_email': user?.email ?? '',
-        'club_name': response['clubs']?['name'],
+        'user_first_name': userResponse?['first_name'] ?? 'User',
+        'user_last_name': userResponse?['last_name'] ?? '',
+        'user_email': userResponse?['email'] ?? '',
+        'club_name': clubResponse['name'],
       });
     } catch (e) {
       print('Error creating payment: $e');
@@ -217,21 +224,40 @@ class PaymentService {
 
   Future<List<ClubPayment>> getPaymentsByUser(String userId) async {
     try {
-      final response = await _supabase
+      // Get all payments for the user
+      final paymentsResponse = await _supabase
           .from('club_payments')
-          .select('''
-            *,
-            clubs!club_payments_club_id_fkey(name)
-          ''')
+          .select()
           .eq('user_id', userId)
           .order('created_at', ascending: false);
 
-      return response.map<ClubPayment>((json) {
-        return ClubPayment.fromJson({
-          ...json,
-          'club_name': json['clubs']?['name'],
-        });
-      }).toList();
+      // Get user information
+      final userResponse = await _supabase
+          .from('users')
+          .select('first_name, last_name, email')
+          .eq('id', userId)
+          .maybeSingle();
+
+      List<ClubPayment> payments = [];
+
+      for (final paymentJson in paymentsResponse) {
+        // Get club information for each payment
+        final clubResponse = await _supabase
+            .from('clubs')
+            .select('name')
+            .eq('id', paymentJson['club_id'])
+            .single();
+
+        payments.add(ClubPayment.fromJson({
+          ...paymentJson,
+          'user_first_name': userResponse?['first_name'] ?? 'User',
+          'user_last_name': userResponse?['last_name'] ?? '',
+          'user_email': userResponse?['email'] ?? '',
+          'club_name': clubResponse['name'],
+        }));
+      }
+
+      return payments;
     } catch (e) {
       print('Error fetching user payments: $e');
       return [];
@@ -240,24 +266,40 @@ class PaymentService {
 
   Future<List<ClubPayment>> getPaymentsByClub(String clubId) async {
     try {
-      final response = await _supabase
+      // First, get all payments for the club
+      final paymentsResponse = await _supabase
           .from('club_payments')
-          .select('''
-            *,
-            clubs!club_payments_club_id_fkey(name)
-          ''')
+          .select()
           .eq('club_id', clubId)
           .order('created_at', ascending: false);
 
-      return response.map<ClubPayment>((json) {
-        return ClubPayment.fromJson({
-          ...json,
-          'user_first_name': 'User', // Default values since we can't join with auth.users
-          'user_last_name': '',
-          'user_email': '',
-          'club_name': json['clubs']?['name'],
-        });
-      }).toList();
+      // Get club information
+      final clubResponse = await _supabase
+          .from('clubs')
+          .select('name')
+          .eq('id', clubId)
+          .single();
+
+      List<ClubPayment> payments = [];
+
+      for (final paymentJson in paymentsResponse) {
+        // Get user information from users table
+        final userResponse = await _supabase
+            .from('users')
+            .select('first_name, last_name, email')
+            .eq('id', paymentJson['user_id'])
+            .maybeSingle();
+
+        payments.add(ClubPayment.fromJson({
+          ...paymentJson,
+          'user_first_name': userResponse?['first_name'] ?? 'User',
+          'user_last_name': userResponse?['last_name'] ?? '',
+          'user_email': userResponse?['email'] ?? '',
+          'club_name': clubResponse['name'],
+        }));
+      }
+
+      return payments;
     } catch (e) {
       print('Error fetching club payments: $e');
       return [];
