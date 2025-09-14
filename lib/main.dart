@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:talehive/pages/user/author_dashboard.dart';
-import 'package:talehive/pages/user/user_home.dart';
+import 'package:Talehive/pages/user/author_dashboard.dart';
+import 'package:Talehive/pages/user/user_home.dart';
 
 // Import main pages
 import 'pages/main_home_page/main_page.dart';

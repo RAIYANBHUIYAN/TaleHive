@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:talehive/admin_authentication/admin_forgot_password.dart';
+import 'package:Talehive/admin_authentication/admin_forgot_password.dart';
 import '../pages/admin/admin_dashboard.dart';
 
 class AdminLogin extends StatefulWidget {

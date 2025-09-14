@@ -92,9 +92,30 @@ class _AllUsersBookRequestCatalogManagementPageState
   Future<void> _loadCurrentReadings() async {
     try {
       final readings = await _analyticsService.getCurrentReadings();
+      // Fetch user photos for each reading
+      final List<Map<String, dynamic>> readingsWithPhoto = [];
+      for (final reading in readings) {
+        String? userPhoto;
+        if (reading['user_id'] != null) {
+          try {
+            final userResponse = await supabase
+                .from('users')
+                .select('photo_url')
+                .eq('id', reading['user_id'])
+                .maybeSingle();
+            userPhoto = userResponse?['photo_url'] ?? '';
+          } catch (e) {
+            userPhoto = '';
+          }
+        }
+        readingsWithPhoto.add({
+          ...reading,
+          'user_photo': userPhoto,
+        });
+      }
       if (mounted) {
         setState(() {
-          _currentReadings = readings;
+          _currentReadings = readingsWithPhoto;
         });
       }
     } catch (e) {
@@ -139,15 +160,35 @@ class _AllUsersBookRequestCatalogManagementPageState
       print('Response length: ${response.length}');
       
       // Only update state if widget is still mounted
+      // Fetch user photos for each book request
+      final List<Map<String, dynamic>> borrowRequestsWithPhoto = [];
+      for (final request in response) {
+        String? userPhoto;
+        if (request['user_id'] != null) {
+          try {
+            final userResponse = await supabase
+                .from('users')
+                .select('photo_url')
+                .eq('id', request['user_id'])
+                .maybeSingle();
+            userPhoto = userResponse?['photo_url'] ?? '';
+          } catch (e) {
+            userPhoto = '';
+          }
+        }
+        borrowRequestsWithPhoto.add({
+          ...request,
+          'user_photo': userPhoto,
+        });
+      }
       if (mounted) {
         setState(() {
-          _borrowRequests = List<Map<String, dynamic>>.from(response);
+          _borrowRequests = List<Map<String, dynamic>>.from(borrowRequestsWithPhoto);
           // Transform borrow requests to match the table format
           _bookRequests = _borrowRequests.map((request) {
             final book = request['books'] as Map<String, dynamic>?;
             final user = request['users'] as Map<String, dynamic>?;
             final createdAt = DateTime.parse(request['created_at']);
-            
             return {
               'requestId': request['id'],
               'userId': request['user_id'],
@@ -162,6 +203,7 @@ class _AllUsersBookRequestCatalogManagementPageState
               'endDate': request['end_date'],
               'requestDate': DateFormat('dd-MM-yyyy').format(createdAt),
               'status': request['status'],
+              'user_photo': request['user_photo'],
               'rawData': request, // Keep original data for actions
             };
           }).toList();
@@ -987,10 +1029,24 @@ class _AllUsersBookRequestCatalogManagementPageState
                                   color: Colors.purple.withOpacity(0.2),
                                   borderRadius: BorderRadius.circular(12),
                                 ),
-                                child: Icon(
-                                  Icons.account_circle_outlined,
-                                  color: Colors.purple[700],
-                                  size: 14,
+                                child: ClipOval(
+                                  child: reading['user_photo'] != null && reading['user_photo'].toString().isNotEmpty
+                                      ? Image.network(
+                                          reading['user_photo'],
+                                          width: 24,
+                                          height: 24,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (context, error, stackTrace) => Icon(
+                                            Icons.account_circle_outlined,
+                                            color: Colors.purple[700],
+                                            size: 14,
+                                          ),
+                                        )
+                                      : Icon(
+                                          Icons.account_circle_outlined,
+                                          color: Colors.purple[700],
+                                          size: 14,
+                                        ),
                                 ),
                               ),
                               const SizedBox(width: 6),
@@ -1640,18 +1696,24 @@ class _AllUsersBookRequestCatalogManagementPageState
                       children: [
                         Row(
                           children: [
-                            Container(
-                              width: 32,
-                              height: 32,
-                              decoration: BoxDecoration(
-                                color: Colors.purple.withOpacity(0.2),
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: Icon(
-                                Icons.person,
-                                color: Colors.purple[700],
-                                size: 18,
-                              ),
+                            ClipOval(
+                              child: request['user_photo'] != null && request['user_photo'].toString().isNotEmpty
+                                  ? Image.network(
+                                      request['user_photo'],
+                                      width: 32,
+                                      height: 32,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (context, error, stackTrace) => Icon(
+                                        Icons.person,
+                                        color: Colors.purple[700],
+                                        size: 18,
+                                      ),
+                                    )
+                                  : Icon(
+                                      Icons.person,
+                                      color: Colors.purple[700],
+                                      size: 18,
+                                    ),
                             ),
                             const SizedBox(width: 12),
                             Expanded(

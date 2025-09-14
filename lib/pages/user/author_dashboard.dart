@@ -176,30 +176,8 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
   }
 
   // Load author's clubs
-  Future<void> _loadAuthorClubs() async {
-    setState(() {
-      _isLoadingClubs = true;
-    });
-
-    try {
-      final user = supabase.auth.currentUser;
-      if (user != null) {
-        final clubs = await _clubService.getClubsByAuthor(user.id);
-        setState(() {
-          _authorClubs = clubs;
-        });
-      }
-    } catch (e) {
-      print('Error loading clubs: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error loading clubs: $e'), backgroundColor: Colors.red),
-      );
-    } finally {
-      setState(() {
-        _isLoadingClubs = false;
-      });
-    }
-  }
+  // This method is already defined inside _AuthorDashboardPageState.
+  // Remove this duplicate definition at the end of the file.
 
   // Load author's earnings
   Future<void> _loadAuthorEarnings() async {
@@ -1135,6 +1113,9 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                                 separatorBuilder: (context, i) => const Divider(height: 1),
                                 itemBuilder: (context, i) {
                                   final club = _authorClubs[i];
+                                  final isPremium = club.isPremium;
+                                  final status = club.approvalStatus?.toLowerCase() ?? 'approved';
+                                  final showActions = !isPremium || (status == 'approved');
                                   return Column(
                                     children: [
                                       Container(
@@ -1174,14 +1155,71 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                                               child: Column(
                                                 crossAxisAlignment: CrossAxisAlignment.start,
                                                 children: [
-                                                  Text(
-                                                    club.name,
-                                                    style: const TextStyle(
-                                                      fontWeight: FontWeight.bold,
-                                                      fontSize: 16,
-                                                    ),
-                                                    maxLines: 1,
-                                                    overflow: TextOverflow.ellipsis,
+                                                  Column(
+                                                    children: [
+                                                      Align(
+                                                        alignment: Alignment.centerLeft,
+                                                        child: Text(
+                                                          club.name,
+                                                          style: const TextStyle(
+                                                            fontWeight: FontWeight.bold,
+                                                            fontSize: 16,
+                                                          ),
+                                                          maxLines: 1,
+                                                          overflow: TextOverflow.ellipsis,
+                                                        ),
+                                                      ),
+                                                        const SizedBox(height: 4),
+                                                      if (isPremium)
+                                                        Container(
+                                                          margin: const EdgeInsets.only(left: 8),
+                                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                                          decoration: BoxDecoration(
+                                                            color: Colors.amber[100],
+                                                            borderRadius: BorderRadius.circular(12),
+                                                          ),
+                                                          child: Row(
+                                                            children: [
+                                                              Text(
+                                                                'Premium',
+                                                                style: TextStyle(
+                                                                  color: Colors.amber[800],
+                                                                  fontSize: 12,
+                                                                  fontWeight: FontWeight.w500,
+                                                                ),
+                                                              ),
+                                                              const SizedBox(width: 6),
+                                                              Container(
+                                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                                                decoration: BoxDecoration(
+                                                                  color: status == 'approved'
+                                                                      ? Colors.green[100]
+                                                                      : status == 'pending'
+                                                                          ? Colors.orange[100]
+                                                                          : Colors.red[100],
+                                                                  borderRadius: BorderRadius.circular(8),
+                                                                ),
+                                                                child: Text(
+                                                                  status == 'approved'
+                                                                      ? 'Approved'
+                                                                      : status == 'pending'
+                                                                          ? 'Pending'
+                                                                          : 'Rejected',
+                                                                  style: TextStyle(
+                                                                    color: status == 'approved'
+                                                                        ? Colors.green[800]
+                                                                        : status == 'pending'
+                                                                            ? Colors.orange[800]
+                                                                            : Colors.red[800],
+                                                                    fontSize: 11,
+                                                                    fontWeight: FontWeight.bold,
+                                                                  ),
+                                                                ),
+                                                              ),
+                                                            ],
+                                                          ),
+                                                        ),
+                                                    ],
                                                   ),
                                                   const SizedBox(height: 4),
                                                   Text(
@@ -1196,25 +1234,8 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                                                   const SizedBox(height: 8),
                                                   Row(
                                                     children: [
-                                                      if (club.isPremium)
-                                                        Container(
-                                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                                          decoration: BoxDecoration(
-                                                            color: Colors.amber[100],
-                                                            borderRadius: BorderRadius.circular(12),
-                                                          ),
-                                                          child: Text(
-                                                            'Premium',
-                                                            style: TextStyle(
-                                                              color: Colors.amber[800],
-                                                              fontSize: 12,
-                                                              fontWeight: FontWeight.w500,
-                                                            ),
-                                                          ),
-                                                        ),
-                                                      if (club.isPremium) const SizedBox(width: 8),
                                                       Text(
-                                                        club.isPremium ? '৳${club.membershipPrice}/month' : 'Free',
+                                                        isPremium ? '৳${club.membershipPrice}/month' : 'Free',
                                                         style: TextStyle(
                                                           color: Colors.grey[600],
                                                           fontSize: 12,
@@ -1234,7 +1255,7 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                                                     _showEditClubDialog(club);
                                                     break;
                                                   case 'delete':
-                                                    _showDeleteClubDialog(club);
+                                                    _showDeleteClubDialog(context, club);
                                                     break;
                                                 }
                                               },
@@ -1265,86 +1286,87 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                                         ),
                                       ),
                                       // Add manage action buttons below
-                                      Padding(
-                                        padding: const EdgeInsets.only(left: 16, right: 16, bottom: 16, top: 8),
-                                      child: Column(
-                                        children: [
-                                          const Divider(height: 1),
-                                          const SizedBox(height: 12),
-                                          Row(
+                                      if (showActions)
+                                        Padding(
+                                          padding: const EdgeInsets.only(left: 16, right: 16, bottom: 16, top: 8),
+                                          child: Column(
                                             children: [
-                                              Expanded(
-                                                child: _clubActionButton(
-                                                  icon: Icons.people,
-                                                  label: 'Members',
-                                                  color: Colors.blue,
-                                                  onTap: () {
-                                                    Navigator.push(
-                                                      context,
-                                                      MaterialPageRoute(
-                                                        builder: (context) => ClubMembersPage(club: club),
-                                                      ),
-                                                    );
-                                                  },
-                                                ),
+                                              const Divider(height: 1),
+                                              const SizedBox(height: 12),
+                                              Row(
+                                                children: [
+                                                  Expanded(
+                                                    child: _clubActionButton(
+                                                      icon: Icons.people,
+                                                      label: 'Members',
+                                                      color: Colors.blue,
+                                                      onTap: () {
+                                                        Navigator.push(
+                                                          context,
+                                                          MaterialPageRoute(
+                                                            builder: (context) => ClubMembersPage(club: club),
+                                                          ),
+                                                        );
+                                                      },
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 8),
+                                                  Expanded(
+                                                    child: _clubActionButton(
+                                                      icon: Icons.book,
+                                                      label: 'Books',
+                                                      color: Colors.green,
+                                                      onTap: () {
+                                                        Navigator.push(
+                                                          context,
+                                                          MaterialPageRoute(
+                                                            builder: (context) => ClubBooksPage(club: club),
+                                                          ),
+                                                        );
+                                                      },
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 8),
+                                                  Expanded(
+                                                    child: _clubActionButton(
+                                                      icon: Icons.analytics,
+                                                      label: 'Analytics',
+                                                      color: Colors.purple,
+                                                      onTap: () {
+                                                        Navigator.push(
+                                                          context,
+                                                          MaterialPageRoute(
+                                                            builder: (context) => ClubAnalyticsPage(club: club),
+                                                          ),
+                                                        );
+                                                      },
+                                                    ),
+                                                  ),
+                                                ],
                                               ),
-                                              const SizedBox(width: 8),
-                                              Expanded(
+                                            if (isPremium) ...[
+                                              const SizedBox(height: 8),
+                                              SizedBox(
+                                                width: double.infinity,
                                                 child: _clubActionButton(
-                                                  icon: Icons.book,
-                                                  label: 'Books',
-                                                  color: Colors.green,
+                                                  icon: Icons.payment,
+                                                  label: 'View Payments',
+                                                  color: Colors.orange,
                                                   onTap: () {
                                                     Navigator.push(
                                                       context,
                                                       MaterialPageRoute(
-                                                        builder: (context) => ClubBooksPage(club: club),
+                                                        builder: (context) => ClubPaymentsPage(club: club),
                                                       ),
                                                     );
                                                   },
-                                                ),
-                                              ),
-                                              const SizedBox(width: 8),
-                                              Expanded(
-                                                child: _clubActionButton(
-                                                  icon: Icons.analytics,
-                                                  label: 'Analytics',
-                                                  color: Colors.purple,
-                                                  onTap: () {
-                                                    Navigator.push(
-                                                      context,
-                                                      MaterialPageRoute(
-                                                        builder: (context) => ClubAnalyticsPage(club: club),
-                                                      ),
-                                                    );
-                                                  },
+                                                  fullWidth: true,
                                                 ),
                                               ),
                                             ],
-                                          ),
-                                          if (club.isPremium) ...[
-                                            const SizedBox(height: 8),
-                                            SizedBox(
-                                              width: double.infinity,
-                                              child: _clubActionButton(
-                                                icon: Icons.payment,
-                                                label: 'View Payments',
-                                                color: Colors.orange,
-                                                onTap: () {
-                                                  Navigator.push(
-                                                    context,
-                                                    MaterialPageRoute(
-                                                      builder: (context) => ClubPaymentsPage(club: club),
-                                                    ),
-                                                  );
-                                                },
-                                                fullWidth: true,
-                                              ),
-                                            ),
                                           ],
-                                        ],
+                                        ),
                                       ),
-                                    ),
                                     ],
                                   );
                                 },
@@ -2375,220 +2397,207 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
 
   // ============= CLUB MANAGEMENT METHODS =============
 
-  void _showCreateClubDialog() {
-    final nameController = TextEditingController();
-    final descriptionController = TextEditingController();
-    final priceController = TextEditingController();
-    
-    bool isPremium = false;
-    bool isCreating = false;
-    String? coverImageUrl;
+// ============= CLUB MANAGEMENT METHODS =============
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          return AlertDialog(
-            title: const Text('Create New Book Club'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: nameController,
-                    decoration: const InputDecoration(
-                      labelText: 'Club Name*',
-                      hintText: 'Enter club name',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: descriptionController,
-                    decoration: const InputDecoration(
-                      labelText: 'Description*',
-                      hintText: 'Describe your book club',
-                      border: OutlineInputBorder(),
-                    ),
-                    maxLines: 3,
-                  ),
-                  const SizedBox(height: 16),
-                  
-                  // Cover Image Section
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey[300]!),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Column(
-                      children: [
-                        Row(
-                          children: [
-                            Icon(Icons.image, color: Colors.grey[600]),
-                            const SizedBox(width: 8),
-                            const Text('Club Cover Image (Optional)'),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        if (coverImageUrl == null)
-                          ElevatedButton.icon(
-                            onPressed: () async {
-                              final url = await _uploadCoverImage();
-                              if (url != null) {
-                                setDialogState(() => coverImageUrl = url);
-                              }
-                            },
-                            icon: const Icon(Icons.upload),
-                            label: const Text('Upload Cover'),
-                          )
-                        else
-                          Column(
-                            children: [
-                              const Text('✓ Cover uploaded successfully', 
-                                style: TextStyle(color: Colors.green)),
-                              TextButton(
-                                onPressed: () => setDialogState(() => coverImageUrl = null),
-                                child: const Text('Remove'),
-                              ),
-                            ],
-                          ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
+void _showCreateClubDialog() {
+  final nameController = TextEditingController();
+  final descriptionController = TextEditingController();
+  final priceController = TextEditingController();
+  
+  bool isPremium = false;
+  bool isCreating = false;
+  String? coverImageUrl;
 
-                  // Premium Settings
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.amber[50],
-                      border: Border.all(color: Colors.amber[200]!),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Column(
-                      children: [
-                        Row(
-                          children: [
-                            Icon(Icons.star, color: Colors.amber[700]),
-                            const SizedBox(width: 8),
-                            const Text('Premium Club Settings'),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        CheckboxListTile(
-                          title: const Text('Make this a Premium Club'),
-                          subtitle: const Text('Members will pay to join and access exclusive features'),
-                          value: isPremium,
-                          onChanged: (value) => setDialogState(() => isPremium = value!),
-                          contentPadding: EdgeInsets.zero,
-                        ),
-                        if (isPremium) ...[
-                          TextField(
-                            controller: priceController,
-                            decoration: const InputDecoration(
-                              labelText: 'Monthly Price (BDT)*',
-                              hintText: 'Enter price in BDT',
-                              border: OutlineInputBorder(),
-                              prefixText: '৳',
-                            ),
-                            keyboardType: TextInputType.number,
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: isCreating ? null : () => Navigator.pop(context),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: isCreating ? null : () async {
-                  if (nameController.text.trim().isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Please enter a club name')),
-                    );
-                    return;
-                  }
-                  if (descriptionController.text.trim().isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Please enter a description')),
-                    );
-                    return;
-                  }
-                  if (isPremium && priceController.text.trim().isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Please enter a price for premium club')),
-                    );
-                    return;
-                  }
-
-                  setDialogState(() => isCreating = true);
-
-                  try {
-                    final user = supabase.auth.currentUser;
-                    if (user != null) {
-                      final club = await _clubService.createClub(
-                        name: nameController.text.trim(),
-                        description: descriptionController.text.trim(),
-                        authorId: user.id,
-                        coverImageUrl: coverImageUrl,
-                        isPremium: isPremium,
-                        membershipPrice: isPremium ? double.tryParse(priceController.text) ?? 0.0 : 0.0,
-                      );
-
-                      if (club != null) {
-                        await _loadAuthorClubs(); // Refresh clubs list
-                        Navigator.pop(context);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Club "${club.name}" created successfully!'),
-                            backgroundColor: Colors.green,
-                          ),
-                        );
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Failed to create club. Please try again.'),
-                            backgroundColor: Colors.red,
-                          ),
-                        );
-                      }
-                    }
-                  } catch (e) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Error creating club: $e'),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                  } finally {
-                    setDialogState(() => isCreating = false);
-                  }
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF10B981),
-                  foregroundColor: Colors.white,
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => StatefulBuilder(
+      builder: (context, setDialogState) {
+        return AlertDialog(
+          title: const Text('Create New Book Club'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(labelText: 'Club Name*'),
                 ),
-                child: isCreating 
-                    ? const SizedBox(
-                        width: 20, 
-                        height: 20, 
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)
-                      )
-                    : const Text('Create Club'),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: descriptionController,
+                  decoration: const InputDecoration(labelText: 'Description'),
+                  maxLines: 2,
+                ),
+                const SizedBox(height: 8),
+
+                /// ✅ FIXED COVER IMAGE SECTION
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8.0),
+                  child: Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      Icon(Icons.image, color: Colors.grey[600]),
+                      const Text('Club Cover Image (Optional)'),
+                      if (coverImageUrl == null)
+                        ElevatedButton.icon(
+                          onPressed: isCreating ? null : () async {
+                            final url = await _uploadCoverImage();
+                            if (url != null) {
+                              setDialogState(() => coverImageUrl = url);
+                            }
+                          },
+                          icon: const Icon(Icons.upload),
+                          label: const Text('Upload Cover'),
+                        )
+                      else ...[
+                        const Text(
+                          '✓ Cover uploaded',
+                          style: TextStyle(color: Colors.green),
+                        ),
+                        TextButton(
+                          onPressed: isCreating ? null : () => setDialogState(() => coverImageUrl = null),
+                          child: const Text('Remove'),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                /// PREMIUM SETTINGS
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.amber[50],
+                    border: Border.all(color: Colors.amber[200]!),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.star, color: Colors.amber[700]),
+                          const SizedBox(width: 8),
+                          const Text('Premium Club Settings'),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      CheckboxListTile(
+                        title: const Text('Make this a Premium Club'),
+                        subtitle: const Text('Members will pay to join and access exclusive features'),
+                        value: isPremium,
+                        onChanged: (value) => setDialogState(() => isPremium = value!),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                      if (isPremium) ...[
+                        TextField(
+                          controller: priceController,
+                          decoration: const InputDecoration(
+                            labelText: 'Monthly Price (BDT)*',
+                            hintText: 'Enter price in BDT',
+                            border: OutlineInputBorder(),
+                            prefixText: '৳',
+                          ),
+                          keyboardType: TextInputType.number,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: isCreating ? null : () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: isCreating ? null : () async {
+                if (nameController.text.trim().isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Please enter a club name')),
+                  );
+                  return;
+                }
+                if (descriptionController.text.trim().isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Please enter a description')),
+                  );
+                  return;
+                }
+                if (isPremium && priceController.text.trim().isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Please enter a price for premium club')),
+                  );
+                  return;
+                }
+
+                setDialogState(() => isCreating = true);
+
+                try {
+                  final user = supabase.auth.currentUser;
+                  if (user == null) throw Exception('User not authenticated');
+                  final clubData = {
+                    'name': nameController.text.trim(),
+                    'description': descriptionController.text.trim(),
+                    'cover_image_url': coverImageUrl,
+                    'author_id': user.id,
+                    'membership_price': double.tryParse(priceController.text.trim()) ?? 0,
+                    'is_premium': isPremium,
+                    'created_at': DateTime.now().toIso8601String(),
+                    'updated_at': DateTime.now().toIso8601String(),
+                    'is_active': true,
+                    'approval_status': isPremium ? 'pending' : 'approved',
+                  };
+                  await supabase.from('clubs').insert(clubData);
+                  if (mounted) Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(isPremium
+                        ? 'Premium club request submitted. Awaiting admin approval.'
+                        : 'Club created and approved!'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                  await _loadAuthorClubs();
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+                    );
+                  }
+                } finally {
+                  setDialogState(() => isCreating = false);
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                foregroundColor: Colors.blue,
               ),
-            ],
-          );
-        },
-      ),
-    );
-  }
+              child: isCreating
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.blue,
+                      ),
+                    )
+                  : const Text('Create Club'),
+            ),
+          ],
+        );
+      },
+    ),
+  );
+}
+
 
   void _showEditClubDialog(Club club) {
     final nameController = TextEditingController(text: club.name);
@@ -2601,141 +2610,143 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          return AlertDialog(
-            title: const Text('Edit Book Club'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: nameController,
-                    decoration: const InputDecoration(
-                      labelText: 'Club Name*',
-                      border: OutlineInputBorder(),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Edit Book Club'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: nameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Club Name*',
+                        border: OutlineInputBorder(),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: descriptionController,
-                    decoration: const InputDecoration(
-                      labelText: 'Description*',
-                      border: OutlineInputBorder(),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: descriptionController,
+                      decoration: const InputDecoration(
+                        labelText: 'Description*',
+                        border: OutlineInputBorder(),
+                      ),
+                      maxLines: 3,
                     ),
-                    maxLines: 3,
-                  ),
-                  const SizedBox(height: 16),
+                    const SizedBox(height: 16),
 
-                  // Premium Settings
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.amber[50],
-                      border: Border.all(color: Colors.amber[200]!),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Column(
-                      children: [
-                        CheckboxListTile(
-                          title: const Text('Premium Club'),
-                          value: isPremium,
-                          onChanged: (value) => setDialogState(() => isPremium = value!),
-                          contentPadding: EdgeInsets.zero,
-                        ),
-                        if (isPremium) ...[
-                          TextField(
-                            controller: priceController,
-                            decoration: const InputDecoration(
-                              labelText: 'Monthly Price (BDT)*',
-                              border: OutlineInputBorder(),
-                              prefixText: '৳',
-                            ),
-                            keyboardType: TextInputType.number,
+                    // Premium Settings
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.amber[50],
+                        border: Border.all(color: Colors.amber[200]!),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Column(
+                        children: [
+                          CheckboxListTile(
+                            title: const Text('Premium Club'),
+                            value: isPremium,
+                            onChanged: (value) => setDialogState(() => isPremium = value!),
+                            contentPadding: EdgeInsets.zero,
                           ),
+                          if (isPremium) ...[
+                            TextField(
+                              controller: priceController,
+                              decoration: const InputDecoration(
+                                labelText: 'Monthly Price (BDT)*',
+                                border: OutlineInputBorder(),
+                                prefixText: '৳',
+                              ),
+                              keyboardType: TextInputType.number,
+                            ),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: isUpdating ? null : () => Navigator.pop(context),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: isUpdating ? null : () async {
-                  if (nameController.text.trim().isEmpty || descriptionController.text.trim().isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Please fill all required fields')),
-                    );
-                    return;
-                  }
-
-                  setDialogState(() => isUpdating = true);
-
-                  try {
-                    final updatedClub = club.copyWith(
-                      name: nameController.text.trim(),
-                      description: descriptionController.text.trim(),
-                      isPremium: isPremium,
-                      membershipPrice: isPremium ? double.tryParse(priceController.text) ?? 0.0 : 0.0,
-                      updatedAt: DateTime.now(),
-                    );
-
-                    final success = await _clubService.updateClub(updatedClub);
-                    
-                    if (success) {
-                      await _loadAuthorClubs();
-                      Navigator.pop(context);
+              actions: [
+                TextButton(
+                  onPressed: isUpdating ? null : () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: isUpdating ? null : () async {
+                    if (nameController.text.trim().isEmpty || descriptionController.text.trim().isEmpty) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Club updated successfully!'),
-                          backgroundColor: Colors.green,
-                        ),
+                        const SnackBar(content: Text('Please fill all required fields')),
                       );
-                    } else {
+                      return;
+                    }
+
+                    setDialogState(() => isUpdating = true);
+
+                    try {
+                      final updatedClub = club.copyWith(
+                        name: nameController.text.trim(),
+                        description: descriptionController.text.trim(),
+                        isPremium: isPremium,
+                        membershipPrice: isPremium ? double.tryParse(priceController.text) ?? 0.0 : 0.0,
+                        updatedAt: DateTime.now(),
+                      );
+
+                      final success = await _clubService.updateClub(updatedClub);
+                      
+                      if (success) {
+                        await _loadAuthorClubs();
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Club updated successfully!'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Failed to update club'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    } catch (e) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Failed to update club'),
+                        SnackBar(
+                          content: Text('Error updating club: $e'),
                           backgroundColor: Colors.red,
                         ),
                       );
+                    } finally {
+                      setDialogState(() => isUpdating = false);
                     }
-                  } catch (e) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Error updating club: $e'),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                  } finally {
-                    setDialogState(() => isUpdating = false);
-                  }
-                },
-                child: isUpdating 
-                    ? const SizedBox(
-                        width: 20, 
-                        height: 20, 
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)
-                      )
-                    : const Text('Update'),
-              ),
-            ],
-          );
-        },
-      ),
+                  },
+                  child: isUpdating 
+                      ? const SizedBox(
+                          width: 20, 
+                          height: 20, 
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)
+                        )
+                      : const Text('Update'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
-  void _showDeleteClubDialog(Club club) {
+  void _showDeleteClubDialog(BuildContext context, Club club) {
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) {
-          bool isDeleting = false;
+          // Removed unused isDeleting variable
           
           return AlertDialog(
             title: Row(
@@ -2791,18 +2802,15 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
             ),
             actions: [
               TextButton(
-                onPressed: isDeleting ? null : () => Navigator.pop(context),
+                onPressed: () => Navigator.pop(context),
                 child: const Text('Cancel'),
               ),
               ElevatedButton(
-                onPressed: isDeleting ? null : () async {
-                  setDialogState(() => isDeleting = true);
-                  
+                onPressed: () async {
+                  // Removed setDialogState for isDeleting (variable no longer exists)
                   final success = await _clubService.deleteClub(club.id);
-                  
-                  if (mounted) {
+                  if (Navigator.of(context).mounted) {
                     Navigator.pop(context);
-                    
                     if (success) {
                       await _loadAuthorClubs();
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -2827,13 +2835,7 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                   backgroundColor: Colors.red,
                   foregroundColor: Colors.white,
                 ),
-                child: isDeleting 
-                    ? const SizedBox(
-                        width: 20, 
-                        height: 20, 
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Text('Delete Club'),
+                child: const Text('Delete Club'),
               ),
             ],
           );
@@ -2841,6 +2843,30 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
       ),
     );
   }
+
+  Future<void> _loadAuthorClubs() async {
+    setState(() {
+      _isLoadingClubs = true;
+    });
+
+    try {
+      final user = supabase.auth.currentUser;
+      if (user != null) {
+        final clubs = await _clubService.getClubsByAuthor(user.id);
+        setState(() {
+          _authorClubs = clubs;
+        });
+      }
+    } catch (e) {
+      print('Error loading clubs: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error loading clubs: $e'), backgroundColor: Colors.red),
+      );
+    } finally {
+      setState(() {
+        _isLoadingClubs = false;
+      });
+    }
+  }
+
 }
-
-

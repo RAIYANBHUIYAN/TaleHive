@@ -1,3 +1,4 @@
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -17,8 +18,197 @@ class UserManagementPage extends StatefulWidget {
   State<UserManagementPage> createState() => _UserManagementPageState();
 }
 
-class _UserManagementPageState extends State<UserManagementPage>
-    with SingleTickerProviderStateMixin {
+class _UserManagementPageState extends State<UserManagementPage> with SingleTickerProviderStateMixin {
+  // --- Filter Dialog and Logic ---
+  void _showFilterDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        final isUserTab = _tabController.index == 0;
+        String selectedFilter = isUserTab ? 'Newest' : 'Newest';
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Text('Filter ${isUserTab ? 'Users' : 'Authors'}', style: GoogleFonts.montserrat(fontWeight: FontWeight.bold)),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ListTile(
+                    title: const Text('Newest'),
+                    leading: Radio<String>(
+                      value: 'Newest',
+                      groupValue: selectedFilter,
+                      onChanged: (value) => setState(() => selectedFilter = value!),
+                    ),
+                  ),
+                  ListTile(
+                    title: const Text('Oldest'),
+                    leading: Radio<String>(
+                      value: 'Oldest',
+                      groupValue: selectedFilter,
+                      onChanged: (value) => setState(() => selectedFilter = value!),
+                    ),
+                  ),
+                  if (isUserTab) ...[
+                    ListTile(
+                      title: const Text('Active'),
+                      leading: Radio<String>(
+                        value: 'Active',
+                        groupValue: selectedFilter,
+                        onChanged: (value) => setState(() => selectedFilter = value!),
+                      ),
+                    ),
+                    ListTile(
+                      title: const Text('Inactive'),
+                      leading: Radio<String>(
+                        value: 'Inactive',
+                        groupValue: selectedFilter,
+                        onChanged: (value) => setState(() => selectedFilter = value!),
+                      ),
+                    ),
+                  ] else ...[
+                    ListTile(
+                      title: const Text('Verified'),
+                      leading: Radio<String>(
+                        value: 'Verified',
+                        groupValue: selectedFilter,
+                        onChanged: (value) => setState(() => selectedFilter = value!),
+                      ),
+                    ),
+                    ListTile(
+                      title: const Text('Pending'),
+                      leading: Radio<String>(
+                        value: 'Pending',
+                        groupValue: selectedFilter,
+                        onChanged: (value) => setState(() => selectedFilter = value!),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    _applyFilter(selectedFilter);
+                  },
+                  child: const Text('Apply'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+}
+
+  void _applyFilter(String filter) {
+    setState(() {
+      if (_tabController.index == 0) {
+        // Users
+        switch (filter) {
+          case 'Newest':
+            _filteredUsers = List<UserModel.User>.from(_users)..sort((a, b) => b.createdAt!.compareTo(a.createdAt!));
+            break;
+          case 'Oldest':
+            _filteredUsers = List<UserModel.User>.from(_users)..sort((a, b) => a.createdAt!.compareTo(b.createdAt!));
+            break;
+          case 'Active':
+            _filteredUsers = _users.where((u) => u.isActive).toList();
+            break;
+          case 'Inactive':
+            _filteredUsers = _users.where((u) => !u.isActive).toList();
+            break;
+          default:
+            _filteredUsers = _users;
+        }
+      } else {
+        // Authors
+        switch (filter) {
+          case 'Newest':
+            _filteredAuthors = List<AuthorModel.Author>.from(_authors)..sort((a, b) => b.createdAt!.compareTo(a.createdAt!));
+            break;
+          case 'Oldest':
+            _filteredAuthors = List<AuthorModel.Author>.from(_authors)..sort((a, b) => a.createdAt!.compareTo(b.createdAt!));
+            break;
+          case 'Verified':
+            _filteredAuthors = _authors.where((a) => a.isVerified).toList();
+            break;
+          case 'Pending':
+            _filteredAuthors = _authors.where((a) => a.verificationStatus == 'pending').toList();
+            break;
+          default:
+            _filteredAuthors = _authors;
+        }
+      }
+    });
+  }
+  // Delete author from database and update UI
+  Future<void> _deleteAuthor(AuthorModel.Author author) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Author'),
+        content: const Text('Are you sure you want to delete this author permanently? This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    try {
+      await supabase.from('authors').delete().eq('id', author.id);
+      await _loadAuthors();
+      _showSnackBar('Author deleted successfully!', isSuccess: true);
+    } catch (e) {
+      print('Error deleting author: $e');
+      _showSnackBar('Error deleting author: $e', isSuccess: false);
+    }
+  }
+
+  // Delete user from database and update UI
+  Future<void> _deleteUser(UserModel.User user) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete User'),
+        content: const Text('Are you sure you want to delete this user permanently? This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    try {
+      await supabase.from('users').delete().eq('id', user.id);
+      await _loadUsers();
+      _showSnackBar('User deleted successfully!', isSuccess: true);
+    } catch (e) {
+      print('Error deleting user: $e');
+      _showSnackBar('Error deleting user: $e', isSuccess: false);
+    }
+  }
   late TabController _tabController;
   final TextEditingController _searchController = TextEditingController();
   final supabase = Supabase.instance.client;
@@ -145,14 +335,6 @@ class _UserManagementPageState extends State<UserManagementPage>
   }
 
   // Generate Report (placeholder for now)
-  void _generateReport() {
-    _showSnackBar('Report generation feature coming soon!', isSuccess: true);
-  }
-
-  // Show filter dialog (placeholder for now)
-  void _showFilterDialog() {
-    _showSnackBar('Advanced filters coming soon!', isSuccess: true);
-  }
 
   // Perform search across current tab
   void _performSearch() {
@@ -162,7 +344,7 @@ class _UserManagementPageState extends State<UserManagementPage>
         // Users tab
         _filteredUsers = _users.where((user) {
           final fullName = user.fullName.toLowerCase();
-          final email = (user.email ?? '').toLowerCase();
+          final email = user.email.toLowerCase();
           final username = (user.username ?? '').toLowerCase();
           return fullName.contains(query) ||
               email.contains(query) ||
@@ -174,7 +356,7 @@ class _UserManagementPageState extends State<UserManagementPage>
           final displayName = (author.displayName ?? '').toLowerCase();
           final firstName = (author.firstName ?? '').toLowerCase();
           final lastName = (author.lastName ?? '').toLowerCase();
-          final email = (author.email ?? '').toLowerCase();
+          final email = author.email.toLowerCase();
           return displayName.contains(query) ||
               firstName.contains(query) ||
               lastName.contains(query) ||
@@ -185,18 +367,184 @@ class _UserManagementPageState extends State<UserManagementPage>
   }
 
 // Show add author dialog
-void _showAddAuthorDialog() {
-  _showSnackBar('Add Author dialog coming soon!', isSuccess: true);
-}
+
 
 // Show add author dialog methods (simplified for now)
 void _showViewAuthorDialog(AuthorModel.Author author) {
-  _showSnackBar('View Author details coming soon!', isSuccess: true);
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (BuildContext context) {
+      return Dialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Container(
+          width: MediaQuery.of(context).size.width * 0.9,
+          constraints: const BoxConstraints(
+            maxWidth: 450,
+            maxHeight: 500,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: const BoxDecoration(
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(20),
+                    topRight: Radius.circular(20),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.person,
+                        color: Colors.orange,
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Text(
+                        'View Author',
+                        style: GoogleFonts.montserrat(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.orange,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () => Navigator.of(context).pop(),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(
+                          Icons.close,
+                          color: Colors.red,
+                          size: 20,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                height: 1,
+                color: Colors.grey[300],
+              ),
+              const SizedBox(height: 24),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Author ID : ${author.id}', style: GoogleFonts.montserrat(fontSize: 14, color: Colors.grey[600], fontWeight: FontWeight.w500)),
+                      const SizedBox(height: 16),
+                      Text('Name : ${author.firstName ?? ''} ${author.lastName ?? ''}', style: GoogleFonts.montserrat(fontSize: 14, color: Colors.grey[600], fontWeight: FontWeight.w500)),
+                      const SizedBox(height: 16),
+                      Text('Email : ${author.email}', style: GoogleFonts.montserrat(fontSize: 14, color: Colors.grey[600], fontWeight: FontWeight.w500)),
+                      const SizedBox(height: 16),
+                      // No username field for Author
+                      const SizedBox(height: 24),
+                      if (MediaQuery.of(context).size.width < 600)
+                        Container(
+                          height: 1,
+                          color: Colors.grey[300],
+                          margin: const EdgeInsets.symmetric(vertical: 24),
+                        )
+                      else
+                        Center(
+                          child: Container(
+                            width: 1,
+                            height: 150,
+                            color: Colors.grey[300],
+                            margin: const EdgeInsets.symmetric(horizontal: 24),
+                          ),
+                        ),
+                      const SizedBox(height: 24),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Created by :',
+                            style: GoogleFonts.montserrat(
+                              fontSize: 14,
+                              color: Colors.grey[600],
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Mr. XYZ',
+                            style: GoogleFonts.montserrat(
+                              fontSize: 16,
+                              color: Colors.black87,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            '(Admin)',
+                            style: GoogleFonts.montserrat(
+                              fontSize: 14,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 32),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: Text(
+                      'CLOSE',
+                      style: GoogleFonts.montserrat(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+            ],
+          ),
+        ),
+      );
+    },
+  );
 }
 
-void _showEditAuthorDialog(AuthorModel.Author author) {
-  _showSnackBar('Edit Author dialog coming soon!', isSuccess: true);
-}
+
 
 
   Widget _buildLoadingState(String message) {
@@ -469,7 +817,7 @@ void _showEditAuthorDialog(AuthorModel.Author author) {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            if (author.email != null && author.email!.isNotEmpty)
+                            if (author.email.isNotEmpty)
                               Row(
                                 children: [
                                   Icon(
@@ -480,7 +828,7 @@ void _showEditAuthorDialog(AuthorModel.Author author) {
                                   const SizedBox(width: 6),
                                   Expanded( // Ensure email text doesn't overflow
                                     child: Text(
-                                      author.email!,
+                                      author.email,
                                       style: GoogleFonts.montserrat(
                                         fontSize: 10,
                                         color: Colors.teal[700],
@@ -494,7 +842,7 @@ void _showEditAuthorDialog(AuthorModel.Author author) {
                               ),
                             if (author.contactNo != null && author.contactNo!.isNotEmpty)
                               Padding(
-                                padding: EdgeInsets.only(top: author.email != null ? 4.0 : 0.0), // Add spacing if email is present
+                                padding: EdgeInsets.only(top: author.email.isNotEmpty ? 4.0 : 0.0), // Add spacing if email is present
                                 child: Row(
                                   children: [
                                     Icon(
@@ -545,7 +893,7 @@ void _showEditAuthorDialog(AuthorModel.Author author) {
                                     ),
                                   ),
                                   Text(
-                                    author.booksPublished?.toString() ?? '0',
+                                    author.booksPublished.toString(),
                                     style: GoogleFonts.montserrat(
                                       fontSize: 16,
                                       color: Colors.amber[700],
@@ -603,9 +951,9 @@ void _showEditAuthorDialog(AuthorModel.Author author) {
                             onTap: () => _toggleAuthorVerification(author),
                           ),
                           _buildIconOnlyActionButton(
-                            icon: Icons.edit,
-                            color: Colors.purple,
-                            onTap: () => _showEditAuthorDialog(author),
+                            icon: Icons.delete,
+                            color: Colors.red,
+                            onTap: () => _deleteAuthor(author),
                           ),
                         ],
                       ),
@@ -707,13 +1055,13 @@ void _showEditAuthorDialog(AuthorModel.Author author) {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         // User details
-                        _buildViewDetailItem('User ID :', '${user['id']}'),
+                        Text('User ID : ${user['id']}', style: GoogleFonts.montserrat(fontSize: 14, color: Colors.grey[600], fontWeight: FontWeight.w500)),
                         const SizedBox(height: 16),
-                        _buildViewDetailItem('Name :', '${user['first_name'] ?? ''} ${user['last_name'] ?? ''}'),
+                        Text('Name : ${user['first_name'] ?? ''} ${user['last_name'] ?? ''}', style: GoogleFonts.montserrat(fontSize: 14, color: Colors.grey[600], fontWeight: FontWeight.w500)),
                         const SizedBox(height: 16),
-                        _buildViewDetailItem('Email :', user['email'] ?? 'N/A'),
+                        Text('Email : ${user['email'] ?? 'N/A'}', style: GoogleFonts.montserrat(fontSize: 14, color: Colors.grey[600], fontWeight: FontWeight.w500)),
                         const SizedBox(height: 16),
-                        _buildViewDetailItem('Username :', user['username'] ?? 'N/A'),
+                        Text('Username : ${user['username'] ?? 'N/A'}', style: GoogleFonts.montserrat(fontSize: 14, color: Colors.grey[600], fontWeight: FontWeight.w500)),
                         const SizedBox(height: 24), // Spacing before divider
 
                         // Divider for smaller screens
@@ -807,9 +1155,7 @@ void _showEditAuthorDialog(AuthorModel.Author author) {
 
 
 
-  void _showEditUserDialog(Map<String, dynamic> user) {
-    _showSnackBar('Edit User dialog coming soon!', isSuccess: true);
-  }
+
 
 
 
@@ -1128,26 +1474,6 @@ void _showEditAuthorDialog(AuthorModel.Author author) {
                             color: Colors.orange,
                             onTap: _showFilterDialog,
                           ),
-                          const SizedBox(width: 8),
-                          _buildActionButton(
-                            icon: Icons.picture_as_pdf,
-                            text: 'Report',
-                            color: Colors.green,
-                            onTap: _generateReport,
-                          ),
-                          const SizedBox(width: 8),
-                          _buildActionButton(
-                            icon: Icons.add,
-                            text: _tabController.index == 0 ? 'Add User' : 'Add Author',
-                            color: const Color(0xFF0096C7),
-                            onTap: () {
-                              if (_tabController.index == 0) {
-                                _showAddUserDialog();
-                              } else {
-                                _showAddAuthorDialog();
-                              }
-                            },
-                          ),
                         ],
                       ),
                     ),
@@ -1219,26 +1545,6 @@ void _showEditAuthorDialog(AuthorModel.Author author) {
                               text: 'Filter',
                               color: Colors.orange,
                               onTap: _showFilterDialog,
-                            ),
-                            const SizedBox(width: 8),
-                            _buildActionButton(
-                              icon: Icons.picture_as_pdf,
-                              text: 'Report',
-                              color: Colors.green,
-                              onTap: _generateReport,
-                            ),
-                            const SizedBox(width: 8),
-                            _buildActionButton(
-                              icon: Icons.add,
-                              text: _tabController.index == 0 ? 'Add User' : 'Add Author',
-                              color: const Color(0xFF0096C7),
-                              onTap: () {
-                                if (_tabController.index == 0) {
-                                  _showAddUserDialog();
-                                } else {
-                                  _showAddAuthorDialog();
-                                }
-                              },
                             ),
                           ],
                         ),
@@ -1548,7 +1854,7 @@ void _showEditAuthorDialog(AuthorModel.Author author) {
               final user = _filteredUsers[index];
               // Use the model's properties directly
               final isActive = user.isActive;
-              final role = user.role ?? 'user';
+
               final createdAt = user.createdAt;
               
               return Container(
@@ -1601,33 +1907,9 @@ void _showEditAuthorDialog(AuthorModel.Author author) {
                               ),
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: role == 'admin' 
-                                  ? Colors.purple.withOpacity(0.1)
-                                  : Colors.blue.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              role.toUpperCase(),
-                              style: GoogleFonts.montserrat(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                color: role == 'admin' ? Colors.purple[700] : Colors.blue[700],
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                          ),
                         ],
                       ),
-                      
                       const SizedBox(height: 12),
-                      
                       // User Avatar and Name
                       Row(
                         children: [
@@ -1635,24 +1917,39 @@ void _showEditAuthorDialog(AuthorModel.Author author) {
                             width: 40,
                             height: 40,
                             decoration: BoxDecoration(
-                              color: const Color(0xFF0096C7).withOpacity(0.1),
+                              color: Colors.grey[200],
                               borderRadius: BorderRadius.circular(20),
                             ),
-                            child: Icon(
-                              Icons.person,
-                              color: const Color(0xFF0096C7),
-                              size: 24,
-                            ),
+                            child: user.photoUrl != null && user.photoUrl!.isNotEmpty
+                              ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(20),
+                                  child: Image.network(
+                                    user.photoUrl!,
+                                    width: 40,
+                                    height: 40,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return Icon(
+                                        Icons.person,
+                                        color: Colors.grey[600],
+                                        size: 24,
+                                      );
+                                    },
+                                  ),
+                                )
+                              : Icon(
+                                  Icons.person,
+                                  color: Colors.grey[600],
+                                  size: 24,
+                                ),
                           ),
                           const SizedBox(width: 12),
-                          Expanded(
+                          Flexible(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  user.fullName.trim().isNotEmpty 
-                                      ? user.fullName
-                                      : user.username ?? 'Unknown User',
+                                  "${user.firstName ?? ''} ${user.lastName ?? ''}".trim(),
                                   style: GoogleFonts.montserrat(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w700,
@@ -1675,9 +1972,7 @@ void _showEditAuthorDialog(AuthorModel.Author author) {
                           ),
                         ],
                       ),
-                      
                       const SizedBox(height: 12),
-                      
                       // Email Section
                       Container(
                         width: double.infinity,
@@ -1696,7 +1991,7 @@ void _showEditAuthorDialog(AuthorModel.Author author) {
                             const SizedBox(width: 6),
                             Expanded(
                               child: Text(
-                                user.email ?? 'No email',
+                                user.email,
                                 style: GoogleFonts.montserrat(
                                   fontSize: 11,
                                   color: Colors.blue[700],
@@ -1709,9 +2004,7 @@ void _showEditAuthorDialog(AuthorModel.Author author) {
                           ],
                         ),
                       ),
-                      
                       const SizedBox(height: 12),
-                      
                       // Footer with join date and actions
                       Row(
                         children: [
@@ -1756,9 +2049,9 @@ void _showEditAuthorDialog(AuthorModel.Author author) {
                               ),
                               const SizedBox(width: 8),
                               _buildIconOnlyActionButton(
-                                icon: Icons.edit,
-                                color: Colors.orange,
-                                onTap: () => _showEditUserDialog(user.toMap()),
+                                icon: Icons.delete,
+                                color: Colors.red,
+                                onTap: () => _deleteUser(user),
                               ),
                             ],
                           ),
@@ -1804,217 +2097,7 @@ void _showEditAuthorDialog(AuthorModel.Author author) {
 
 
 
-  void _showAddUserDialog() {
-    final nameController = TextEditingController();
-    final emailController = TextEditingController();
-    final usernameController = TextEditingController();
-    final passwordController = TextEditingController();
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Container(
-            width: MediaQuery.of(context).size.width * 0.9,
-            constraints: BoxConstraints(
-              maxWidth: 500,
-              maxHeight: MediaQuery.of(context).size.height * 0.7,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Header with close button
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: const BoxDecoration(
-                    borderRadius: BorderRadius.only(
-                      topLeft: Radius.circular(20),
-                      topRight: Radius.circular(20),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF0096C7).withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(
-                          Icons.person_add,
-                          color: Color(0xFF0096C7),
-                          size: 24,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Text(
-                          'Add New User',
-                          style: GoogleFonts.montserrat(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: const Color(0xFF0096C7),
-                          ),
-                        ),
-                      ),
-                      GestureDetector(
-                        onTap: () => Navigator.of(context).pop(),
-                        child: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: Colors.red.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Icon(
-                            Icons.close,
-                            color: Colors.red,
-                            size: 20,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Divider(height: 1),
-                // Form content
-                Flexible(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      children: [
-                        // Name field
-                        _buildTextField(
-                          controller: nameController,
-                          label: 'Full Name',
-                          hint: 'Enter full name',
-                        ),
-                        const SizedBox(height: 16),
-                        // Email field
-                        _buildTextField(
-                          controller: emailController,
-                          label: 'Email',
-                          hint: 'Enter email address',
-                          keyboardType: TextInputType.emailAddress,
-                        ),
-                        const SizedBox(height: 16),
-                        // Username and Password row
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _buildTextField(
-                                controller: usernameController,
-                                label: 'Username',
-                                hint: 'Enter username',
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: _buildTextField(
-                                controller: passwordController,
-                                label: 'Password',
-                                hint: 'Enter password',
-                                isPassword: true,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 32),
-                        // Action buttons
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _buildDialogActionButton(
-                                text: 'CANCEL',
-                                backgroundColor: Colors.grey[300]!,
-                                textColor: Colors.grey[700]!,
-                                onPressed: () => Navigator.of(context).pop(),
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: _buildDialogActionButton(
-                                text: 'ADD USER',
-                                backgroundColor: const Color(0xFF0096C7),
-                                textColor: Colors.white,
-                                onPressed: () {
-                                  _saveUser(
-                                    name: nameController.text,
-                                    email: emailController.text,
-                                    username: usernameController.text,
-                                    password: passwordController.text,
-                                  );
-                                  Navigator.of(context).pop();
-                                },
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildViewDetailItem(String label, String value) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: GoogleFonts.montserrat(
-            fontSize: 14,
-            color: Colors.grey[600],
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(
-                color: Colors.grey[300]!,
-                width: 1,
-              ),
-            ),
-          ),
-          child: Text(
-            value,
-            style: GoogleFonts.montserrat(
-              fontSize: 16,
-              color: Colors.black87,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  void _saveUser({
-    required String name,
-    required String email,
-    required String username,
-    required String password,
-  }) {
-    // Here you would implement the actual save logic
-    // For now, we'll just show a success message
-    _showSnackBar(
-      'User "$name" added successfully!',
-      isSuccess: true,
-    );
-  }
 
   void _showSnackBar(String message, {bool isSuccess = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -2032,86 +2115,6 @@ void _showEditAuthorDialog(AuthorModel.Author author) {
     );
   }
 
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String label,
-    required String hint,
-    TextInputType? keyboardType,
-    bool isPassword = false,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        TextField(
-          controller: controller,
-          keyboardType: keyboardType,
-          obscureText: isPassword,
-          decoration: InputDecoration(
-            hintText: hint,
-            hintStyle: GoogleFonts.montserrat(
-              color: Colors.grey[400],
-              fontSize: 14,
-            ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.grey[300]!),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.grey[300]!),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Color(0xFF0096C7), width: 2),
-            ),
-            filled: true,
-            fillColor: Colors.grey[50],
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 16,
-            ),
-          ),
-          style: GoogleFonts.montserrat(
-            fontSize: 14,
-            color: Colors.black87,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildDialogActionButton({
-    required String text,
-    required Color backgroundColor,
-    required Color textColor,
-    required VoidCallback onPressed,
-  }) {
-    return Container(
-      width: double.infinity,
-      height: 48,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: ElevatedButton(
-        onPressed: onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: backgroundColor,
-          foregroundColor: textColor,
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-        child: Text(
-          text,
-          style: GoogleFonts.montserrat(
-            fontWeight: FontWeight.w600,
-            fontSize: 14,
-          ),
-        ),
-      ),
-    );
-  }
 
   Widget _buildMainContentSliver() {
     if (_isLoading) {
@@ -2148,52 +2151,69 @@ void _showEditAuthorDialog(AuthorModel.Author author) {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF4F8FB),
-      body: Stack(
-        children: [
-          // Main Content - Everything scrollable together
-          CustomScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            slivers: [
-              // Header as a sliver that scrolls
-              SliverToBoxAdapter(
-                child: _buildHeader(),
+      body: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          FocusScope.of(context).unfocus(); // hides keyboard when tapping outside
+        },
+        child: Stack(
+          children: [
+            // Main Content - Everything scrollable together
+            Column(
+              children: [
+                _buildHeader(),
+                Expanded(
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      // Users Tab
+                      SingleChildScrollView(
+                        child: Column(
+                          children: [
+                            _buildSearchAndActions(),
+                            _buildUsersTable(),
+                            const SizedBox(height: 24),
+                          ],
+                        ),
+                      ),
+                      // Authors Tab
+                      SingleChildScrollView(
+                        child: Column(
+                          children: [
+                            _buildSearchAndActions(),
+                            _buildAuthorsTable(),
+                            const SizedBox(height: 24),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            // Sidebar Overlay
+            if (_isSidebarOpen)
+              GestureDetector(
+                onTap: _toggleSidebar,
+                child: Container(
+                  color: Colors.black.withOpacity(0.5),
+                  width: double.infinity,
+                  height: double.infinity,
+                ),
               ),
-              // Search and Actions as a sliver that scrolls
-              SliverToBoxAdapter(
-                child: _buildSearchAndActions(),
-              ),
-              // Main content as a sliver
-              SliverToBoxAdapter(
-                child: _buildMainContentSliver(),
-              ),
-              // Bottom spacing
-              const SliverToBoxAdapter(
-                child: SizedBox(height: 24),
-              ),
-            ],
-          ),
-          // Sidebar Overlay
-          if (_isSidebarOpen)
-            GestureDetector(
-              onTap: _toggleSidebar,
-              child: Container(
-                color: Colors.black.withOpacity(0.5),
-                width: double.infinity,
-                height: double.infinity,
+            // Sidebar
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 300),
+              left: _isSidebarOpen ? 0 : -280,
+              top: 0,
+              bottom: 0,
+              child: AdminSidebar(
+                onItemTap: _handleSidebarTap,
+                activePage: 'Users',
               ),
             ),
-          // Sidebar
-          AnimatedPositioned(
-            duration: const Duration(milliseconds: 300),
-            left: _isSidebarOpen ? 0 : -280,
-            top: 0,
-            bottom: 0,
-            child: AdminSidebar(
-              onItemTap: _handleSidebarTap,
-              activePage: 'Users',
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

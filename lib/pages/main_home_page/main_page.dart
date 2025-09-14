@@ -3,7 +3,7 @@ import 'dart:math' show log, pow;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
-import 'package:talehive/pages/pdf_preview/pdf_preview_page.dart';
+import 'package:Talehive/pages/pdf_preview/pdf_preview_page.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';

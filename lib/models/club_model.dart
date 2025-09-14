@@ -1,4 +1,3 @@
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 class Club {
   final String id;
@@ -12,25 +11,29 @@ class Club {
   final DateTime createdAt;
   final DateTime updatedAt;
 
+  // Approval status (pending, approved, rejected)
+  final String? approvalStatus;
+
   // Author info (joined from authors table)
   final String? authorFirstName;
   final String? authorLastName;
   final String? authorPhotoUrl;
 
   Club({
-    required this.id,
-    required this.name,
-    required this.description,
-    required this.authorId,
-    this.coverImageUrl,
-    required this.isPremium,
-    required this.membershipPrice,
-    required this.isActive,
-    required this.createdAt,
-    required this.updatedAt,
-    this.authorFirstName,
-    this.authorLastName,
-    this.authorPhotoUrl,
+  required this.id,
+  required this.name,
+  required this.description,
+  required this.authorId,
+  this.coverImageUrl,
+  required this.isPremium,
+  required this.membershipPrice,
+  required this.isActive,
+  required this.createdAt,
+  required this.updatedAt,
+  this.approvalStatus,
+  this.authorFirstName,
+  this.authorLastName,
+  this.authorPhotoUrl,
   });
 
   factory Club.fromJson(Map<String, dynamic> json) {
@@ -45,6 +48,7 @@ class Club {
       isActive: json['is_active'] as bool,
       createdAt: DateTime.parse(json['created_at']),
       updatedAt: DateTime.parse(json['updated_at']),
+      approvalStatus: json['approval_status'] as String?,
       authorFirstName: json['author_first_name'] as String?,
       authorLastName: json['author_last_name'] as String?,
       authorPhotoUrl: json['author_photo_url'] as String?,
@@ -63,6 +67,7 @@ class Club {
       'is_active': isActive,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
+      'approval_status': approvalStatus,
     };
   }
 
@@ -74,19 +79,20 @@ class Club {
   }
 
   Club copyWith({
-    String? id,
-    String? name,
-    String? description,
-    String? authorId,
-    String? coverImageUrl,
-    bool? isPremium,
-    double? membershipPrice,
-    bool? isActive,
-    DateTime? createdAt,
-    DateTime? updatedAt,
-    String? authorFirstName,
-    String? authorLastName,
-    String? authorPhotoUrl,
+  String? id,
+  String? name,
+  String? description,
+  String? authorId,
+  String? coverImageUrl,
+  bool? isPremium,
+  double? membershipPrice,
+  bool? isActive,
+  DateTime? createdAt,
+  DateTime? updatedAt,
+  String? approvalStatus,
+  String? authorFirstName,
+  String? authorLastName,
+  String? authorPhotoUrl,
   }) {
     return Club(
       id: id ?? this.id,
@@ -99,6 +105,7 @@ class Club {
       isActive: isActive ?? this.isActive,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      approvalStatus: approvalStatus ?? this.approvalStatus,
       authorFirstName: authorFirstName ?? this.authorFirstName,
       authorLastName: authorLastName ?? this.authorLastName,
       authorPhotoUrl: authorPhotoUrl ?? this.authorPhotoUrl,

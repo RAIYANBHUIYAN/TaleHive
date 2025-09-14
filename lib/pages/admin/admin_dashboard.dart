@@ -23,17 +23,20 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   bool _isLoading = true;
   
   // Dashboard stats
-  Map<String, int> _stats = {
+  Map<String, dynamic> _stats = {
     'users': 0,
     'authors': 0,
     'books': 0,
     'requests': 0,
+    'total_revenue': 0.0,
+    'monthly_revenue': 0.0,
   };
 
   // Real user data
   List<Map<String, dynamic>> _recentUsers = [];
   List<Map<String, dynamic>> _currentReaders = [];
   Map<String, dynamic> _analyticsData = {};
+  List<Map<String, dynamic>> _clubRevenueData = [];
 
   @override
   void initState() {
@@ -59,6 +62,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         _loadRecentUsers(),
         _loadCurrentReaders(),
         _loadAnalyticsData(),
+        _loadRevenueData(),
       ]);
     } catch (e) {
       print('Error loading dashboard data: $e');
@@ -69,6 +73,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           'authors': 25,
           'books': 1500,
           'requests': 67,
+          'total_revenue': 0.0,
+          'monthly_revenue': 0.0,
         };
       });
     } finally {
@@ -215,6 +221,154 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       });
     } catch (e) {
       print('Error loading analytics data: $e');
+    }
+  }
+
+  // Load revenue data from club_payments table
+  Future<void> _loadRevenueData() async {
+    double totalRevenue = 0.0;
+    double monthlyRevenue = 0.0;
+    
+    try {
+      print('🔍 Loading revenue data...');
+      
+      // First, let's check what data exists in the table
+      final allPayments = await supabase
+          .from('club_payments')
+          .select('id, platform_share, status, created_at');
+      
+      print('📊 Total payments in table: ${allPayments.length}');
+      
+      if (allPayments.isNotEmpty) {
+        print('📋 Sample payment statuses:');
+        for (int i = 0; i < allPayments.length && i < 5; i++) {
+          final payment = allPayments[i];
+          print('   Status: "${payment['status']}", Platform Share: ${payment['platform_share']}');
+        }
+      }
+
+      // Get total platform revenue (only use 'completed' status since that's what exists)
+      final totalRevenueResponse = await supabase
+          .from('club_payments')
+          .select('platform_share, status')
+          .eq('status', 'completed');
+
+      print('💰 Payments with completed status: ${totalRevenueResponse.length}');
+
+      for (final payment in totalRevenueResponse) {
+        final platformShare = (payment['platform_share'] as num?)?.toDouble() ?? 0.0;
+        totalRevenue += platformShare;
+        print('   Adding: \$${platformShare.toStringAsFixed(2)} (Status: ${payment['status']})');
+      }
+
+      print('💵 Total calculated revenue: \$${totalRevenue.toStringAsFixed(2)}');
+
+      // Get this month's revenue
+      final thisMonth = DateTime.now();
+      final firstDayOfMonth = DateTime(thisMonth.year, thisMonth.month, 1);
+      
+      final monthlyRevenueResponse = await supabase
+          .from('club_payments')
+          .select('platform_share, status')
+          .eq('status', 'completed')
+          .gte('created_at', firstDayOfMonth.toIso8601String());
+
+      for (final payment in monthlyRevenueResponse) {
+        monthlyRevenue += (payment['platform_share'] as num?)?.toDouble() ?? 0.0;
+      }
+
+      print('📅 Monthly revenue: \$${monthlyRevenue.toStringAsFixed(2)}');
+
+      // Get club-wise revenue breakdown (simplified query)
+      final clubRevenueResponse = await supabase
+          .from('club_payments')
+          .select('club_id, platform_share, amount')
+          .eq('status', 'completed')
+          .order('created_at', ascending: false);
+
+      print('🏆 Club payments found: ${clubRevenueResponse.length}');
+
+      // Get club details separately
+      final Map<String, Map<String, dynamic>> clubTotals = {};
+      
+      for (final payment in clubRevenueResponse) {
+        final clubId = payment['club_id'] as String;
+        final platformShare = (payment['platform_share'] as num?)?.toDouble() ?? 0.0;
+        final totalAmount = (payment['amount'] as num?)?.toDouble() ?? 0.0;
+        
+        if (clubTotals.containsKey(clubId)) {
+          clubTotals[clubId]!['platform_revenue'] = (clubTotals[clubId]!['platform_revenue'] as double) + platformShare;
+          clubTotals[clubId]!['total_revenue'] = (clubTotals[clubId]!['total_revenue'] as double) + totalAmount;
+          clubTotals[clubId]!['payment_count'] = (clubTotals[clubId]!['payment_count'] as int) + 1;
+        } else {
+          clubTotals[clubId] = {
+            'club_title': 'Loading...',
+            'author_name': 'Loading...',
+            'platform_revenue': platformShare,
+            'total_revenue': totalAmount,
+            'payment_count': 1,
+          };
+        }
+      }
+
+      // Now get club details for each club ID
+      for (final clubId in clubTotals.keys) {
+        try {
+          final clubDetails = await supabase
+              .from('clubs')
+              .select('name, author_id')
+              .eq('id', clubId)
+              .single();
+          
+          // Get author details from authors table
+          final authorDetails = await supabase
+              .from('authors')
+              .select('first_name, last_name')
+              .eq('id', clubDetails['author_id'])
+              .single();
+          
+          final authorName = '${authorDetails['first_name'] ?? ''} ${authorDetails['last_name'] ?? ''}'.trim();
+          
+          clubTotals[clubId]!['club_title'] = clubDetails['name'] ?? 'Unknown Club';
+          clubTotals[clubId]!['author_name'] = authorName.isEmpty ? 'Unknown Author' : authorName;
+        } catch (e) {
+          print('Error loading details for club $clubId: $e');
+          clubTotals[clubId]!['club_title'] = 'Unknown Club';
+          clubTotals[clubId]!['author_name'] = 'Unknown Author';
+        }
+      }
+
+      // Convert to list and sort by platform revenue
+      final clubRevenueList = clubTotals.entries
+          .map((entry) => {
+                'club_id': entry.key,
+                ...entry.value,
+              })
+          .toList();
+      
+      clubRevenueList.sort((a, b) => 
+          (b['platform_revenue'] as double).compareTo(a['platform_revenue'] as double));
+
+      print('🎯 About to update UI with revenue data...');
+      print('   Total Revenue: \$${totalRevenue.toStringAsFixed(2)}');
+      print('   Monthly Revenue: \$${monthlyRevenue.toStringAsFixed(2)}');
+      print('   Club Revenue Items: ${clubRevenueList.length}');
+
+      setState(() {
+        _stats['total_revenue'] = totalRevenue;
+        _stats['monthly_revenue'] = monthlyRevenue;
+        _clubRevenueData = clubRevenueList.take(10).toList(); // Top 10 clubs
+      });
+      
+      print('✅ UI state updated successfully!');
+    } catch (e) {
+      print('Error loading revenue data: $e');
+      // Even if there's an error, set the basic revenue data we calculated successfully
+      setState(() {
+        _stats['total_revenue'] = totalRevenue;
+        _stats['monthly_revenue'] = monthlyRevenue;
+        _clubRevenueData = []; // Empty list if club details failed
+      });
     }
   }
 
@@ -633,6 +787,29 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                   ),
                 ],
               ),
+              const SizedBox(height: 16),
+              // Third row - Revenue Cards
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildStatCard(
+                      icon: Icons.attach_money,
+                      value: '\$${((_stats['total_revenue'] as double?) ?? 0.0).toStringAsFixed(2)}',
+                      label: 'Total Revenue',
+                      isRevenue: true,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: _buildStatCard(
+                      icon: Icons.trending_up,
+                      value: '\$${((_stats['monthly_revenue'] as double?) ?? 0.0).toStringAsFixed(2)}',
+                      label: 'Monthly Revenue',
+                      isRevenue: true,
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
           
@@ -694,6 +871,20 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                     ),
                   ],
                 ),
+              ),
+              const SizedBox(height: 16),
+              // Club Revenue Card for Mobile
+              _buildInfoCard(
+                title: '💰 Top Revenue Clubs',
+                content: _clubRevenueData.isEmpty
+                    ? const Center(child: Padding(
+                        padding: EdgeInsets.all(20.0),
+                        child: Text('No revenue data found',
+                                   style: TextStyle(color: Colors.grey)),
+                      ))
+                    : Column(
+                        children: _clubRevenueData.map((club) => _buildClubRevenueItem(club: club)).toList(),
+                      ),
               ),
             ],
           ),
@@ -814,6 +1005,39 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 16),
+                // Revenue Stats Row
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: _buildStatCard(
+                        icon: Icons.attach_money,
+                        value: '\$${((_stats['total_revenue'] as double?) ?? 0.0).toStringAsFixed(2)}',
+                        label: 'Total Platform Revenue',
+                        isRevenue: true,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      flex: 2,
+                      child: _buildStatCard(
+                        icon: Icons.trending_up,
+                        value: '\$${((_stats['monthly_revenue'] as double?) ?? 0.0).toStringAsFixed(2)}',
+                        label: 'Monthly Revenue',
+                        isRevenue: true,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: _buildStatCard(
+                        icon: Icons.business_center,
+                        value: _clubRevenueData.length.toString(),
+                        label: 'Revenue Clubs',
+                      ),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 24),
                 // Bottom Cards Row
                 Expanded(
@@ -873,6 +1097,18 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                           ),
                         ),
                       ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: _buildInfoCard(
+                          title: '💰 Top Revenue Clubs',
+                          content: _clubRevenueData.isEmpty
+                              ? const Center(child: Text('No revenue data found',
+                                               style: TextStyle(color: Colors.grey)))
+                              : ListView(
+                                  children: _clubRevenueData.map((club) => _buildClubRevenueItem(club: club)).toList(),
+                                ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -912,6 +1148,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     required IconData icon,
     required String value,
     required String label,
+    bool isRevenue = false,
   }) {
     final bool isMobile = MediaQuery.of(context).size.width < 768;
     
@@ -927,13 +1164,19 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             offset: const Offset(0, 2),
           ),
         ],
+        border: isRevenue ? Border.all(
+          color: const Color(0xFF0096C7).withOpacity(0.3),
+          width: 1,
+        ) : null,
       ),
       child: isMobile ? Column(
         children: [
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: const Color(0xFFE3F4F6),
+              color: isRevenue 
+                  ? const Color(0xFF0096C7).withOpacity(0.1)
+                  : const Color(0xFFE3F4F6),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(
@@ -947,7 +1190,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             value,
             style: GoogleFonts.montserrat(
               fontWeight: FontWeight.bold,
-              fontSize: 20,
+              fontSize: isRevenue ? 16 : 20,
               color: const Color(0xFF2D3748),
             ),
           ),
@@ -966,7 +1209,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: const Color(0xFFE3F4F6),
+              color: isRevenue 
+                  ? const Color(0xFF0096C7).withOpacity(0.1)
+                  : const Color(0xFFE3F4F6),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(
@@ -1523,6 +1768,127 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                   ),
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Build club revenue item widget
+  Widget _buildClubRevenueItem({required Map<String, dynamic> club}) {
+    final bool isMobile = MediaQuery.of(context).size.width < 768;
+    
+    final clubTitle = club['club_title'] as String? ?? 'Unknown Club';
+    final authorName = club['author_name'] as String? ?? 'Unknown Author';
+    final platformRevenue = club['platform_revenue'] as double? ?? 0.0;
+    final totalRevenue = club['total_revenue'] as double? ?? 0.0;
+    final paymentCount = club['payment_count'] as int? ?? 0;
+    
+    return Container(
+      margin: EdgeInsets.only(bottom: 8, left: isMobile ? 16 : 20, right: isMobile ? 16 : 20),
+      padding: EdgeInsets.all(isMobile ? 12 : 16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8F9FA),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: const Color(0xFF0096C7).withOpacity(0.2),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: isMobile ? 16 : 20,
+            backgroundColor: const Color(0xFF0096C7),
+            child: Icon(
+              Icons.monetization_on,
+              color: Colors.white,
+              size: isMobile ? 16 : 20,
+            ),
+          ),
+          SizedBox(width: isMobile ? 8 : 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  clubTitle.length > 25 
+                      ? '${clubTitle.substring(0, 25)}...'
+                      : clubTitle,
+                  style: GoogleFonts.montserrat(
+                    fontWeight: FontWeight.w600,
+                    fontSize: isMobile ? 12 : 14,
+                    color: const Color(0xFF2D3748),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'By $authorName',
+                  style: GoogleFonts.montserrat(
+                    fontSize: isMobile ? 10 : 12,
+                    color: Colors.grey[600],
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Text(
+                      'Platform: \$${platformRevenue.toStringAsFixed(2)}',
+                      style: GoogleFonts.montserrat(
+                        fontSize: isMobile ? 9 : 11,
+                        color: const Color(0xFF0096C7),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (!isMobile) ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        '• Total: \$${totalRevenue.toStringAsFixed(2)}',
+                        style: GoogleFonts.montserrat(
+                          fontSize: 11,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+          if (!isMobile) ...[
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  '$paymentCount',
+                  style: GoogleFonts.montserrat(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: const Color(0xFF0096C7),
+                  ),
+                ),
+                Text(
+                  'payments',
+                  style: GoogleFonts.montserrat(
+                    fontSize: 10,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(width: 12),
+          ],
+          Container(
+            padding: EdgeInsets.all(isMobile ? 2 : 4),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0096C7).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Icon(
+              Icons.trending_up,
+              color: const Color(0xFF0096C7),
+              size: isMobile ? 12 : 16,
             ),
           ),
         ],
