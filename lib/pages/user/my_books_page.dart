@@ -100,6 +100,11 @@ class _MyBooksPageState extends State<MyBooksPage> {
     }
   }
 
+  Future<void> _refreshMyBooks() async {
+    await _loadMyBooks();
+    _showSnackBar('📚 My books refreshed!');
+  }
+
   List<Map<String, dynamic>> _processBookRequests(List<dynamic> requests, Map<String, Map<String, dynamic>> booksMap) {
     return requests.map((request) {
       final bookId = request['book_id']?.toString() ?? '';
@@ -191,18 +196,16 @@ class _MyBooksPageState extends State<MyBooksPage> {
           ),
         ),
         centerTitle: true,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh, color: Color(0xFF22223b)),
-            onPressed: _loadMyBooks,
-          ),
-        ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF0096C7)))
-          : _myBooks.isEmpty
-              ? _buildEmptyState(screenWidth)
-              : _buildBooksGrid(_myBooks, screenWidth),
+      body: RefreshIndicator(
+        onRefresh: _refreshMyBooks,
+        color: const Color(0xFF0096C7),
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator(color: Color(0xFF0096C7)))
+            : _myBooks.isEmpty
+                ? _buildEmptyState(screenWidth)
+                : _buildBooksGrid(_myBooks, screenWidth),
+      ),
     );
   }
 
@@ -214,7 +217,7 @@ class _MyBooksPageState extends State<MyBooksPage> {
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: GridView.builder(
-        physics: const BouncingScrollPhysics(),
+        physics: const AlwaysScrollableScrollPhysics(),
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: _getGridCrossAxisCount(screenWidth),
           crossAxisSpacing: 16,
@@ -230,70 +233,73 @@ class _MyBooksPageState extends State<MyBooksPage> {
   }
 
   Widget _buildEmptyState(double screenWidth) {
-    return SafeArea(
-      child: SingleChildScrollView(
-        child: Container(
-          width: screenWidth,
-          padding: EdgeInsets.symmetric(
-            horizontal: screenWidth * 0.1,
-            vertical: 60,
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0096C7).withOpacity(0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.book_outlined,
-                  size: 64,
-                  color: Color(0xFF0096C7),
-                ),
-              ),
-              const SizedBox(height: 24),
-              Text(
-                'No Requested Books',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.montserrat(
-                  fontSize: screenWidth < 400 ? 20 : 24,
-                  fontWeight: FontWeight.bold,
-                  color: const Color(0xFF22223b),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'You haven\'t requested any books yet.\nBrowse the library and request books you\'d like to read!',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.montserrat(
-                  fontSize: screenWidth < 400 ? 14 : 16,
-                  color: const Color(0xFF64748B),
-                  height: 1.5,
-                ),
-              ),
-              const SizedBox(height: 32),
-              ElevatedButton.icon(
-                onPressed: () => Navigator.pop(context),
-                icon: const Icon(Icons.explore),
-                label: Text(
-                  'Browse Library',
-                  style: GoogleFonts.montserrat(fontWeight: FontWeight.w600),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0096C7),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(25),
+    return CustomScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      slivers: [
+        SliverFillRemaining(
+          child: Container(
+            width: screenWidth,
+            padding: EdgeInsets.symmetric(
+              horizontal: screenWidth * 0.1,
+              vertical: 60,
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0096C7).withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.book_outlined,
+                    size: 64,
+                    color: Color(0xFF0096C7),
                   ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 24),
+                Text(
+                  'No Requested Books',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.montserrat(
+                    fontSize: screenWidth < 400 ? 20 : 24,
+                    fontWeight: FontWeight.bold,
+                    color: const Color(0xFF22223b),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'You haven\'t requested any books yet.\nBrowse the library and request books you\'d like to read!',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.montserrat(
+                    fontSize: screenWidth < 400 ? 14 : 16,
+                    color: const Color(0xFF64748B),
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 32),
+                ElevatedButton.icon(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.explore),
+                  label: Text(
+                    'Browse Library',
+                    style: GoogleFonts.montserrat(fontWeight: FontWeight.w600),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0096C7),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(25),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
-      ),
+      ],
     );
   }
 

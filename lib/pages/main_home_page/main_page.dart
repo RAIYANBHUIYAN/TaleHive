@@ -1508,18 +1508,7 @@ class _MainPageState extends State<MainPage> with SingleTickerProviderStateMixin
                             width: 1,
                             color: const Color(0xFFE2E8F0),
                           ),
-                          if (book['price'] != null && book['price'] > 0)
-                            _buildMetadataItem(
-                            icon: Icons.attach_money,
-                            label: '\$${book['price']?.toStringAsFixed(2)}',
-                            iconColor: Colors.green,
-                            )
-                          else
-                            _buildMetadataItem(
-                            icon: Icons.free_breakfast,
-                            label: 'Free',
-                            iconColor: Colors.green,
-                            ),
+                        
                           ],
                         ),
                         ),

@@ -17,13 +17,51 @@ Future<List<BookRecommendation>> fetchRelatedBooks(String bookId, String? catego
 
     final response = await supabase
         .from('books')
-        .select('id, title, cover_image_url')
+        .select('id, title, cover_image_url, author_id, authors!inner(display_name)')
             .eq('category', category)
         .neq('id', bookId) // Exclude current book
         .eq('is_active', true)
         .limit(10);
 
-    return response.map((book) => BookRecommendation.fromJson(book)).toList();
+    // Process each book to add author information and calculate ratings
+    final List<BookRecommendation> relatedBooks = [];
+    
+    for (final bookData in response) {
+      // Get author name from the joined authors table
+      String authorName = 'Unknown Author';
+      if (bookData['authors'] != null) {
+        authorName = bookData['authors']['display_name'] ?? 'Unknown Author';
+      }
+
+      // Calculate average rating from reviews
+      double avgRating = 0.0;
+      int reviewCount = 0;
+      try {
+        final reviewsResponse = await supabase
+            .from('reviews')
+            .select('rating')
+            .eq('book_id', bookData['id']);
+        
+        if (reviewsResponse.isNotEmpty) {
+          final ratings = reviewsResponse.map((r) => r['rating'] as int).toList();
+          avgRating = ratings.reduce((a, b) => a + b) / ratings.length;
+          reviewCount = ratings.length;
+        }
+      } catch (e) {
+        print('Error fetching ratings for book ${bookData['id']}: $e');
+      }
+
+      relatedBooks.add(BookRecommendation(
+        id: bookData['id'].toString(),
+        title: bookData['title'] ?? 'Unknown Title',
+        author: authorName,
+        cover: bookData['cover_image_url'] ?? '',
+        rating: avgRating,
+        reviews: reviewCount,
+      ));
+    }
+
+    return relatedBooks;
   } catch (e) {
     print('Error fetching related books: $e');
     return [];
@@ -42,7 +80,7 @@ Future<List<BookRecommendation>> fetchPremiumClubBooks(String bookId, String? ca
         .from('club_books')
         .select('''
           book_id,
-          books!club_books_book_id_fkey(id, title, cover_image_url, category),
+          books!club_books_book_id_fkey(id, title, cover_image_url, category, author_id, authors!inner(display_name)),
           clubs!club_books_club_id_fkey(is_premium)
         ''')
         .eq('books.category', category)
@@ -51,15 +89,47 @@ Future<List<BookRecommendation>> fetchPremiumClubBooks(String bookId, String? ca
         .eq('clubs.is_premium', true) // Only premium clubs
         .limit(10);
 
-    // Extract unique books (remove duplicates if same book is in multiple clubs)
+    // Extract unique books and process them to add author information and ratings
     final Map<String, BookRecommendation> uniqueBooks = {};
     
     for (var item in response) {
       final book = item['books'];
       if (book != null && book['id'] != null) {
-        final bookId = book['id'] as String;
-        if (!uniqueBooks.containsKey(bookId)) {
-          uniqueBooks[bookId] = BookRecommendation.fromJson(book);
+        final bookIdStr = book['id'].toString();
+        if (!uniqueBooks.containsKey(bookIdStr)) {
+          
+          // Get author name from the joined authors table
+          String authorName = 'Unknown Author';
+          if (book['authors'] != null) {
+            authorName = book['authors']['display_name'] ?? 'Unknown Author';
+          }
+
+          // Calculate average rating from reviews
+          double avgRating = 0.0;
+          int reviewCount = 0;
+          try {
+            final reviewsResponse = await supabase
+                .from('reviews')
+                .select('rating')
+                .eq('book_id', book['id']);
+            
+            if (reviewsResponse.isNotEmpty) {
+              final ratings = reviewsResponse.map((r) => r['rating'] as int).toList();
+              avgRating = ratings.reduce((a, b) => a + b) / ratings.length;
+              reviewCount = ratings.length;
+            }
+          } catch (e) {
+            print('Error fetching ratings for premium book ${book['id']}: $e');
+          }
+
+          uniqueBooks[bookIdStr] = BookRecommendation(
+            id: bookIdStr,
+            title: book['title'] ?? 'Unknown Title',
+            author: authorName,
+            cover: book['cover_image_url'] ?? '',
+            rating: avgRating,
+            reviews: reviewCount,
+          );
         }
       }
     }
@@ -591,11 +661,19 @@ Future<BookDetails> fetchBookDetails(String bookId, {bool isFromPremiumClub = fa
         // Fetch author info
         final authorResponse = await supabase
             .from('authors')
-            .select('id, first_name, last_name, bio, photo_url')
+            .select('id, first_name, last_name, display_name, bio, photo_url')
             .eq('id', authorId)
             .single();
         if (authorResponse != null) {
-          authorName = authorResponse['first_name'] + ' ' + (authorResponse['last_name'] ?? '');
+          // Use display_name if available, otherwise combine first_name and last_name
+          if (authorResponse['display_name'] != null && authorResponse['display_name'].isNotEmpty) {
+            authorName = authorResponse['display_name'];
+          } else {
+            final firstName = authorResponse['first_name'] ?? '';
+            final lastName = authorResponse['last_name'] ?? '';
+            authorName = (firstName + ' ' + lastName).trim();
+            if (authorName.isEmpty) authorName = 'Unknown Author';
+          }
           authorBio = authorResponse['bio'] ?? authorBio;
           authorPhoto = authorResponse['photo_url'] ?? authorPhoto;
         }
@@ -616,12 +694,12 @@ Future<BookDetails> fetchBookDetails(String bookId, {bool isFromPremiumClub = fa
     // Fetch reviews from the new reviews table with user information
     final reviewsResponse = await supabase
         .from('reviews')
-        .select('*, user:user_id(*)')
+        .select('*, users!fk_user(*)')
         .eq('book_id', bookId);
 
     // Convert reviews to Review objects
     final reviewList = (reviewsResponse as List).map((reviewData) {
-      final userData = reviewData['user'];
+      final userData = reviewData['users'];
       final userName = userData != null && userData is Map 
           ? ((userData['first_name'] ?? '') + ' ' + (userData['last_name'] ?? '')).trim().isEmpty
               ? 'Reader'
@@ -777,6 +855,9 @@ class BookDetailsPage extends StatefulWidget {
 class _BookDetailsPageState extends State<BookDetailsPage> {
   bool _isFavorite = false;
   bool _isLoadingFavorite = false;
+  
+  // Add refresh key for FutureBuilder
+  Key _futureBuilderKey = UniqueKey();
 
   @override
   void initState() {
@@ -881,6 +962,23 @@ class _BookDetailsPageState extends State<BookDetailsPage> {
     }
   }
 
+  // ✅ Add refresh functionality
+  Future<void> _refreshBookDetails() async {
+    try {
+      setState(() {
+        _futureBuilderKey = UniqueKey(); // This will trigger FutureBuilder to rebuild
+      });
+      
+      // Also refresh favorite status
+      await _checkFavoriteStatus();
+      
+      // Optional: Show a subtle feedback
+   
+    } catch (e) {
+      
+    }
+  }
+
   // ✅ Add the missing _showSnackBar method
   void _showSnackBar(String message, {Color? backgroundColor}) {
     if (!mounted) return;
@@ -945,9 +1043,14 @@ class _BookDetailsPageState extends State<BookDetailsPage> {
         ],
       ),
       body: SafeArea(
-        child: FutureBuilder<BookDetails>(
-          future: fetchBookDetails(widget.bookId, isFromPremiumClub: widget.isFromPremiumClub ?? false),
-          builder: (context, snapshot) {
+        child: RefreshIndicator(
+          onRefresh: _refreshBookDetails,
+          color: const Color(0xFF0096C7),
+          backgroundColor: Colors.white,
+          child: FutureBuilder<BookDetails>(
+            key: _futureBuilderKey,
+            future: fetchBookDetails(widget.bookId, isFromPremiumClub: widget.isFromPremiumClub ?? false),
+            builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(
                 child: Column(
@@ -1091,8 +1194,9 @@ class _BookDetailsPageState extends State<BookDetailsPage> {
               ],
             );
           },
-        ),
-      ),
+        ), // This closes the FutureBuilder
+      ), // This closes the RefreshIndicator
+      ), // This closes the SafeArea
       floatingActionButton: widget.isFromPremiumClub == true 
           ? FloatingActionButton.extended(
               onPressed: () {
@@ -1447,24 +1551,120 @@ class _BookCoverActions extends StatelessWidget {
 
   // Show Abstract
   void _showAbstract(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Abstract - ${book.title}'),
-        content: SingleChildScrollView(
-          child: Text(
-            book.description,
-            style: const TextStyle(fontSize: 16, height: 1.5),
+    // Check if description contains a PDF URL (abstract PDF)
+    final description = book.description;
+    final bool isAbstractPDF = description != null && 
+        description.isNotEmpty && 
+        description.contains('book-pdfs') && 
+        description.contains('.pdf');
+
+    if (isAbstractPDF) {
+      // Show abstract PDF options
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text('Abstract - ${book.title}'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.picture_as_pdf,
+                size: 64,
+                color: Colors.red[700],
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'This book has an abstract PDF available.',
+                style: const TextStyle(fontSize: 16),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Choose an option below:',
+                style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _openAbstractPDF(context, description);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0096C7),
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Read Abstract'),
+            ),
+          ],
+        ),
+      );
+    } else {
+      // Show regular description
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text('Description - ${book.title}'),
+          content: SingleChildScrollView(
+            child: Text(
+              description?.isNotEmpty == true ? description! : 'No description available.',
+              style: const TextStyle(fontSize: 16, height: 1.5),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  // Open Abstract PDF
+  void _openAbstractPDF(BuildContext context, String abstractUrl) async {
+    try {
+      // Show loading dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(color: Color(0xFF0096C7)),
+              const SizedBox(height: 16),
+              Text('Opening abstract...', style: GoogleFonts.montserrat()),
+            ],
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
+      );
+
+      // Navigate to PDF viewer with abstract URL
+      Navigator.pop(context); // Close loading dialog
+      
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => PDFViewerPage(
+            pdfUrl: abstractUrl,
+            bookTitle: '${book.title} - Abstract',
+            bookId: book.id,
           ),
-        ],
-      ),
-    );
+        ),
+      );
+
+    } catch (e) {
+      Navigator.pop(context);
+      _showErrorDialog(context, 'Failed to open abstract: ${e.toString()}');
+    }
   }
 
   // Show error dialog
@@ -1823,7 +2023,7 @@ class _BookInfoSection extends StatelessWidget {
             children: [
               
               _MetaItem(label: 'Language', value: book.language),
-                _MetaItem(label: 'Price', value: '${book.price}\$'),
+             
               _MetaItem(label: 'Published Date', value: DateFormat('yyyy-MM-dd').format(book.created_at)),
             ],
           ),

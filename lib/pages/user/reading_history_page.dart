@@ -32,8 +32,11 @@ class _ReadingHistoryPageState extends State<ReadingHistoryPage> {
       final user = supabase.auth.currentUser;
       if (user == null) {
         setState(() => _isLoading = false);
+        _showSnackBar('Please login to view reading history', backgroundColor: Colors.orange);
         return;
       }
+
+      print('📖 Reading History Debug: Loading data for user: ${user.id}');
 
       // Load all read books and stats
       final results = await Future.wait([
@@ -50,8 +53,15 @@ class _ReadingHistoryPageState extends State<ReadingHistoryPage> {
       print('📖 Reading History Debug: Books data: $_readBooks');
       print('📖 Reading History Debug: Stats: $_readingStats');
       
-      // Let's also check what's in the reading_history table directly
-      await _debugCheckDatabase(user.id);
+      if (_readBooks.isEmpty) {
+        print('📖 Reading History Debug: No books found, checking database...');
+        await _debugCheckDatabase(user.id);
+      }
+
+      // Show refresh feedback (only if not initial load)
+      if (mounted && !_isLoading) {
+        _showSnackBar('📚 Reading history refreshed', backgroundColor: const Color(0xFF0096C7));
+      }
       
     } catch (e) {
       print('📖 Reading History Error loading: $e');
@@ -73,8 +83,6 @@ class _ReadingHistoryPageState extends State<ReadingHistoryPage> {
 
   @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    
     return Scaffold(
       backgroundColor: const Color(0xFFF4F8FB),
       appBar: AppBar(
@@ -93,36 +101,34 @@ class _ReadingHistoryPageState extends State<ReadingHistoryPage> {
           ),
         ),
         centerTitle: true,
-        actions: [
-        
-          IconButton(
-            icon: const Icon(Icons.refresh, color: Color(0xFF22223b)),
-            onPressed: _loadReadingHistory,
-          ),
-        ],
       ),
-      body: _isLoading
-          ? const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircularProgressIndicator(color: Color(0xFF0096C7)),
-                  SizedBox(height: 16),
-                  Text('Loading your reading history...'),
+      body: RefreshIndicator(
+        onRefresh: _loadReadingHistory,
+        color: const Color(0xFF0096C7),
+        backgroundColor: Colors.white,
+        child: _isLoading
+            ? const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(color: Color(0xFF0096C7)),
+                    SizedBox(height: 16),
+                    Text('Loading your reading history...'),
+                  ],
+                ),
+              )
+            : CustomScrollView(
+                slivers: [
+                  // Statistics Section as a sliver
+                  SliverToBoxAdapter(
+                    child: _buildStatisticsSection(MediaQuery.of(context).size.width),
+                  ),
+                  
+                  // Books Grid as a sliver
+                  _buildBookGridSliver(_readBooks),
                 ],
               ),
-            )
-          : CustomScrollView(
-              slivers: [
-                // Statistics Section as a sliver
-                SliverToBoxAdapter(
-                  child: _buildStatisticsSection(MediaQuery.of(context).size.width),
-                ),
-                
-                // Books Grid as a sliver
-                _buildBookGridSliver(_readBooks),
-              ],
-            ),
+      ),
     );
   }
 
@@ -302,7 +308,13 @@ class _ReadingHistoryPageState extends State<ReadingHistoryPage> {
         await Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => BookDetailsPage(bookId: bookId),
+            builder: (context) => BookDetailsPage(
+              bookId: bookId,
+              onFavoriteChanged: () {
+                // Handle favorite changes if needed
+                print('📖 Favorite status changed for book: $bookId');
+              },
+            ),
           ),
         );
         
@@ -361,7 +373,7 @@ class _ReadingHistoryPageState extends State<ReadingHistoryPage> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
-                        '${readingInfo['read_count']}x read',
+                        '${readingInfo['read_count'] ?? 1}x read',
                         style: GoogleFonts.montserrat(
                           fontSize: 10,
                           fontWeight: FontWeight.w600,
@@ -473,46 +485,6 @@ class _ReadingHistoryPageState extends State<ReadingHistoryPage> {
       
     } catch (e) {
       print('📖 Reading History Debug Error: $e');
-    }
-  }
-
-  Future<void> _addTestReadingData() async {
-    try {
-      final user = supabase.auth.currentUser;
-      if (user == null) {
-        _showSnackBar('Please login first', backgroundColor: Colors.red);
-        return;
-      }
-
-      print('📖 Adding test reading data...');
-      
-      // First, get a book from the books table
-      final booksResponse = await supabase
-          .from('books')
-          .select('id')
-          .limit(1);
-      
-      if (booksResponse.isEmpty) {
-        _showSnackBar('No books found in database', backgroundColor: Colors.red);
-        return;
-      }
-      
-      final bookId = booksResponse[0]['id'].toString();
-      print('📖 Using book ID: $bookId');
-      
-      // Add reading history using the service
-      final success = await ReadingHistoryService.trackBookReading(user.id, bookId);
-      
-      if (success) {
-        _showSnackBar('Test reading data added!', backgroundColor: Colors.green);
-        _loadReadingHistory(); // Refresh the page
-      } else {
-        _showSnackBar('Failed to add test data', backgroundColor: Colors.red);
-      }
-      
-    } catch (e) {
-      print('Error adding test data: $e');
-      _showSnackBar('Error adding test data: $e', backgroundColor: Colors.red);
     }
   }
 

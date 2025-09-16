@@ -17,6 +17,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
   List<Map<String, dynamic>> _favoriteBooks = [];
   bool _isLoading = true;
   Set<String> _favoriteBookIds = <String>{};
+  bool _isInitialLoad = true; // Track if this is the first load
 
   @override
   void initState() {
@@ -26,6 +27,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
 
   Future<void> _loadFavoriteBooks() async {
     setState(() => _isLoading = true);
+    
     try {
       final user = supabase.auth.currentUser;
       if (user == null) {
@@ -66,13 +68,31 @@ class _FavoritesPageState extends State<FavoritesPage> {
           setState(() {
             _favoriteBooks = List<Map<String, dynamic>>.from(booksResponse);
           });
+        } else {
+          setState(() {
+            _favoriteBooks = [];
+          });
         }
+      } else {
+        setState(() {
+          _favoriteBooks = [];
+          _favoriteBookIds = <String>{};
+        });
       }
+
+      // Show refresh feedback (only if not initial load)
+      if (mounted && !_isInitialLoad) {
+        _showSnackBar('💖 Favorites refreshed', backgroundColor: const Color(0xFF0096C7));
+      }
+      
     } catch (e) {
       print('Error loading favorite books: $e');
       _showSnackBar('Failed to load favorites: ${e.toString()}', backgroundColor: Colors.red);
     } finally {
-      setState(() => _isLoading = false);
+      setState(() {
+        _isLoading = false;
+        _isInitialLoad = false; // Mark that initial load is complete
+      });
     }
   }
 
@@ -178,24 +198,24 @@ class _FavoritesPageState extends State<FavoritesPage> {
           ),
         ),
         centerTitle: true,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh, color: Color(0xFF22223b)),
-            onPressed: _loadFavoriteBooks,
-          ),
-        ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF0096C7)))
-          : _favoriteBooks.isEmpty
-              ? _buildEmptyState(screenWidth, screenHeight)
-              : _buildFavoritesList(screenWidth),
+      body: RefreshIndicator(
+        onRefresh: _loadFavoriteBooks,
+        color: const Color(0xFF0096C7),
+        backgroundColor: Colors.white,
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator(color: Color(0xFF0096C7)))
+            : _favoriteBooks.isEmpty
+                ? _buildEmptyState(screenWidth, screenHeight)
+                : _buildFavoritesList(screenWidth),
+      ),
     );
   }
 
   Widget _buildEmptyState(double screenWidth, double screenHeight) {
-    return SafeArea(
-      child: SingleChildScrollView(
+    return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      child: SafeArea(
         child: Container(
           width: screenWidth,
           constraints: BoxConstraints(
@@ -293,7 +313,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
     final horizontalPadding = screenWidth * 0.04;
     
     return CustomScrollView(
-      physics: const BouncingScrollPhysics(),
+      physics: const AlwaysScrollableScrollPhysics(), // This enables pull-to-refresh
       slivers: [
         // Header info
         SliverToBoxAdapter(

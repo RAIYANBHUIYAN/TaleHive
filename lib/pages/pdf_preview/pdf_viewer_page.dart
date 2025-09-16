@@ -1,9 +1,9 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import 'package:dio/dio.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../services/reading_history_service.dart';
 
 class PDFViewerPage extends StatefulWidget {
   final String pdfUrl;
@@ -30,6 +30,7 @@ class _PDFViewerPageState extends State<PDFViewerPage> {
   int currentPage = 1;
   int totalPages = 0;
   double zoomLevel = 1.0;
+  bool _hasTrackedReading = false; // Add flag to track if reading was already recorded
 
   @override
   void initState() {
@@ -50,6 +51,9 @@ class _PDFViewerPageState extends State<PDFViewerPage> {
       final response = await dio.head(widget.pdfUrl);
 
       if (response.statusCode == 200) {
+        // Track reading session when PDF loads successfully
+        await _trackReadingSession();
+        
         setState(() {
           isLoading = false;
         });
@@ -62,6 +66,21 @@ class _PDFViewerPageState extends State<PDFViewerPage> {
         hasError = true;
         errorMessage = 'Failed to load PDF: ${e.toString()}';
       });
+    }
+  }
+
+  Future<void> _trackReadingSession() async {
+    if (!_hasTrackedReading) {
+      try {
+        final user = Supabase.instance.client.auth.currentUser;
+        if (user != null) {
+          await ReadingHistoryService.trackBookReading(user.id, widget.bookId);
+          _hasTrackedReading = true;
+          print('Reading session tracked for book: ${widget.bookTitle}');
+        }
+      } catch (e) {
+        print('Error tracking reading session: $e');
+      }
     }
   }
 

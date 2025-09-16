@@ -94,12 +94,23 @@ class _AIChatPageState extends State<AIChatPage> with TickerProviderStateMixin {
         ? ', which is a "${widget.category}" book' 
         : '';
     
+    final userName = _userData?['first_name'] != null 
+      ? '${_userData!['first_name']} ${_userData!['last_name'] ?? ''}'.trim()
+      :'there';
+    
     setState(() {
       _messages.add({
         'type': 'ai',
-        'message': 'Hello! I\'m here to help you discuss "${widget.bookTitle}"$categoryText. Feel free to ask me anything about the book - plot, characters, themes, or any questions you have!',
+        'message': 'Hello $userName! I\'m here to help you discuss "${widget.bookTitle}"$categoryText. Feel free to ask me anything about the book - plot, characters, themes, or any questions you have!',
         'timestamp': DateTime.now(),
       });
+    });
+  }
+
+  Future<void> _refreshChat() async {
+    setState(() {
+      _messages.clear();
+      _addWelcomeMessage();
     });
   }
 
@@ -170,138 +181,214 @@ class _AIChatPageState extends State<AIChatPage> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA),
+      backgroundColor: const Color(0xFFF5F7FA),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0077B6),
+        backgroundColor: Colors.transparent,
         elevation: 0,
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Color(0xFF0077B6),
+                Color(0xFF00A8CC),
+                Color(0xFF0096C7),
+              ],
+            ),
+          ),
+        ),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          icon: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.arrow_back, color: Colors.white, size: 20),
+          ),
           onPressed: () => Navigator.pop(context),
         ),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'AI Assistant',
-              style: GoogleFonts.montserrat(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 18,
-              ),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.psychology,
+                    color: Colors.white,
+                    size: 16,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'AI Reading Companion',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 18,
+                  ),
+                ),
+              ],
             ),
-            Text(
-              widget.bookTitle,
-              style: GoogleFonts.montserrat(
-                color: Colors.white70,
-                fontSize: 12,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
+          
           ],
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.white),
-            onPressed: () {
-              setState(() {
-                _messages.clear();
-                _addWelcomeMessage();
-              });
-            },
-          ),
-        ],
       ),
-      body: FadeTransition(
-        opacity: _fadeAnimation,
-        child: SlideTransition(
-          position: _slideAnimation,
-          child: Column(
-            children: [
-              // Messages List
-              Expanded(
-                child: _messages.isEmpty
-                    ? _buildEmptyState()
-                    : ListView.builder(
-                        controller: _scrollController,
-                        padding: const EdgeInsets.all(16),
-                        itemCount: _messages.length + (_isLoading ? 1 : 0),
-                        itemBuilder: (context, index) {
-                          if (index == _messages.length && _isLoading) {
-                            return _buildTypingIndicator();
-                          }
-                          return _buildMessageBubble(_messages[index]);
-                        },
-                      ),
-              ),
-              // Input Section
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
-                      blurRadius: 4,
-                      offset: const Offset(0, -2),
-                    ),
-                  ],
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0xFFF5F7FA),
+              Color(0xFFE8F4F8),
+              Color(0xFFF5F7FA),
+            ],
+            stops: [0.0, 0.3, 1.0],
+          ),
+        ),
+        child: FadeTransition(
+          opacity: _fadeAnimation,
+          child: SlideTransition(
+            position: _slideAnimation,
+            child: Column(
+              children: [
+                // Messages List
+                Expanded(
+                  child: RefreshIndicator(
+                    onRefresh: _refreshChat,
+                    color: const Color(0xFF0077B6),
+                    backgroundColor: Colors.white,
+                    strokeWidth: 3.0,
+                    child: _messages.isEmpty
+                        ? _buildEmptyState()
+                        : ListView.builder(
+                            controller: _scrollController,
+                            padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            itemCount: _messages.length + (_isLoading ? 1 : 0),
+                            itemBuilder: (context, index) {
+                              if (index == _messages.length && _isLoading) {
+                                return _buildTypingIndicator();
+                              }
+                              return _buildMessageBubble(_messages[index]);
+                            },
+                          ),
+                  ),
                 ),
-                child: SafeArea(
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF8F9FA),
-                            borderRadius: BorderRadius.circular(25),
-                            border: Border.all(
-                              color: const Color(0xFFE9ECEF),
-                            ),
-                          ),
-                          child: TextField(
-                            controller: _messageController,
-                            decoration: InputDecoration(
-                              hintText: 'Ask about ${widget.bookTitle}...',
-                              hintStyle: GoogleFonts.montserrat(
-                                color: Colors.grey[500],
-                                fontSize: 14,
-                              ),
-                              border: InputBorder.none,
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 20,
-                                vertical: 12,
-                              ),
-                            ),
-                            style: GoogleFonts.montserrat(fontSize: 14),
-                            maxLines: null,
-                            textCapitalization: TextCapitalization.sentences,
-                            onSubmitted: (_) => _sendMessage(),
-                          ),
-                        ),
+                // Input Section
+                Container(
+                  margin: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(30),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF0077B6).withOpacity(0.1),
+                        blurRadius: 20,
+                        offset: const Offset(0, 8),
+                        spreadRadius: 0,
                       ),
-                      const SizedBox(width: 12),
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        decoration: BoxDecoration(
-                          color: _isLoading
-                              ? Colors.grey[400]
-                              : const Color(0xFF0077B6),
-                          borderRadius: BorderRadius.circular(25),
-                        ),
-                        child: IconButton(
-                          onPressed: _isLoading ? null : _sendMessage,
-                          icon: Icon(
-                            _isLoading ? Icons.hourglass_empty : Icons.send,
-                            color: Colors.white,
-                            size: 20,
-                          ),
-                        ),
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
                       ),
                     ],
                   ),
+                  child: SafeArea(
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.circular(25),
+                              border: Border.all(
+                                color: const Color(0xFFE2E8F0),
+                                width: 1.5,
+                              ),
+                            ),
+                            child: TextField(
+                              controller: _messageController,
+                              decoration: InputDecoration(
+                                hintText: 'Share your thoughts about "${widget.bookTitle}"...',
+                                hintStyle: GoogleFonts.poppins(
+                                  color: Colors.grey[500],
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w400,
+                                ),
+                                border: InputBorder.none,
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                  vertical: 14,
+                                ),
+                                prefixIcon: Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Icon(
+                                    Icons.chat_bubble_outline,
+                                    color: Colors.grey[400],
+                                    size: 20,
+                                  ),
+                                ),
+                              ),
+                              style: GoogleFonts.poppins(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w400,
+                              ),
+                              maxLines: null,
+                              textCapitalization: TextCapitalization.sentences,
+                              onSubmitted: (_) => _sendMessage(),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 300),
+                          decoration: BoxDecoration(
+                            gradient: _isLoading
+                                ? null
+                                : const LinearGradient(
+                                    colors: [
+                                      Color(0xFF0077B6),
+                                      Color(0xFF00A8CC),
+                                    ],
+                                  ),
+                            color: _isLoading ? Colors.grey[400] : null,
+                            borderRadius: BorderRadius.circular(25),
+                            boxShadow: _isLoading
+                                ? null
+                                : [
+                                    BoxShadow(
+                                      color: const Color(0xFF0077B6).withOpacity(0.3),
+                                      blurRadius: 12,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
+                          ),
+                          child: IconButton(
+                            onPressed: _isLoading ? null : _sendMessage,
+                            icon: Icon(
+                              _isLoading ? Icons.hourglass_empty : Icons.send_rounded,
+                              color: Colors.white,
+                              size: 22,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -309,38 +396,150 @@ class _AIChatPageState extends State<AIChatPage> with TickerProviderStateMixin {
   }
 
   Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.all(24),
+      children: [
+        SizedBox(height: MediaQuery.of(context).size.height * 0.15),
+        Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(32),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [
+                      Color(0xFF0077B6),
+                      Color(0xFF00A8CC),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(60),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF0077B6).withOpacity(0.3),
+                      blurRadius: 25,
+                      offset: const Offset(0, 10),
+                      spreadRadius: 0,
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.auto_stories,
+                  size: 56,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 32),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.08),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      'Let\'s explore',
+                      style: GoogleFonts.poppins(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF1E293B),
+                      ),
+                    ),
+                    Text(
+                      '"${widget.bookTitle}"',
+                      style: GoogleFonts.poppins(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w500,
+                        color: const Color(0xFF0077B6),
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0077B6).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        'together',
+                        style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                          color: const Color(0xFF0077B6),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
+                      'Ask me about characters, plot twists, themes, or share your thoughts and reactions!',
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        color: const Color(0xFF64748B),
+                        height: 1.5,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _buildSuggestionChip('Plot analysis', Icons.lightbulb_outline),
+                  _buildSuggestionChip('Characters', Icons.people_outline),
+                  _buildSuggestionChip('Themes', Icons.psychology_outlined),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSuggestionChip(String label, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: const Color(0xFF0077B6).withOpacity(0.2),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: const Color(0xFF0077B6).withOpacity(0.1),
-              borderRadius: BorderRadius.circular(50),
-            ),
-            child: const Icon(
-              Icons.smart_toy,
-              size: 48,
-              color: Color(0xFF0077B6),
-            ),
+          Icon(
+            icon,
+            size: 16,
+            color: const Color(0xFF0077B6),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(width: 6),
           Text(
-            'Start chatting about\n${widget.bookTitle}',
-            style: GoogleFonts.montserrat(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
+            label,
+            style: GoogleFonts.poppins(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
               color: const Color(0xFF0077B6),
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Ask me anything about the book!',
-            style: GoogleFonts.montserrat(
-              fontSize: 14,
-              color: Colors.grey[600],
             ),
           ),
         ],
@@ -354,23 +553,35 @@ class _AIChatPageState extends State<AIChatPage> with TickerProviderStateMixin {
     final timestamp = message['timestamp'] as DateTime;
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.only(bottom: 20),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
         children: [
           if (!isUser) ...[
             Container(
-              width: 32,
-              height: 32,
+              width: 40,
+              height: 40,
               decoration: BoxDecoration(
-                color: const Color(0xFF0077B6),
-                borderRadius: BorderRadius.circular(16),
+                gradient: const LinearGradient(
+                  colors: [
+                    Color(0xFF0077B6),
+                    Color(0xFF00A8CC),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF0077B6).withOpacity(0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
               child: const Icon(
-                Icons.smart_toy,
+                Icons.psychology,
                 color: Colors.white,
-                size: 16,
+                size: 20,
               ),
             ),
             const SizedBox(width: 12),
@@ -380,33 +591,57 @@ class _AIChatPageState extends State<AIChatPage> with TickerProviderStateMixin {
               crossAxisAlignment: isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                   decoration: BoxDecoration(
-                    color: isUser ? const Color(0xFF0077B6) : Colors.white,
-                    borderRadius: BorderRadius.circular(20),
+                    gradient: isUser
+                        ? const LinearGradient(
+                            colors: [
+                              Color(0xFF0077B6),
+                              Color(0xFF0096C7),
+                            ],
+                          )
+                        : null,
+                    color: isUser ? null : Colors.white,
+                    borderRadius: BorderRadius.only(
+                      topLeft: const Radius.circular(20),
+                      topRight: const Radius.circular(20),
+                      bottomLeft: Radius.circular(isUser ? 20 : 6),
+                      bottomRight: Radius.circular(isUser ? 6 : 20),
+                    ),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
+                        color: isUser
+                            ? const Color(0xFF0077B6).withOpacity(0.3)
+                            : Colors.black.withOpacity(0.08),
+                        blurRadius: isUser ? 12 : 15,
+                        offset: const Offset(0, 4),
+                        spreadRadius: 0,
                       ),
                     ],
                   ),
                   child: Text(
                     messageText,
-                    style: GoogleFonts.montserrat(
-                      color: isUser ? Colors.white : Colors.black87,
+                    style: GoogleFonts.poppins(
+                      color: isUser ? Colors.white : const Color(0xFF1E293B),
                       fontSize: 14,
-                      height: 1.4,
+                      fontWeight: FontWeight.w400,
+                      height: 1.5,
                     ),
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  DateFormat('HH:mm').format(timestamp),
-                  style: GoogleFonts.montserrat(
-                    color: Colors.grey[500],
-                    fontSize: 10,
+                const SizedBox(height: 6),
+                Padding(
+                  padding: EdgeInsets.only(
+                    left: isUser ? 0 : 8,
+                    right: isUser ? 8 : 0,
+                  ),
+                  child: Text(
+                    DateFormat('HH:mm').format(timestamp),
+                    style: GoogleFonts.poppins(
+                      color: const Color(0xFF94A3B8),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w400,
+                    ),
                   ),
                 ),
               ],
@@ -423,33 +658,50 @@ class _AIChatPageState extends State<AIChatPage> with TickerProviderStateMixin {
 
   Widget _buildTypingIndicator() {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.only(bottom: 20),
       child: Row(
         children: [
           Container(
-            width: 32,
-            height: 32,
+            width: 40,
+            height: 40,
             decoration: BoxDecoration(
-              color: const Color(0xFF0077B6),
-              borderRadius: BorderRadius.circular(16),
+              gradient: const LinearGradient(
+                colors: [
+                  Color(0xFF0077B6),
+                  Color(0xFF00A8CC),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF0077B6).withOpacity(0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
             child: const Icon(
-              Icons.smart_toy,
+              Icons.psychology,
               color: Colors.white,
-              size: 16,
+              size: 20,
             ),
           ),
           const SizedBox(width: 12),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(20),
+                topRight: Radius.circular(20),
+                bottomLeft: Radius.circular(6),
+                bottomRight: Radius.circular(20),
+              ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 4,
-                  offset: const Offset(0, 2),
+                  color: Colors.black.withOpacity(0.08),
+                  blurRadius: 15,
+                  offset: const Offset(0, 4),
                 ),
               ],
             ),
@@ -457,20 +709,21 @@ class _AIChatPageState extends State<AIChatPage> with TickerProviderStateMixin {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'AI is thinking',
-                  style: GoogleFonts.montserrat(
-                    color: Colors.grey[600],
+                  'Thinking deeply...',
+                  style: GoogleFonts.poppins(
+                    color: const Color(0xFF64748B),
                     fontSize: 14,
+                    fontWeight: FontWeight.w400,
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 12),
                 SizedBox(
                   width: 20,
                   height: 20,
                   child: CircularProgressIndicator(
-                    strokeWidth: 2,
+                    strokeWidth: 2.5,
                     valueColor: AlwaysStoppedAnimation<Color>(
-                      Colors.grey[600]!,
+                      const Color(0xFF0077B6).withOpacity(0.7),
                     ),
                   ),
                 ),
@@ -489,18 +742,30 @@ class _AIChatPageState extends State<AIChatPage> with TickerProviderStateMixin {
                            user?.userMetadata?['avatar_url'];
 
     return Container(
-      width: 32,
-      height: 32,
+      width: 40,
+      height: 40,
       decoration: BoxDecoration(
-        color: Colors.grey[300],
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: const Color(0xFF0077B6),
-          width: 1.5,
+        gradient: const LinearGradient(
+          colors: [
+            Color(0xFFE2E8F0),
+            Color(0xFFF1F5F9),
+          ],
         ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: const Color(0xFF0077B6).withOpacity(0.3),
+          width: 2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF0077B6).withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: CircleAvatar(
-        radius: 14,
+        radius: 18,
         backgroundColor: Colors.transparent,
         backgroundImage: profileImageUrl != null && profileImageUrl.isNotEmpty
             ? NetworkImage(profileImageUrl)
@@ -512,9 +777,9 @@ class _AIChatPageState extends State<AIChatPage> with TickerProviderStateMixin {
             : null,
         child: profileImageUrl == null || profileImageUrl.isEmpty
             ? Icon(
-                Icons.person,
-                color: Colors.grey[600],
-                size: 16,
+                Icons.person_rounded,
+                color: const Color(0xFF0077B6).withOpacity(0.7),
+                size: 20,
               )
             : null,
       ),

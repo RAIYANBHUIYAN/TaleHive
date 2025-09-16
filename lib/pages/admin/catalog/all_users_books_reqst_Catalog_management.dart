@@ -214,6 +214,22 @@ class _AllUsersBookRequestCatalogManagementPageState
     }
   }
 
+  // Refresh methods for pull-to-refresh functionality
+  Future<void> _refreshCurrentReadings() async {
+    print('🔄 Refreshing current readings data...');
+    await _loadCurrentReadings();
+  }
+
+  Future<void> _refreshPopularBooks() async {
+    print('🔄 Refreshing popular books data...');
+    await _loadPopularBooks();
+  }
+
+  Future<void> _refreshBookRequests() async {
+    print('🔄 Refreshing book requests data...');
+    await _loadBorrowRequests();
+  }
+
   @override
   void dispose() {
     print('🔴 AllUsersBookRequestCatalogManagementPage is being disposed!');
@@ -2684,9 +2700,30 @@ class _AllUsersBookRequestCatalogManagementPageState
                     controller: _tabController,
                     physics: _isLoading ? NeverScrollableScrollPhysics() : null,
                     children: [
-                      SingleChildScrollView(child: _buildReadingBooksTable()),
-                      SingleChildScrollView(child: _buildMostReadableBooksTable()),
-                      SingleChildScrollView(child: _buildBookRequestsTable()),
+                      RefreshIndicator(
+                        onRefresh: _refreshCurrentReadings,
+                        color: const Color(0xFF0077B6),
+                        child: SingleChildScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          child: _buildReadingBooksTable(),
+                        ),
+                      ),
+                      RefreshIndicator(
+                        onRefresh: _refreshPopularBooks,
+                        color: const Color(0xFF0077B6),
+                        child: SingleChildScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          child: _buildMostReadableBooksTable(),
+                        ),
+                      ),
+                      RefreshIndicator(
+                        onRefresh: _refreshBookRequests,
+                        color: const Color(0xFF0077B6),
+                        child: SingleChildScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          child: _buildBookRequestsTable(),
+                        ),
+                      ),
                     ],
                   ),
                 ),

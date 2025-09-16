@@ -563,23 +563,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               ),
             ),
           ),
-          
-          // Refresh Button
-          GestureDetector(
-            onTap: _loadDashboardData,
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.grey[100],
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(
-                Icons.refresh,
-                color: Colors.grey[600],
-                size: 20,
-              ),
-            ),
-          ),
         ],
       ),
     );
@@ -646,23 +629,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                     ),
                   ),
                 ],
-              ),
-            ),
-          ),
-          
-          // Refresh Button
-          GestureDetector(
-            onTap: _loadDashboardData,
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.grey[100],
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(
-                Icons.refresh,
-                color: Colors.grey[600],
-                size: 20,
               ),
             ),
           ),
@@ -895,11 +861,16 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   }
 
   Widget _buildDesktopContent() {
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+    return RefreshIndicator(
+      onRefresh: _loadDashboardData,
+      color: const Color(0xFF0096C7),
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
           // Left Side - Pie Chart
           Expanded(
             flex: 2,
@@ -1115,7 +1086,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               ],
             ),
           ),
-        ],
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -21,6 +21,9 @@ class _ClubDetailPageState extends State<ClubDetailPage> with SingleTickerProvid
   List<ClubBook> _clubBooks = [];
   bool _isLoading = true;
   AnimationController? _animationController;
+  int _memberCount = 0; // Add member count variable
+  bool _isMember = false; // Track if user is a member
+  bool _isLeavingClub = false; // Track leaving club operation
 
   @override
   void initState() {
@@ -31,6 +34,8 @@ class _ClubDetailPageState extends State<ClubDetailPage> with SingleTickerProvid
     );
     _animationController!.forward();
     _loadClubBooks();
+    _loadMemberCount(); // Load member count
+    _checkMembershipStatus(); // Check if user is a member
   }
 
   @override
@@ -59,6 +64,232 @@ class _ClubDetailPageState extends State<ClubDetailPage> with SingleTickerProvid
     }
   }
 
+  Future<void> _loadMemberCount() async {
+    try {
+      // Get the member count by counting users with active membership for this club
+      final response = await supabase
+          .from('memberships') // or whatever your membership table is called
+          .select('*')
+          .eq('club_id', widget.club.id)
+          .eq('status', 'active'); // Only count active members
+      
+      setState(() {
+        _memberCount = response.length;
+      });
+    } catch (e) {
+      print('Error loading member count: $e');
+      
+      // Try alternative table names if 'memberships' doesn't exist
+      try {
+        final response = await supabase
+            .from('club_memberships') // alternative table name
+            .select('*')
+            .eq('club_id', widget.club.id)
+            .eq('status', 'active');
+        
+        setState(() {
+          _memberCount = response.length;
+        });
+      } catch (e2) {
+        print('Error with alternative table: $e2');
+        
+        // Try another alternative
+        try {
+          final response = await supabase
+              .from('user_clubs') // another alternative table name
+              .select('*')
+              .eq('club_id', widget.club.id)
+              .eq('status', 'active');
+          
+          setState(() {
+            _memberCount = response.length;
+          });
+        } catch (e3) {
+          print('Error with user_clubs table: $e3');
+          // If all attempts fail, keep the default value of 0
+          setState(() {
+            _memberCount = 0;
+          });
+        }
+      }
+    }
+  }
+
+  Future<void> _refreshClubData() async {
+    await Future.wait([
+      _loadClubBooks(),
+      _loadMemberCount(),
+      _checkMembershipStatus(),
+    ]);
+  
+  }
+
+  Future<void> _checkMembershipStatus() async {
+    try {
+      final user = supabase.auth.currentUser;
+      if (user == null) {
+        setState(() => _isMember = false);
+        return;
+      }
+
+      // Check if user is a member of this club
+      final response = await supabase
+          .from('memberships')
+          .select('*')
+          .eq('club_id', widget.club.id)
+          .eq('user_id', user.id)
+          .eq('status', 'active');
+      
+      setState(() {
+        _isMember = response.isNotEmpty;
+      });
+    } catch (e) {
+      print('Error checking membership status: $e');
+      
+      // Try alternative table names
+      try {
+        final user = supabase.auth.currentUser;
+        if (user == null) return;
+
+        final response = await supabase
+            .from('club_memberships')
+            .select('*')
+            .eq('club_id', widget.club.id)
+            .eq('user_id', user.id)
+            .eq('status', 'active');
+        
+        setState(() {
+          _isMember = response.isNotEmpty;
+        });
+      } catch (e2) {
+        try {
+          final user = supabase.auth.currentUser;
+          if (user == null) return;
+
+          final response = await supabase
+              .from('user_clubs')
+              .select('*')
+              .eq('club_id', widget.club.id)
+              .eq('user_id', user.id)
+              .eq('status', 'active');
+          
+          setState(() {
+            _isMember = response.isNotEmpty;
+          });
+        } catch (e3) {
+          print('Error with all membership table attempts: $e3');
+          setState(() => _isMember = false);
+        }
+      }
+    }
+  }
+
+  Future<void> _leaveClub() async {
+    final user = supabase.auth.currentUser;
+    if (user == null) {
+      _showSnackBar('Please log in to leave the club');
+      return;
+    }
+
+    // Show confirmation dialog
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          'Leave Club',
+          style: GoogleFonts.montserrat(fontWeight: FontWeight.bold),
+        ),
+        content: Text(
+          'Are you sure you want to leave "${widget.club.name}"? You will lose access to all club books and discussions.',
+          style: GoogleFonts.montserrat(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.montserrat(color: Colors.grey[600]),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: Text(
+              'Leave Club',
+              style: GoogleFonts.montserrat(fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() => _isLeavingClub = true);
+
+    try {
+      // Try to remove from memberships table first
+      await supabase
+          .from('memberships')
+          .delete()
+          .eq('club_id', widget.club.id)
+          .eq('user_id', user.id);
+      
+      setState(() {
+        _isMember = false;
+        _isLeavingClub = false;
+      });
+      
+      _showSnackBar('✅ Successfully left the club');
+      await _loadMemberCount(); // Refresh member count
+      
+    } catch (e) {
+      print('Error with memberships table: $e');
+      
+      // Try alternative table names
+      try {
+        await supabase
+            .from('club_memberships')
+            .delete()
+            .eq('club_id', widget.club.id)
+            .eq('user_id', user.id);
+        
+        setState(() {
+          _isMember = false;
+          _isLeavingClub = false;
+        });
+        
+        _showSnackBar('✅ Successfully left the club');
+        await _loadMemberCount();
+        
+      } catch (e2) {
+        try {
+          await supabase
+              .from('user_clubs')
+              .delete()
+              .eq('club_id', widget.club.id)
+              .eq('user_id', user.id);
+          
+          setState(() {
+            _isMember = false;
+            _isLeavingClub = false;
+          });
+          
+          _showSnackBar('✅ Successfully left the club');
+          await _loadMemberCount();
+          
+        } catch (e3) {
+          print('Error with all table attempts: $e3');
+          setState(() => _isLeavingClub = false);
+          _showSnackBar('❌ Failed to leave club. Please try again.');
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_animationController == null) {
@@ -76,9 +307,12 @@ class _ClubDetailPageState extends State<ClubDetailPage> with SingleTickerProvid
         builder: (context, child) {
           return Opacity(
             opacity: _animationController!.value,
-            child: CustomScrollView(
-              physics: const BouncingScrollPhysics(),
-              slivers: [
+            child: RefreshIndicator(
+              onRefresh: _refreshClubData,
+              color: const Color(0xFF0077B6),
+              child: CustomScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                slivers: [
             // Collapsible App Bar with Club Header
             SliverAppBar(
               expandedHeight: 320,
@@ -94,6 +328,50 @@ class _ClubDetailPageState extends State<ClubDetailPage> with SingleTickerProvid
                   fontSize: 18,
                 ),
               ),
+              actions: [
+                if (_isMember)
+                  PopupMenuButton<String>(
+                    icon: const Icon(Icons.more_vert, color: Colors.white),
+                    enabled: !_isLeavingClub, // Disable when leaving
+                    onSelected: (value) {
+                      if (value == 'leave') {
+                        _leaveClub();
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      PopupMenuItem<String>(
+                        value: 'leave',
+                        enabled: !_isLeavingClub,
+                        child: Row(
+                          children: [
+                            _isLeavingClub
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.red,
+                                    ),
+                                  )
+                                : Icon(
+                                    Icons.exit_to_app_rounded,
+                                    color: Colors.red[600],
+                                    size: 20,
+                                  ),
+                            const SizedBox(width: 12),
+                            Text(
+                              _isLeavingClub ? 'Leaving...' : 'Leave Club',
+                              style: GoogleFonts.montserrat(
+                                color: _isLeavingClub ? Colors.grey : Colors.red[600],
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
               flexibleSpace: FlexibleSpaceBar(
                 background: _buildClubHeader(),
               ),
@@ -186,7 +464,8 @@ class _ClubDetailPageState extends State<ClubDetailPage> with SingleTickerProvid
               child: SizedBox(height: 40),
             ),
           ],
-            ),
+              ), // This closes the CustomScrollView
+            ), // This closes the RefreshIndicator
           );
         },
       ),
@@ -389,7 +668,7 @@ class _ClubDetailPageState extends State<ClubDetailPage> with SingleTickerProvid
           Expanded(
             child: _buildStatItem(
               icon: Icons.people_rounded,
-              value: '${_clubBooks.length > 0 ? (_clubBooks.length * 12) : 0}', // Estimated members
+              value: '${_memberCount}', // Use real member count
               label: 'Members',
               color: const Color(0xFF059669),
             ),

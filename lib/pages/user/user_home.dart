@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -44,6 +45,11 @@ class _UserHomePageState extends State<UserHomePage> {
   // Add property for recent readings from reading history
   List<Map<String, dynamic>> _recentReadings = [];
   bool _isLoadingRecentReadings = false;
+
+  // Add search functionality
+  final TextEditingController _searchController = TextEditingController();
+  List<Map<String, dynamic>> _searchResults = [];
+  bool _isSearching = false;
 
   final quotes = [
     "There is more treasure in books than in all the pirate's loot on Treasure Island. - Walt Disney",
@@ -344,6 +350,365 @@ class _UserHomePageState extends State<UserHomePage> {
         _showSnackBar('Failed to update favorites: ${e.toString()}');
       }
     }
+  }
+
+  // Add search functionality
+  Future<void> _performSearch(String query) async {
+    if (query.trim().isEmpty) {
+      setState(() {
+        _searchResults = [];
+        _isSearching = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _isSearching = true;
+    });
+
+    try {
+      print('🔍 Searching for: $query');
+      
+      // Search in books table by title, author name, and category
+      final searchResponse = await supabase
+          .from('books')
+          .select()
+          .eq('is_active', true)
+          .or('title.ilike.%$query%,category.ilike.%$query%,description.ilike.%$query%');
+
+      print('📚 Found ${searchResponse.length} books matching "$query"');
+
+      // Process search results to add author information
+      final List<Map<String, dynamic>> resultsWithAuthors = [];
+      
+      for (final bookData in searchResponse) {
+        final book = Map<String, dynamic>.from(bookData);
+        
+        // Get author information for this book
+        if (book['author_id'] != null) {
+          try {
+            final authorResponse = await supabase
+                .from('authors')
+                .select('id, first_name, last_name, display_name')
+                .eq('id', book['author_id'])
+                .maybeSingle();
+            
+            // Extract author name
+            String authorName = 'Unknown Author';
+            if (authorResponse != null) {
+              if (authorResponse['display_name'] != null && authorResponse['display_name'].toString().trim().isNotEmpty) {
+                authorName = authorResponse['display_name'];
+              } else if (authorResponse['first_name'] != null || authorResponse['last_name'] != null) {
+                final firstName = authorResponse['first_name'] ?? '';
+                final lastName = authorResponse['last_name'] ?? '';
+                authorName = '$firstName $lastName'.trim();
+              }
+            }
+            
+            book['author_name'] = authorName;
+            
+            // Also search by author name
+            if (authorName.toLowerCase().contains(query.toLowerCase())) {
+              print('📚 Found book by author match: ${book['title']} - $authorName');
+            }
+          } catch (e) {
+            print('📚 Error fetching author for book ${book['title']}: $e');
+            book['author_name'] = 'Unknown Author';
+          }
+        } else {
+          book['author_name'] = 'Unknown Author';
+        }
+        
+        resultsWithAuthors.add(book);
+      }
+
+      // Also search for books by author name
+      final authorSearchResponse = await supabase
+          .from('authors')
+          .select('id, first_name, last_name, display_name')
+          .or('first_name.ilike.%$query%,last_name.ilike.%$query%,display_name.ilike.%$query%');
+
+      for (final author in authorSearchResponse) {
+        final booksResponse = await supabase
+            .from('books')
+            .select()
+            .eq('author_id', author['id'])
+            .eq('is_active', true);
+
+        for (final bookData in booksResponse) {
+          final book = Map<String, dynamic>.from(bookData);
+          final authorName = author['display_name'] ?? '${author['first_name'] ?? ''} ${author['last_name'] ?? ''}'.trim();
+          book['author_name'] = authorName.isEmpty ? 'Unknown Author' : authorName;
+          
+          // Avoid duplicates
+          if (!resultsWithAuthors.any((b) => b['id'] == book['id'])) {
+            resultsWithAuthors.add(book);
+            print('📚 Found book by author search: ${book['title']} - $authorName');
+          }
+        }
+      }
+
+      setState(() {
+        _searchResults = resultsWithAuthors;
+        _isSearching = false;
+      });
+
+      print('🎯 Search completed. Total results: ${_searchResults.length}');
+
+    } catch (e) {
+      print('❌ Error performing search: $e');
+      setState(() {
+        _searchResults = [];
+        _isSearching = false;
+      });
+      
+      if (mounted) {
+        _showSnackBar('Search failed: ${e.toString()}');
+      }
+    }
+  }
+
+  void _showSearchResults() {
+    if (_searchResults.isEmpty && !_isSearching) {
+      _showSnackBar('No books found for "${_searchController.text}"');
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        builder: (context, scrollController) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(20),
+              topRight: Radius.circular(20),
+            ),
+          ),
+          child: Column(
+            children: [
+              // Handle bar
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              
+              // Header
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Text(
+                      'Search Results',
+                      style: GoogleFonts.montserrat(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: const Color(0xFF2D3748),
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      '${_searchResults.length} found',
+                      style: GoogleFonts.montserrat(
+                        fontSize: 14,
+                        color: const Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              
+              // Search results
+              Expanded(
+                child: _isSearching
+                    ? const Center(
+                        child: CircularProgressIndicator(
+                          color: Color(0xFF0096C7),
+                        ),
+                      )
+                    : _searchResults.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.search_off,
+                                  size: 64,
+                                  color: Colors.grey[400],
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'No books found',
+                                  style: GoogleFonts.montserrat(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Try searching with different keywords',
+                                  style: GoogleFonts.montserrat(
+                                    fontSize: 14,
+                                    color: Colors.grey[500],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : ListView.builder(
+                            controller: scrollController,
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            itemCount: _searchResults.length,
+                            itemBuilder: (context, index) {
+                              final book = _searchResults[index];
+                              return _buildSearchResultItem(book);
+                            },
+                          ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchResultItem(Map<String, dynamic> book) {
+    final bookId = book['id']?.toString() ?? '';
+    final isFavorite = _favoriteBookIds.contains(bookId);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[200]!),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: InkWell(
+        onTap: () async {
+          Navigator.pop(context); // Close search results
+          
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => const Center(child: CircularProgressIndicator()),
+          );
+          
+          await Future.delayed(const Duration(milliseconds: 300));
+          Navigator.pop(context);
+          
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => BookDetailsPage(
+                bookId: bookId,
+                onFavoriteChanged: () {
+                  _loadUserFavorites();
+                },
+              ),
+            ),
+          );
+          
+          _loadUserFavorites();
+        },
+        borderRadius: BorderRadius.circular(12),
+        child: Row(
+          children: [
+            // Book cover
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                width: 60,
+                height: 80,
+                color: Colors.grey[200],
+                child: book['cover_image_url'] != null
+                    ? Image.network(
+                        book['cover_image_url'],
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => 
+                            Icon(Icons.book, color: Colors.grey[400], size: 30),
+                      )
+                    : Icon(Icons.book, color: Colors.grey[400], size: 30),
+              ),
+            ),
+            
+            const SizedBox(width: 12),
+            
+            // Book details
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    book['title'] ?? 'Unknown Title',
+                    style: GoogleFonts.montserrat(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF2D3748),
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    book['author_name'] ?? 'Unknown Author',
+                    style: GoogleFonts.montserrat(
+                      fontSize: 14,
+                      color: const Color(0xFF64748B),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  if (book['category'] != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0096C7).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        book['category'],
+                        style: GoogleFonts.montserrat(
+                          fontSize: 12,
+                          color: const Color(0xFF0096C7),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            
+            // Favorite button
+            IconButton(
+              onPressed: () => _toggleFavorite(bookId),
+              icon: Icon(
+                isFavorite ? Icons.favorite : Icons.favorite_border,
+                color: isFavorite ? Colors.red : Colors.grey[400],
+                size: 24,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // Update the _showSnackBar method to handle different colors
@@ -1289,6 +1654,12 @@ class _UserHomePageState extends State<UserHomePage> {
                       isLoading: _isLoadingUser,
                       userData: _userData,
                       currentUser: user,
+                      searchController: _searchController,
+                      onSearch: (searchTerm) {
+                        _performSearch(searchTerm).then((_) {
+                          _showSearchResults();
+                        });
+                      },
                       onProfileTap: () => _scaffoldKey.currentState?.openDrawer(),
                     ),
 
@@ -1376,6 +1747,8 @@ class _GreetingBanner extends StatelessWidget {
   final Map<String, dynamic>? userData;
   final User? currentUser;
   final VoidCallback? onProfileTap;
+  final TextEditingController searchController;
+  final Function(String) onSearch;
 
   const _GreetingBanner({
     required this.userName,
@@ -1383,6 +1756,8 @@ class _GreetingBanner extends StatelessWidget {
     required this.isLoading,
     required this.userData,
     required this.currentUser,
+    required this.searchController,
+    required this.onSearch,
     this.onProfileTap,
   });
 
@@ -1475,6 +1850,12 @@ class _GreetingBanner extends StatelessWidget {
             children: [
               Expanded(
                 child: TextField(
+                  controller: searchController,
+                  onSubmitted: (value) {
+                    if (value.trim().isNotEmpty) {
+                      onSearch(value.trim());
+                    }
+                  },
                   decoration: InputDecoration(
                     hintText: currentUser != null 
                         ? 'Search your library...' 
@@ -1498,7 +1879,24 @@ class _GreetingBanner extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               ElevatedButton(
-                onPressed: () {},
+                onPressed: () {
+                  if (searchController.text.trim().isNotEmpty) {
+                    onSearch(searchController.text.trim());
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          'Please enter a search term',
+                          style: GoogleFonts.montserrat(),
+                        ),
+                        backgroundColor: Colors.orange,
+                        behavior: SnackBarBehavior.floating,
+                        margin: const EdgeInsets.all(16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                    );
+                  }
+                },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.white,
                   foregroundColor: const Color(0xFF0096C7),
@@ -1579,8 +1977,50 @@ class _QuoteCarousel extends StatefulWidget {
   State<_QuoteCarousel> createState() => _QuoteCarouselState();
 }
 
-class _QuoteCarouselState extends State<_QuoteCarousel> {
+class _QuoteCarouselState extends State<_QuoteCarousel> with TickerProviderStateMixin {
   int _current = 0;
+  Timer? _timer;
+  
+  @override
+  void initState() {
+    super.initState();
+    _startAutoSlide();
+  }
+  
+  void _startAutoSlide() {
+    _timer?.cancel(); // Cancel any existing timer
+    _timer = Timer.periodic(const Duration(seconds: 4), (timer) {
+      if (mounted) {
+        setState(() {
+          _current = (_current + 1) % widget.quotes.length;
+        });
+      } else {
+        timer.cancel();
+      }
+    });
+  }
+  
+  void _nextQuote() {
+    if (mounted) {
+      setState(() {
+        _current = (_current + 1) % widget.quotes.length;
+      });
+    }
+  }
+  
+  void _previousQuote() {
+    if (mounted) {
+      setState(() {
+        _current = (_current - 1 + widget.quotes.length) % widget.quotes.length;
+      });
+    }
+  }
+  
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
   
   @override
   Widget build(BuildContext context) {
@@ -1593,55 +2033,48 @@ class _QuoteCarouselState extends State<_QuoteCarousel> {
             color: const Color(0xFFB5179E),
             borderRadius: BorderRadius.circular(16),
           ),
-          child: Text(
-            widget.quotes[_current],
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-              fontStyle: FontStyle.italic,
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 500),
+            child: Text(
+              widget.quotes[_current],
+              key: ValueKey(_current),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontStyle: FontStyle.italic,
+              ),
+              textAlign: TextAlign.center,
             ),
-            textAlign: TextAlign.center,
           ),
         ),
         const SizedBox(height: 8),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(
-            widget.quotes.length,
-            (i) => Container(
-              margin: const EdgeInsets.symmetric(horizontal: 3),
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: i == _current
-                    ? const Color(0xFFB5179E)
-                    : Colors.grey[300],
-              ),
-            ),
-          ),
-        ),
+        _buildIndicators(),
         const SizedBox(height: 4),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.chevron_left),
-              onPressed: () => setState(
-                () => _current = (_current - 1 + widget.quotes.length) % widget.quotes.length,
-              ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.chevron_right),
-              onPressed: () => setState(
-                () => _current = (_current + 1) % widget.quotes.length,
-              ),
-            ),
-          ],
-        ),
+       
       ],
     );
   }
+  
+  Widget _buildIndicators() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(
+        widget.quotes.length,
+        (i) => Container(
+          margin: const EdgeInsets.symmetric(horizontal: 3),
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: i == _current
+                ? const Color(0xFFB5179E)
+                : Colors.grey[300],
+          ),
+        ),
+      ),
+    );
+  }
+
 }
 
 // Section Title Widget

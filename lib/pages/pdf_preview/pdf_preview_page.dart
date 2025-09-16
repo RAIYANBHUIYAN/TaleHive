@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
+import '../../user_authentication/login.dart';
 
 class PdfPreviewPage extends StatefulWidget {
   final String pdfUrl;
@@ -655,28 +656,57 @@ class _PdfPreviewPageState extends State<PdfPreviewPage>
             child: Text(
               'Maybe Later',
               style: GoogleFonts.montserrat(
-                color: const Color(0xFF6B7280),
+          color: const Color(0xFF6B7280),
               ),
             ),
           ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.pop(context);
-              // Navigate to login - this should be handled by your main page
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF0096C7),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+  ElevatedButton(
+    onPressed: () {
+      Navigator.pop(context);
+      // Navigate to login page with smooth animated transition
+      Navigator.of(context).push(
+        PageRouteBuilder(
+          pageBuilder: (context, animation, secondaryAnimation) => const Login(),
+          transitionDuration: const Duration(milliseconds: 800),
+          reverseTransitionDuration: const Duration(milliseconds: 600),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            // Slide and fade transition
+            const begin = Offset(1.0, 0.0);
+            const end = Offset.zero;
+            const curve = Curves.easeInOutCubic;
+            
+            var slideTween = Tween(begin: begin, end: end).chain(
+              CurveTween(curve: curve),
+            );
+            var fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+              CurvedAnimation(parent: animation, curve: curve),
+            );
+            var slideAnimation = animation.drive(slideTween);
+            
+            return FadeTransition(
+              opacity: fadeAnimation,
+              child: SlideTransition(
+                position: slideAnimation,
+                child: child,
               ),
-            ),
-            child: Text(
-              'Login Now',
-              style: GoogleFonts.montserrat(color: Colors.white),
-            ),
-          ),
+            );
+          },
+        ),
+      );
+    },
+    style: ElevatedButton.styleFrom(
+      backgroundColor: const Color(0xFF0096C7),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+      ),
+    ),
+    child: Text(
+      'Login Now',
+      style: GoogleFonts.montserrat(color: Colors.white),
+    ),
+  ),
         ],
+        
       ),
     );
   }

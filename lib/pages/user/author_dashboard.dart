@@ -995,19 +995,7 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                                           const SizedBox(height: 8),
                                           Row(
                                             children: [
-                                              if (book['price'] != null)
-                                                Container(
-                                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.green[100],
-                                                    borderRadius: BorderRadius.circular(8),
-                                                  ),
-                                                  child: Text(
-                                                    '\$${book['price']}',
-                                                    style: TextStyle(color: Colors.green[800], fontSize: 14, fontWeight: FontWeight.bold),
-                                                  ),
-                                                ),
-                                              const SizedBox(width: 8),
+                                             
                                               if (book['pdf_url'] != null)
                                                 Container(
                                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -1042,6 +1030,66 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
                                             tooltip: 'Open PDF',
                                             onPressed: () => _handlePdfView(book),
                                           ),
+                                        PopupMenuButton<String>(
+                                          icon: Icon(
+                                            Icons.description,
+                                            color: book['description'] != null && book['description'].toString().isNotEmpty 
+                                                ? Colors.green 
+                                                : Colors.orange,
+                                          ),
+                                          tooltip: 'Abstract Options',
+                                          onSelected: (value) {
+                                            switch (value) {
+                                              case 'upload':
+                                                _uploadAbstract(book);
+                                                break;
+                                              case 'update':
+                                                _updateAbstract(book);
+                                                break;
+                                              case 'delete':
+                                                _deleteAbstract(book);
+                                                break;
+                                            }
+                                          },
+                                          itemBuilder: (context) {
+                                            bool hasAbstract = book['description'] != null && book['description'].toString().isNotEmpty;
+                                            return [
+                                              if (!hasAbstract)
+                                                const PopupMenuItem<String>(
+                                                  value: 'upload',
+                                                  child: Row(
+                                                    children: [
+                                                      Icon(Icons.upload_file, color: Colors.blue),
+                                                      SizedBox(width: 8),
+                                                      Text('Upload Abstract'),
+                                                    ],
+                                                  ),
+                                                ),
+                                              if (hasAbstract) ...[
+                                                const PopupMenuItem<String>(
+                                                  value: 'update',
+                                                  child: Row(
+                                                    children: [
+                                                      Icon(Icons.update, color: Colors.blue),
+                                                      SizedBox(width: 8),
+                                                      Text('Update Abstract'),
+                                                    ],
+                                                  ),
+                                                ),
+                                                const PopupMenuItem<String>(
+                                                  value: 'delete',
+                                                  child: Row(
+                                                    children: [
+                                                      Icon(Icons.delete, color: Colors.red),
+                                                      SizedBox(width: 8),
+                                                      Text('Delete Abstract'),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ],
+                                            ];
+                                          },
+                                        ),
                                         IconButton(
                                           icon: const Icon(Icons.edit, color: Colors.blue),
                                           onPressed: () => _editBook(book),
@@ -2392,6 +2440,367 @@ class _AuthorDashboardPageState extends State<AuthorDashboardPage> {
     } catch (e) {
       print('❌ Error extracting filename from URL: $e');
       return null;
+    }
+  }
+
+  // Abstract upload functionality
+  Future<void> _uploadAbstract(Map<String, dynamic> book) async {
+    try {
+      // Pick PDF file
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf'],
+        allowMultiple: false,
+      );
+
+      if (result != null && result.files.single.path != null) {
+        final file = File(result.files.single.path!);
+        
+        // Show upload progress dialog
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(height: 16),
+                Text('Uploading abstract for "${book['title']}"...'),
+              ],
+            ),
+          ),
+        );
+
+        // Generate unique filename for abstract
+        final user = supabase.auth.currentUser;
+        final timestamp = DateTime.now().millisecondsSinceEpoch;
+        final uniqueFileName = 'abstract_${user?.id}_${book['id']}_$timestamp.pdf';
+
+        // Upload to Supabase storage
+        final bytes = await file.readAsBytes();
+        await supabase.storage
+            .from('book-pdfs')
+            .uploadBinary(uniqueFileName, bytes);
+
+        // Get the public URL
+        final abstractUrl = supabase.storage
+            .from('book-pdfs')
+            .getPublicUrl(uniqueFileName);
+
+        // Update the book's description with the abstract URL
+        await supabase
+            .from('books')
+            .update({'description': abstractUrl})
+            .eq('id', book['id']);
+
+        // Close loading dialog
+        if (mounted) Navigator.pop(context);
+
+        // Show success message
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Abstract uploaded successfully!'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+
+        // Refresh books list
+        await _loadBooksFromSupabase();
+
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No file selected'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      // Close loading dialog if it's open
+      if (mounted) Navigator.pop(context);
+      
+      print('❌ Error uploading abstract: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error uploading abstract: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
+  }
+
+  // Update abstract functionality
+  Future<void> _updateAbstract(Map<String, dynamic> book) async {
+    try {
+      // Check if book already has an abstract
+      if (book['description'] == null || book['description'].toString().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No abstract found to update. Upload an abstract first.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      // Pick new PDF file
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf'],
+        allowMultiple: false,
+      );
+
+      if (result != null && result.files.single.path != null) {
+        final file = File(result.files.single.path!);
+        
+        // Show upload progress dialog
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(height: 16),
+                Text('Updating abstract for "${book['title']}"...'),
+              ],
+            ),
+          ),
+        );
+
+        // Delete old abstract from storage
+        final oldAbstractUrl = book['description'].toString();
+        if (oldAbstractUrl.isNotEmpty) {
+          try {
+            final oldFileName = _extractFileNameFromUrl(oldAbstractUrl);
+            if (oldFileName != null) {
+              await supabase.storage
+                  .from('book-pdfs')
+                  .remove([oldFileName]);
+              print('✅ Old abstract deleted: $oldFileName');
+            }
+          } catch (e) {
+            print('⚠️ Warning: Could not delete old abstract: $e');
+          }
+        }
+
+        // Generate unique filename for new abstract
+        final user = supabase.auth.currentUser;
+        final timestamp = DateTime.now().millisecondsSinceEpoch;
+        final uniqueFileName = 'abstract_${user?.id}_${book['id']}_$timestamp.pdf';
+
+        // Upload new abstract to Supabase storage
+        final bytes = await file.readAsBytes();
+        await supabase.storage
+            .from('book-pdfs')
+            .uploadBinary(uniqueFileName, bytes);
+
+        // Get the public URL
+        final newAbstractUrl = supabase.storage
+            .from('book-pdfs')
+            .getPublicUrl(uniqueFileName);
+
+        // Update the book's description with the new abstract URL
+        await supabase
+            .from('books')
+            .update({'description': newAbstractUrl})
+            .eq('id', book['id']);
+
+        // Close loading dialog
+        if (mounted) Navigator.pop(context);
+
+        // Show success message
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Abstract updated successfully!'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+
+        // Refresh books list
+        await _loadBooksFromSupabase();
+
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No file selected'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      // Close loading dialog if it's open
+      if (mounted) Navigator.pop(context);
+      
+      print('❌ Error updating abstract: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error updating abstract: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
+  }
+
+  // Delete abstract functionality
+  Future<void> _deleteAbstract(Map<String, dynamic> book) async {
+    try {
+      // Check if book has an abstract
+      if (book['description'] == null || book['description'].toString().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No abstract found to delete.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      // Confirm deletion
+      bool? confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.warning, color: Colors.red[600]),
+              const SizedBox(width: 8),
+              const Text('Delete Abstract'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Are you sure you want to delete the abstract for this book?',
+                style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red[800]),
+              ),
+              const SizedBox(height: 8),
+              Text('Book: ${book['title'] ?? 'Unknown'}'),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.red[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red[200]!),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info, color: Colors.red[700], size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'This will permanently remove the abstract PDF file.',
+                        style: TextStyle(fontSize: 12, color: Colors.red[700]),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Delete'),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmed == true) {
+        // Show loading dialog
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(height: 16),
+                Text('Deleting abstract for "${book['title']}"...'),
+              ],
+            ),
+          ),
+        );
+
+        // Delete abstract from storage
+        final abstractUrl = book['description'].toString();
+        if (abstractUrl.isNotEmpty) {
+          try {
+            final fileName = _extractFileNameFromUrl(abstractUrl);
+            if (fileName != null) {
+              await supabase.storage
+                  .from('book-pdfs')
+                  .remove([fileName]);
+              print('✅ Abstract file deleted: $fileName');
+            }
+          } catch (e) {
+            print('❌ Error deleting abstract file: $e');
+          }
+        }
+
+        // Remove abstract URL from database (set description to null)
+        await supabase
+            .from('books')
+            .update({'description': null})
+            .eq('id', book['id']);
+
+        // Close loading dialog
+        if (mounted) Navigator.pop(context);
+
+        // Show success message
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Abstract deleted successfully!'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+
+        // Refresh books list
+        await _loadBooksFromSupabase();
+      }
+    } catch (e) {
+      // Close loading dialog if it's open
+      if (mounted) Navigator.pop(context);
+      
+      print('❌ Error deleting abstract: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error deleting abstract: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
     }
   }
 
